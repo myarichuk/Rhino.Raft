@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Rhino.Raft")]
+[assembly: AssemblyTitle("Rhino.Raft.Tests")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("Rhino.Raft")]
+[assembly: AssemblyProduct("Rhino.Raft.Tests")]
 [assembly: AssemblyCopyright("Copyright ©  2014")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("bb6345a0-b674-46c4-8ca9-8c46d0d1662c")]
+[assembly: Guid("9cb4564d-01c0-4a1a-9a70-e91fe6648867")]
 
 // Version information for an assembly consists of the following four values:
 //

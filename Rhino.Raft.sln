@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
 VisualStudioVersion = 12.0.30501.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft", "Rhino.Raft\Rhino.Raft.csproj", "{83FB4605-723C-4416-B479-D2D2A77807F9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft", "Rhino.Raft\Rhino.Raft.csproj", "{F796F69F-D17B-4260-92D6-65CB94C0E05C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft.Tests", "Rhino.Raft.Tests\Rhino.Raft.Tests.csproj", "{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +13,14 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{83FB4605-723C-4416-B479-D2D2A77807F9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{83FB4605-723C-4416-B479-D2D2A77807F9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{83FB4605-723C-4416-B479-D2D2A77807F9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{83FB4605-723C-4416-B479-D2D2A77807F9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F796F69F-D17B-4260-92D6-65CB94C0E05C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F796F69F-D17B-4260-92D6-65CB94C0E05C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F796F69F-D17B-4260-92D6-65CB94C0E05C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F796F69F-D17B-4260-92D6-65CB94C0E05C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
