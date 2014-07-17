@@ -39,7 +39,19 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Implementations\Commands\NopCommand.cs" />
+    <Compile Include="Interfaces\ICommand.cs" />
+    <Compile Include="Interfaces\IRaftStateMachine.cs" />
+    <Compile Include="Interfaces\ISerializer.cs" />
+    <Compile Include="Interfaces\ITransport.cs" />
+    <Compile Include="Messages\LogEntry.cs" />
+    <Compile Include="RaftEngineState.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RaftEngine.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Implementations\Serializers\" />
+    <Folder Include="Implementations\Transports\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
