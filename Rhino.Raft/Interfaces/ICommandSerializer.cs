@@ -1,6 +1,6 @@
 ﻿namespace Rhino.Raft.Interfaces
 {
-	public interface ISerializer
+	public interface ICommandSerializer
 	{
 		byte[] Serialize(ICommand command);
 
