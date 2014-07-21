@@ -1,79 +1,100 @@
-﻿using System;
+﻿// -----------------------------------------------------------------------
+//  <copyright file="RaftEngine.cs" company="Hibernating Rhinos LTD">
+//      Copyright (c) Hibernating Rhinos LTD. All rights reserved.
+//  </copyright>
+// -----------------------------------------------------------------------
+
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Rhino.Raft.Implementations.StateBehaviors;
-using Rhino.Raft.Interfaces;
+using System.IO;
+using Consensus.Raft;
+using Consensus.Raft.Behaviors;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 namespace Rhino.Raft
 {
-	public class RaftEngine : IDisposable
+	public class RaftEngine
 	{
-		private readonly Task _eventLoopThread;
-		private readonly RaftEngineState _state;
-		private readonly CancellationToken _cancellationToken;
-		
-		private readonly ITransport _transport;
-		private readonly ICommandSerializer _commandCommandSerializer;
-		private IStateBehavior _currentStateBehavior;
-		private bool _isEventLoopRunning;
-
-		private readonly string _name;
-
+		public TextWriter DebugLog { get; set; }
+		public ITransport Transport { get; set; }
 		public TimeSpan HeartbeatTimeout { get; set; }
+		public IRaftStateMachine StateMachine { get; set; }
+		public IEnumerable<string> AllVotingPeers { get; set; }
+		public IEnumerable<string> AllPeers { get; set; }
+		public string Name { get; set; }
+		public PersistentState PersistentState { get; set; }
+
+		public string CurrentLeader { get; set; }
+		public long CommitIndex { get; set; }
 		public TimeSpan ElectionTimeout { get; set; }
-		public string CurrentLeader { get; private set; }
+		public int QuorumSize { get; set; }
 
-		public RaftEngine(ITransport transport, ICommandSerializer commandCommandSerializer, string name, CancellationToken cancellationToken)
+		internal void UpdateCurrentTerm(long term)
 		{
-			if (transport == null) throw new ArgumentNullException("transport");
-			if (commandCommandSerializer == null) throw new ArgumentNullException("commandCommandSerializer");
-			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
+			PersistentState.UpdateTermTo(term);
+			SetState(RaftEngineState.Follower);
+			CurrentLeader = null;
 
-			CurrentLeader = String.Empty;
-
-			_transport = transport;
-			
-			_cancellationToken = cancellationToken;
-			_name = name;
-			_commandCommandSerializer = commandCommandSerializer;
-			_currentStateBehavior = new FollowerStateBehavior(_transport,CurrentLeader);
-
-			_state = RaftEngineState.Follower; // each Raft node starts in follower state
-			_isEventLoopRunning = true;
 		}
 
-
-
-		public RaftEngineState State
+		internal void SetState(RaftEngineState raftEngineState)
 		{
-			get { return _state; }
+		}
+		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
+		{
+			// Raft paper 5.4.1
+			var lastLogEntry = PersistentState.LastLogEntry();
+			if (lastLogEntry.Term < lastLogTerm)
+				return true;
+			return lastLogEntry.Index <= lastLogIndex;
 		}
 
-		public string Name
+		public void ApplyCommits(long from, long to)
 		{
-			get { return _name; }
-		}
-
-		public void BehaviorEventLoop()
-		{
-			while (_isEventLoopRunning)
+			foreach (LogEntry entry in PersistentState.LogEntriesAfter(from, to))
 			{
-				_cancellationToken.ThrowIfCancellationRequested();
-				if (_currentStateBehavior.ShouldChangeState)
-					_currentStateBehavior = _currentStateBehavior.GetNextState();
+				StateMachine.Apply(entry);
+			}
+			CommitIndex = to;
+		}
 
-				_currentStateBehavior.DispatchEvents();				
+		internal void AnnounceCandidacy()
+		{
+			PersistentState.IncrementTermAndVoteFor(Name);
+
+			SetState(RaftEngineState.Candidate);
+
+			DebugLog.WriteLine("Calling an election in term {0}", PersistentState.CurrentTerm);
+
+			var lastLogEntry = PersistentState.LastLogEntry() ?? new LogEntry();
+			var rvr = new RequestVoteRequest
+			{
+				CandidateId = Name,
+				LastLogIndex = lastLogEntry.Index,
+				LastLogTerm = lastLogEntry.Term,
+				Term = PersistentState.CurrentTerm
+			};
+
+			foreach (var votingPeer in AllVotingPeers)
+			{
+				Transport.Send(votingPeer, rvr);
 			}
 		}
 
-		public void Dispose()
-		{
-			_isEventLoopRunning = false;
-		}
+	}
+
+	public interface IRaftStateMachine
+	{
+		long LastApplied { get; }
+		void Apply(LogEntry entry);
+	}
+
+	public enum RaftEngineState
+	{
+		None,
+		Follower,
+		Leader,
+		Candidate
 	}
 }

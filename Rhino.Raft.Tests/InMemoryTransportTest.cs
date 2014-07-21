@@ -5,8 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Rhino.Raft.Implementations.Transports;
-using Rhino.Raft.Interfaces;
 using Xunit;
 
 namespace Rhino.Raft.Tests
@@ -30,14 +28,17 @@ namespace Rhino.Raft.Tests
 				HasReceivedMessage = false;
 			}
 
+			public string Name { get; set; }
+
 			public bool HasReceivedMessage { get; private set; }
 
 			public Action<string,TMessage> ValidateMessage { get; set; }
-			public void Receive(string source, TMessage message)
+			public void Handle(string source, TMessage message)
 			{
 				HasReceivedMessage = true;
 				ValidateMessage(source, message);
 			}
+
 		}
 
 		[Fact]
@@ -52,16 +53,16 @@ namespace Rhino.Raft.Tests
 
 			var subscriber = new Subscriber<MessageA>
 			{
-				ValidateMessage = (source, message) =>
+				ValidateMessage = (destination, message) =>
 				{
 					receivedMessages.Enqueue(message);
 					if(receivedMessages.Count == messages.Count)
 						completedEvent.Set();
 				}
 			};
-			using (var transport = new InMemoryTransport())
+			using (var transport = new InMemoryTransport("sourceNode"))
 			{
-				transport.Subscribe(subscriber);
+				transport.Register(subscriber);
 				
 				foreach(var message in messages)
 					transport.Send("A",message);
@@ -79,14 +80,14 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void All_subscribers_should_receive_messages_by_type()
 		{
-			using (var transport = new InMemoryTransport())
+			using (var transport = new InMemoryTransport("sourceNode"))
 			{
 				var messageReceivedEvent = new CountdownEvent(2);
 				var subscriber1 = new Subscriber<MessageA>
 				{
-					ValidateMessage = (source, message) =>
+					ValidateMessage = (destination, message) =>
 					{
-						Assert.Equal("SourceNode1", source);
+						Assert.Equal("A", destination);
 						Assert.Equal("ABC",message.Id);
 						messageReceivedEvent.Signal();
 					}
@@ -94,19 +95,19 @@ namespace Rhino.Raft.Tests
 
 				var subscriber2 = new Subscriber<MessageA>
 				{
-					ValidateMessage = (source, message) =>
+					ValidateMessage = (destination, message) =>
 					{
-						Assert.Equal("SourceNode1", source);
+						Assert.Equal("A", destination);
 						Assert.Equal("ABC", message.Id);
 						messageReceivedEvent.Signal();						
 					}
 				};
 
-				transport.Subscribe(subscriber1);
-				transport.Subscribe(subscriber2);
+				transport.Register(subscriber1);
+				transport.Register(subscriber2);
 
-				transport.Send("SourceNode1", new MessageB { Id = "BCD" });
-				transport.Send("SourceNode1", new MessageA { Id = "ABC" });
+				transport.Send("A", new MessageB { Id = "BCD" });
+				transport.Send("A", new MessageA { Id = "ABC" });
 
 				Assert.True(messageReceivedEvent.Wait(3000));
 

@@ -9,8 +9,9 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Rhino.Raft</RootNamespace>
     <AssemblyName>Rhino.Raft</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -30,9 +31,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\packages\Newtonsoft.Json.6.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -40,34 +38,28 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
-    <Reference Include="Voron">
+    <Reference Include="Voron, Version=1.0.0.0, Culture=neutral, PublicKeyToken=37f41c7f99471593, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\ravendb-3.0\Raven.Voron\Voron\bin\Debug\Voron.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Constants.cs" />
-    <Compile Include="Implementations\Commands\NopCommand.cs" />
-    <Compile Include="Implementations\PersistentState.cs" />
-    <Compile Include="Implementations\RaftPeer.cs" />
-    <Compile Include="Implementations\Serializers\JsonCommandSerializer.cs" />
-    <Compile Include="Implementations\StateBehaviors\FollowerStateBehavior.cs" />
-    <Compile Include="Implementations\Transports\InMemoryTransport.cs" />
-    <Compile Include="Interfaces\ICommand.cs" />
-    <Compile Include="Interfaces\IHandler.cs" />
-    <Compile Include="Interfaces\IStateBehavior.cs" />
-    <Compile Include="Interfaces\IRaftStateMachine.cs" />
-    <Compile Include="Interfaces\ICommandSerializer.cs" />
-    <Compile Include="Interfaces\ITransport.cs" />
-    <Compile Include="Messages\Heartbeat.cs" />
+    <Compile Include="Behaviors\AbstractRaftStateBehavior.cs" />
+    <Compile Include="Behaviors\CandidateStateBehavior.cs" />
+    <Compile Include="Behaviors\FollowerStateBehavior.cs" />
+    <Compile Include="Behaviors\LeaderStateBehavior.cs" />
+    <Compile Include="IHandler.cs" />
+    <Compile Include="InMemoryTransport.cs" />
+    <Compile Include="ITransport.cs" />
+    <Compile Include="Messages\AppendEntriesRequest.cs" />
+    <Compile Include="Messages\AppendEntriesResponse.cs" />
     <Compile Include="Messages\LogEntry.cs" />
     <Compile Include="Messages\MessageEnvelope.cs" />
-    <Compile Include="RaftEngineState.cs" />
+    <Compile Include="Messages\RequestVoteRequest.cs" />
+    <Compile Include="Messages\RequestVoteResponse.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftEngine.cs" />
-  </ItemGroup>
-  <ItemGroup />
-  <ItemGroup>
-    <None Include="packages.config" />
+    <Compile Include="Storage\PersistentState.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

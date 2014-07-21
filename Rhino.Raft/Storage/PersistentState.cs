@@ -1,19 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading;
-using Newtonsoft.Json;
-using Rhino.Raft.Interfaces;
+using Consensus.Raft;
 using Rhino.Raft.Messages;
 using Voron;
-using Voron.Impl;
 using Voron.Util.Conversion;
 
-namespace Rhino.Raft.Implementations
+namespace Rhino.Raft.Storage
 {
-
 	/// <summary>
 	/// Uses Voron to store the persistent state / log of the raft state machine.
 	/// Structure:
@@ -31,27 +26,13 @@ namespace Rhino.Raft.Implementations
 		public Guid DbId { get; private set; }
 		public string VotedFor { get; private set; }
 		public long CurrentTerm { get; private set; }
-		public IEnumerable<string> AllVotingPeers { get { return allPeers.Where(x => x.Voting).Select(x => x.Name); } }
-		public IEnumerable<string> AllPeers { get { return allPeers.Select(x => x.Name); } }
-
-		public int QuorumSize
-		{
-			get
-			{
-				var votingPeers = allPeers.Count(x => x.Voting);
-				return (votingPeers / 2) + 1;
-			}
-		}
 
 		private readonly StorageEnvironment _env;
-		private readonly List<RaftPeer> allPeers = new List<RaftPeer>();
 
-		private readonly ICommandSerializer _commandCommandSerializer;
 		private readonly CancellationToken _cancellationToken;
 
-		public PersistentState(StorageEnvironmentOptions options, ICommandSerializer commandCommandSerializer, CancellationToken cancellationToken)
+		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
 		{
-			_commandCommandSerializer = commandCommandSerializer;
 			_cancellationToken = cancellationToken;
 			_env = new StorageEnvironment(options);
 			InitializeDatabase();
@@ -63,9 +44,6 @@ namespace Rhino.Raft.Implementations
 			{
 				_env.CreateTree(tx, LogsTreeName);
 				_env.CreateTree(tx, EntryTermsTreeName);
-				_env.CreateTree(tx, "peers");
-
-				ReadAllPeers(tx);
 
 				var metadata = _env.CreateTree(tx, "$metadata");
 				var versionReadResult = metadata.Read("version");
@@ -94,28 +72,6 @@ namespace Rhino.Raft.Implementations
 				}
 
 				tx.Commit();
-			}
-		}
-
-		private void ReadAllPeers(Transaction tx)
-		{
-			var peers = tx.ReadTree("peers");
-
-			using (var it = peers.Iterate()) // read all the known peers
-			{
-				var serializer = new JsonSerializer();
-				if (it.Seek(Slice.BeforeAllKeys))
-				{
-					do
-					{
-						var reader = it.CreateReaderForCurrent();
-						using (var stream = reader.AsStream())
-						{
-							var raftPeer = serializer.Deserialize<RaftPeer>(new JsonTextReader(new StreamReader(stream)));
-							allPeers.Add(raftPeer);
-						}
-					} while (it.MoveNext());
-				}
 			}
 		}
 
@@ -152,8 +108,8 @@ namespace Rhino.Raft.Implementations
 
 				var term = result.Reader.ReadLittleEndianInt64();
 
-				tx.Commit();
-
+				tx.Commit(); 
+				
 				return new LogEntry
 				{
 					Term = term,
@@ -186,7 +142,7 @@ namespace Rhino.Raft.Implementations
 
 		public void RecordVoteFor(string candidateId)
 		{
-			if (string.IsNullOrEmpty(candidateId))
+			if (string.IsNullOrEmpty(candidateId)) 
 				throw new ArgumentNullException("candidateId");
 
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
@@ -206,7 +162,7 @@ namespace Rhino.Raft.Implementations
 				var metadata = tx.ReadTree("$metadata");
 				CurrentTerm++;
 				metadata.Add("current-term", BitConverter.GetBytes(CurrentTerm));
-				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name));
+				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name)); 
 				tx.Commit();
 			}
 		}
@@ -242,7 +198,7 @@ namespace Rhino.Raft.Implementations
 					while (_cancellationToken.IsCancellationRequested == false)
 					{
 						var entryIndex = it.CurrentKey.CreateReader().ReadBigEndianInt64();
-						if (entryIndex > stopAfter)
+						if(entryIndex > stopAfter)
 							yield break;
 
 						var term = terms.Read(it.CurrentKey).Reader.ReadLittleEndianInt64();
@@ -250,7 +206,7 @@ namespace Rhino.Raft.Implementations
 						var entryReader = it.CreateReaderForCurrent();
 						var buffer = new byte[entryReader.Length];
 						entryReader.Read(buffer, 0, buffer.Length);
-
+						
 						yield return new LogEntry
 						{
 							Term = term,
@@ -262,7 +218,7 @@ namespace Rhino.Raft.Implementations
 							yield break;
 					}
 				}
-
+				
 				tx.Commit();
 			}
 		}
@@ -271,32 +227,6 @@ namespace Rhino.Raft.Implementations
 		{
 			if (_env != null)
 				_env.Dispose();
-		}
-
-		public long AppendToLeaderLog(ICommand command)
-		{
-			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
-			{
-				var logs = tx.ReadTree(LogsTreeName);
-				var terms = tx.ReadTree(EntryTermsTreeName);
-				var lastEntry = 0L;
-				var lastKey = logs.LastKeyOrDefault();
-				if (lastKey != null)
-					lastEntry = lastKey.CreateReader().ReadBigEndianInt64();
-
-				var nextEntryId = lastEntry + 1;
-				var key = new Slice(EndianBitConverter.Big.GetBytes(nextEntryId));
-
-				var cmd = _commandCommandSerializer.Serialize(command);
-
-				logs.Add(key, cmd);
-
-				terms.Add(key, BitConverter.GetBytes(CurrentTerm));
-
-				tx.Commit();
-
-				return nextEntryId;
-			}
 		}
 
 		public void AppendToLog(IEnumerable<LogEntry> entries, long removeAllAfter)
@@ -308,7 +238,7 @@ namespace Rhino.Raft.Implementations
 
 				using (var it = logs.Iterate())
 				{
-					if (it.Seek(new Slice(EndianBitConverter.Big.GetBytes(removeAllAfter))) &&
+					if (it.Seek(new Slice(EndianBitConverter.Big.GetBytes(removeAllAfter))) && 
 						it.MoveNext())
 					{
 						while (it.DeleteCurrentAndMoveNext())
