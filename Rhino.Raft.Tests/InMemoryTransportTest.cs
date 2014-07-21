@@ -53,6 +53,7 @@ namespace Rhino.Raft.Tests
 
 			var subscriber = new Subscriber<MessageA>
 			{
+				Name = "A",
 				ValidateMessage = (destination, message) =>
 				{
 					receivedMessages.Enqueue(message);
@@ -85,6 +86,7 @@ namespace Rhino.Raft.Tests
 				var messageReceivedEvent = new CountdownEvent(2);
 				var subscriber1 = new Subscriber<MessageA>
 				{
+					Name = "A",
 					ValidateMessage = (destination, message) =>
 					{
 						Assert.Equal("A", destination);
@@ -95,6 +97,7 @@ namespace Rhino.Raft.Tests
 
 				var subscriber2 = new Subscriber<MessageA>
 				{
+					Name = "A",
 					ValidateMessage = (destination, message) =>
 					{
 						Assert.Equal("A", destination);
@@ -109,7 +112,7 @@ namespace Rhino.Raft.Tests
 				transport.Send("A", new MessageB { Id = "BCD" });
 				transport.Send("A", new MessageA { Id = "ABC" });
 
-				Assert.True(messageReceivedEvent.Wait(3000));
+				Assert.True(messageReceivedEvent.Wait(300000));
 
 				Assert.True(subscriber1.HasReceivedMessage);
 				Assert.True(subscriber2.HasReceivedMessage);

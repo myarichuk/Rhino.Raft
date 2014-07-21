@@ -48,6 +48,7 @@
     <Compile Include="Behaviors\CandidateStateBehavior.cs" />
     <Compile Include="Behaviors\FollowerStateBehavior.cs" />
     <Compile Include="Behaviors\LeaderStateBehavior.cs" />
+    <Compile Include="Default.cs" />
     <Compile Include="IHandler.cs" />
     <Compile Include="InMemoryTransport.cs" />
     <Compile Include="ITransport.cs" />

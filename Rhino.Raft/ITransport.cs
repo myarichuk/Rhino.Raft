@@ -1,3 +1,5 @@
+using System;
+
 namespace Rhino.Raft
 {
 
@@ -6,6 +8,8 @@ namespace Rhino.Raft
 	/// </summary>
 	public interface ITransport
 	{
+		TimeSpan HeartbeatTimeout { get; set; }
+
 		void Send<T>(string dest, T message);
 
 		void Register<T>(IHandler<T> messageHandler);
