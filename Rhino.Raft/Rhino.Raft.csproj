@@ -57,6 +57,7 @@
     <Compile Include="Interfaces\ICommandSerializer.cs" />
     <Compile Include="Interfaces\IHandler.cs" />
     <Compile Include="InMemoryTransport.cs" />
+    <Compile Include="Interfaces\IRaftStateMachine.cs" />
     <Compile Include="Interfaces\ITransport.cs" />
     <Compile Include="JsonCommandSerializer.cs" />
     <Compile Include="Messages\AppendEntriesRequest.cs" />

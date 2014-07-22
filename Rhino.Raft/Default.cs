@@ -10,5 +10,6 @@ namespace Rhino.Raft
 	{
 		public static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(10);
 		public const int MaxEntriesPerRequest = 256;
+		public static readonly TimeSpan ElectionTimeout = TimeSpan.FromSeconds(20);
 	}
 }

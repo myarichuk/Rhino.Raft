@@ -54,6 +54,8 @@ namespace Rhino.Raft
 			if (stateMachine == null) throw new ArgumentNullException("stateMachine");
 			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
 
+			HeartbeatTimeout = Default.HeartbeatTimeout;
+			ElectionTimeout = Default.ElectionTimeout;
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
 			Name = name;
 			PersistentState = new PersistentState(options,cancellationToken);
@@ -150,12 +152,6 @@ namespace Rhino.Raft
 			Transport.Send(cmd);
 		}
 
-	}
-
-	public interface IRaftStateMachine
-	{
-		long LastApplied { get; }
-		void Apply(LogEntry entry);
 	}
 
 	public enum RaftEngineState

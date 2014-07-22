@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -16,7 +17,14 @@ namespace Rhino.Raft.Behaviors
 			get { return Engine.Name; }
 		}
 
-		public abstract void RunOnce();
+		public virtual void RunOnce()
+		{
+			var remaining = Engine.HeartbeatTimeout - HeartbeatTimer.Elapsed;
+			if (remaining <= TimeSpan.Zero)
+				HandleTimeout();
+
+			Thread.Sleep(remaining);	
+		}
 
 		public event Action HeartbeatTimeout;
 
