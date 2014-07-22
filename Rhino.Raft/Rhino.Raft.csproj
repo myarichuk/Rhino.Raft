@@ -69,6 +69,7 @@
     <Compile Include="Messages\RequestVoteResponse.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftEngine.cs" />
+    <Compile Include="RaftEngineOptions.cs" />
     <Compile Include="Storage\PersistentState.cs" />
   </ItemGroup>
   <ItemGroup>

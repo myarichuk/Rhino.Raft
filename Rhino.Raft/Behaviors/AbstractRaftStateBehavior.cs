@@ -1,16 +1,17 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Voron;
 
 
 namespace Rhino.Raft.Behaviors
 {
-	public abstract class AbstractRaftStateBehavior
+	public abstract class AbstractRaftStateBehavior : IDisposable
 	{
 		protected readonly RaftEngine Engine;
-		protected readonly Stopwatch HeartbeatTimer;
 
 		public string Name
 		{
@@ -19,44 +20,44 @@ namespace Rhino.Raft.Behaviors
 
 		public int Timeout { get; set; }
 
-		public virtual void RunOnce()
+		public virtual void HandleMessage(MessageEnvelope envelope)
 		{
-			var remaining = Engine.HeartbeatTimeout - HeartbeatTimer.Elapsed;
-			if (remaining <= TimeSpan.Zero)
-				HandleTimeout();
+			RequestVoteRequest requestVoteRequest;
+			RequestVoteResponse requestVoteResponse;
+			AppendEntriesResponse appendEntriesResponse;
+			AppendEntriesRequest appendEntriesRequest;
 
-			Thread.Sleep(remaining);	
+			if (TryCastMessage(envelope.Message, out requestVoteRequest))
+				Handle(envelope.Source, requestVoteRequest);
+			else if (TryCastMessage(envelope.Message, out appendEntriesResponse))
+				Handle(envelope.Source, appendEntriesResponse);
+			else if (TryCastMessage(envelope.Message, out appendEntriesRequest))
+				Handle(envelope.Source, appendEntriesRequest);
+			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
+				Handle(envelope.Source, requestVoteResponse);
 		}
 
-		public event Action HeartbeatTimeout;
-
-		protected virtual void OnTimeout()
+		public virtual void Handle(string source, RequestVoteResponse resp)
 		{
-			var handler = HeartbeatTimeout;
-			if (handler != null) handler();
+			Engine.AllVotingPeers = Engine.AllVotingPeers.Concat(new[] {source});
 		}
+
+		protected static bool TryCastMessage<T>(object abstractMessage, out T typedMessage)
+			where T : class
+		{
+			typedMessage = abstractMessage as T;
+			return typedMessage != null;
+		}
+
+		public abstract void HandleTimeout();
 
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
 			Engine = engine;
-			HeartbeatTimer = Stopwatch.StartNew();
-			engine.Transport.RegisterHandler<RequestVoteRequest>(this);
-			engine.Transport.RegisterHandler<AppendEntriesRequest>(this);
-			engine.Transport.RegisterHandler<AppendEntriesResponse>(this);
 		}
 
-		public virtual void Handle(string source, AppendEntriesResponse resp)
+		public void Handle(string source, RequestVoteRequest req)
 		{
-			HandleTimeout();
-			// not a leader, no idea what to do with this. Probably an old
-			// message from when we were a leader, ignoring.			
-		}
-
-		public virtual void Handle(string source, RequestVoteRequest req)
-		{
-			if (HandleTimeout())
-				return;
-
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
@@ -113,15 +114,14 @@ namespace Rhino.Raft.Behaviors
 			});
 		}
 
-		public void HandleTimeout()
+		public virtual void Handle(string source, AppendEntriesResponse resp)
 		{
-		
+			// not a leader, no idea what to do with this. Probably an old
+			// message from when we were a leader, ignoring.			
 		}
-		
+	
 		public virtual void Handle(string source, AppendEntriesRequest req)
 		{
-			if (HandleTimeout())
-				return;
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
@@ -162,11 +162,13 @@ namespace Rhino.Raft.Behaviors
 				Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
 			}
 
+			var lastIndex = req.Entries[req.Entries.Length - 1].Index;
+
 			if (req.LeaderCommit > Engine.CommitIndex)
 			{
 				long oldCommitIndex = Engine.CommitIndex;
 
-				Engine.CommitIndex = Math.Min(req.LeaderCommit, req.Entries[req.Entries.Length - 1].Index);
+				Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
 
 				Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 			}
@@ -175,7 +177,13 @@ namespace Rhino.Raft.Behaviors
 			{
 				Success = true,
 				CurrentTerm = Engine.PersistentState.CurrentTerm,
+				LastLogIndex = lastIndex
 			});
-		}		
+		}
+
+		public virtual void Dispose()
+		{
+			
+		}
 	}
 }

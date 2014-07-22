@@ -4,7 +4,7 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System.Threading;
+using System;
 
 namespace Rhino.Raft.Behaviors
 {
@@ -12,19 +12,12 @@ namespace Rhino.Raft.Behaviors
     {
 	    public FollowerStateBehavior(RaftEngine engine) : base(engine)
 	    {
-		    HeartbeatTimeout += HandleHeartbeatTimeout;
+		    Timeout = new Random().Next(engine.ElectionTimeout/2, engine.ElectionTimeout);
 	    }
 
-
-	    public void HandleHeartbeatTimeout()
+	    public override void HandleTimeout()
 	    {
-		    Engine.AnnounceCandidacy();
-	    }
-
-	    public override void RunOnce()
-		{
-			//nothing to do here
-			Thread.Sleep(100);
+			Engine.AnnounceCandidacy();
 		}
-	}
+    }
 }

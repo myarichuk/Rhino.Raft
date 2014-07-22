@@ -8,6 +8,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Rhino.Raft.Behaviors;
@@ -15,13 +16,12 @@ using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
-using Voron;
 
 namespace Rhino.Raft
 {
-	public class RaftEngine
+	public class RaftEngine : IDisposable
 	{
-		private readonly CancellationToken _cancellationToken;
+		private readonly CancellationTokenSource _cancellationToken;
 		public TextWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
 		public IRaftStateMachine StateMachine { get; set; }
@@ -31,56 +31,76 @@ namespace Rhino.Raft
 		public PersistentState PersistentState { get; set; }
 		public ICommandSerializer CommandSerializer { get; set; }
 		public string CurrentLeader { get; set; }
-		public long CommitIndex { get; set; }
+
+		/// <summary>
+		/// This is a thread safe operation, since this is being used by both the leader's message processing thread
+		/// and the leader's heartbeat thread
+		/// </summary>
+		public long CommitIndex
+		{
+			get { return Thread.VolatileRead(ref _commitIndex); }
+			set { Interlocked.Exchange(ref _commitIndex, value); }
+		}
+
 		public int QuorumSize { get; set; }
 
 		public RaftEngineState State { get; private set; }
 
 		public int MaxEntriesPerRequest { get; set; }
 
-		private Task _eventLoopTask;
+		private readonly Task _eventLoopTask;
 
-		private BlockingCollection<MessageEnvelope> _messages = new BlockingCollection<MessageEnvelope>();
+		private readonly BlockingCollection<MessageEnvelope> _messages = new BlockingCollection<MessageEnvelope>();
+		private long _commitIndex;
 
 		private AbstractRaftStateBehavior StateBehavior { get; set; }
 
-		public RaftEngine(string name, StorageEnvironmentOptions options, ITransport transport, IRaftStateMachine stateMachine, CancellationToken cancellationToken)
+		public int ElectionTimeout { get; set; }
+		public CancellationToken CancellationToken { get { return _cancellationToken.Token; } }
+
+		public event Action<RaftEngineState> StateChanged;
+
+		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
-			_cancellationToken = cancellationToken;
-			if (transport == null) throw new ArgumentNullException("transport");
-			if (stateMachine == null) throw new ArgumentNullException("stateMachine");
-			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
+			AllPeers = raftEngineOptions.AllPeers ?? new List<string>();
+			AllVotingPeers = new List<string>();
+			CommandSerializer = new JsonCommandSerializer();
+
+			_cancellationToken = new CancellationTokenSource();
 
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
-			Name = name;
-			PersistentState = new PersistentState(options, cancellationToken);
-			Transport = transport;
-			StateMachine = stateMachine;
-			SetState(RaftEngineState.Follower);
-			CommandSerializer = new JsonCommandSerializer();
+			Name = raftEngineOptions.Name;
+			PersistentState = new PersistentState(raftEngineOptions.Options, _cancellationToken.Token);
+			Transport = raftEngineOptions.Transport;
+			StateMachine = raftEngineOptions.StateMachine;
+
+			SetState(AllPeers.Any() ? RaftEngineState.Follower : RaftEngineState.Leader);
+
+			DebugLog = Console.Out;
 
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
 
 		protected void EventLoop()
 		{
-			while (true)
+			while (_cancellationToken.IsCancellationRequested == false)
 			{
-				_cancellationToken.ThrowIfCancellationRequested();
-				MessageEnvelope item;
-				var hasMessage = _messages.TryTake(out item, StateBehavior.Timeout, _cancellationToken);
-				if (hasMessage == false)
+				try
 				{
-					StateBehavior.HandleTimeout();
-					continue;
-				}
+					MessageEnvelope message;
+					var hasMessage = _messages.TryTake(out message, StateBehavior.Timeout, _cancellationToken.Token);
 
-				// dispatch message
-				var appendEntriesRequest = item.Message as AppendEntriesRequest;
-				if (appendEntriesRequest != null)
+					if (hasMessage == false)
+					{
+						StateBehavior.HandleTimeout();
+						continue;
+					}
+
+					StateBehavior.HandleMessage(message);
+				}
+				catch (OperationCanceledException)
 				{
-					StateBehavior.Handle(item.Source, appendEntriesRequest);
-					continue;
+					break;
 				}
 			}
 		}
@@ -91,24 +111,29 @@ namespace Rhino.Raft
 			PersistentState.UpdateTermTo(term);
 			SetState(RaftEngineState.Follower);
 			CurrentLeader = null;
-
 		}
 
 		internal void SetState(RaftEngineState state)
 		{
 			State = state;
-			switch (state)
+			var oldState = StateBehavior;
+			using (oldState)
 			{
-				case RaftEngineState.Follower:
-					StateBehavior = new FollowerStateBehavior(this);
-					break;
-				case RaftEngineState.Candidate:
-					StateBehavior = new CandidateStateBehavior(this);
-					break;
-				case RaftEngineState.Leader:
-					StateBehavior = new LeaderStateBehavior(this);
-					break;
+				switch (state)
+				{
+					case RaftEngineState.Follower:
+						StateBehavior = new FollowerStateBehavior(this);
+						break;
+					case RaftEngineState.Candidate:
+						StateBehavior = new CandidateStateBehavior(this);
+						break;
+					case RaftEngineState.Leader:
+						StateBehavior = new LeaderStateBehavior(this);
+						break;
+				}
 			}
+
+			OnStateChanged(state);
 		}
 
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
@@ -152,11 +177,17 @@ namespace Rhino.Raft
 			}
 		}
 
-		internal void FireAndForgetCommand(Command cmd)
+		public void Dispose()
 		{
-			if (State != RaftEngineState.Leader)
-				throw new InvalidOperationException("Only leaders can accept commands");
-			Transport.Send(cmd);
+			_cancellationToken.Cancel();
+			_eventLoopTask.Wait();
+			PersistentState.Dispose();
+		}
+
+		protected virtual void OnStateChanged(RaftEngineState state)
+		{
+			var handler = StateChanged;
+			if (handler != null) handler(state);
 		}
 
 	}

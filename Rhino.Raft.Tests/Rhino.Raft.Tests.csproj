@@ -55,7 +55,6 @@
   <ItemGroup>
     <Compile Include="DictionaryCommand.cs" />
     <Compile Include="DictionaryStateMachine.cs" />
-    <Compile Include="InMemoryTransportTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftTests.cs" />
   </ItemGroup>

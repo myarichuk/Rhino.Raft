@@ -6,6 +6,7 @@
 
 using System;
 using System.Data;
+using System.Diagnostics;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
@@ -14,24 +15,14 @@ namespace Rhino.Raft.Behaviors
 {
 	public class CandidateStateBehavior : AbstractRaftStateBehavior, IHandler<RequestVoteResponse>
     {
-	    private readonly Random _random = new Random();
-		private readonly TimeSpan _timeout;
+		private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+		public int VotesForMyLeadership { get; set; }
 
 		public CandidateStateBehavior(RaftEngine engine) : base(engine)
-	    {
-			Engine.Transport.RegisterHandler<RequestVoteResponse>(this);
-		    _timeout = Engine.ElectionTimeout;
+		{
+			Timeout = new Random().Next(engine.ElectionTimeout/2, engine.ElectionTimeout);
 			VoteForSelf();
 	    }
-
-		public override void RunOnce()
-		{
-			var remaining = _timeout - HeartbeatTimer.Elapsed;
-			if(remaining <= TimeSpan.Zero)
-				HandleTimeout();
-
-			Thread.Sleep(remaining);
-		}
 
 		private void VoteForSelf()
 		{
@@ -44,27 +35,27 @@ namespace Rhino.Raft.Behaviors
 				});
 		}
 
-	    public void HandleTimeout()
+		public override void HandleTimeout()
 	    {
 			Engine.DebugLog.WriteLine("Timeout for elections in term {0} for {1}", Engine.PersistentState.CurrentTerm,
 				  Engine.Name);
-		    var timeInMs = _random.Next(Engine.ElectionTimeout.Milliseconds / 6,
-			    Engine.ElectionTimeout.Milliseconds / 2);
-
-			Engine.Transport.HeartbeatTimeout = TimeSpan.FromMilliseconds(timeInMs);			
 
 			VotesForMyLeadership = 0;
 			Engine.AnnounceCandidacy();
 			VoteForSelf();
 	    }
 
-		public void Handle(string source,RequestVoteResponse resp)
+		public override void Handle(string source,RequestVoteResponse resp)
 		{
+			base.Handle(source,resp);
 			if (resp.Term > Engine.PersistentState.CurrentTerm)
 			{
 				Engine.UpdateCurrentTerm(resp.Term);
 				return;
 			}
+
+			Timeout -= (int)_stopwatch.ElapsedMilliseconds;
+			_stopwatch.Restart();
 
 			if (resp.VoteGranted)
 			{
@@ -76,6 +67,5 @@ namespace Rhino.Raft.Behaviors
 			}
 		}
 
-	    public int VotesForMyLeadership { get; set; }
     }
 }

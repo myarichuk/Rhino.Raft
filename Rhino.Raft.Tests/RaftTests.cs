@@ -11,29 +11,50 @@ namespace Rhino.Raft.Tests
 {
 	public class RaftTests
 	{
-		private readonly CancellationTokenSource _cancellationTokenSource;
-
-		public RaftTests()
-		{
-			_cancellationTokenSource = new CancellationTokenSource();
+		[Fact]
+		public void Single_nod_is_a_leader_automatically()
+		{			
+			using (
+				var raftNode =
+					new RaftEngine(new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), new InMemoryTransport(),
+						new DictionaryStateMachine())))
+			{
+				Assert.Equal(RaftEngineState.Leader, raftNode.State);
+			}
 		}
 
 		[Fact]
 		public void AfterHeartbeatTimeout_Node_should_change_state_to_candidate()
 		{
-			using(var transport = new InMemoryTransport("node1"))
+			var candidateChangeEvent = new ManualResetEventSlim();
+			var transport = new InMemoryTransport();
+			using (
+				var raftNode1 =
+					new RaftEngine(new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), transport,
+						new DictionaryStateMachine())
+					{
+						AllPeers = new[] { "node2" }
+					})
+					{
+						ElectionTimeout = 1000						
+					})
+			using (
+				var raftNode2 =
+					new RaftEngine(new RaftEngineOptions("node2", StorageEnvironmentOptions.CreateMemoryOnly(), transport,
+						new DictionaryStateMachine())
+					{
+						AllPeers = new[] { "node1" }
+					})
+					{
+						ElectionTimeout = 1000000						
+					})
 			{
-				var raftNode1 = new RaftEngine("node1",
-					StorageEnvironmentOptions.CreateMemoryOnly(),
-					transport,
-					new DictionaryStateMachine(), _cancellationTokenSource.Token)
-				{
-					HeartbeatTimeout = TimeSpan.FromSeconds(1)
-				};
+				//less election timeout --> will send vote request sooner, and thus expected to become candidate first
+				raftNode1.StateChanged += state => candidateChangeEvent.Set();
 
-				Thread.Sleep(1005);
-
+				Assert.True(candidateChangeEvent.Wait(1000));
 				Assert.Equal(RaftEngineState.Candidate, raftNode1.State);
+				Assert.Equal(RaftEngineState.Follower, raftNode2.State);
 			}
 		}
 	}

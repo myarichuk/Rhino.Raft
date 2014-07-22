@@ -5,30 +5,30 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
 {
-    public class LeaderStateBehavior : AbstractRaftStateBehavior, IHandler<Command>
-    {
+	public class LeaderStateBehavior : AbstractRaftStateBehavior
+	{
 		private readonly Dictionary<string, long> _matchIndexes = new Dictionary<string, long>();
-		private readonly Dictionary<string, long> _nextIndexes = new Dictionary<string, long>();
-		
-		private readonly Stopwatch _timer;
-	    private bool _bufferCommand;
+		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>();
+
+		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
+
+		private readonly Task _heartbeatTask;
 
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
-			Engine.Transport.RegisterHandler<Command>(this);
-
-			_timer = Stopwatch.StartNew();
 			var lastLogEntry = Engine.PersistentState.LastLogEntry() ?? new LogEntry();
 
 			foreach (var peer in Engine.AllPeers)
@@ -37,27 +37,25 @@ namespace Rhino.Raft.Behaviors
 				_matchIndexes[peer] = 0;
 			}
 
-			Engine.FireAndForgetCommand(new NopCommand());
-			_bufferCommand = true;
+			AppendCommand(new NopCommand());
+
+			_heartbeatTask = Task.Run(() => Heartbeat(), Engine.CancellationToken);
 		}
 
-	    public override void RunOnce()
-	    {
-			var remaining = Engine.HeartbeatTimeout - _timer.Elapsed;
-			if (_bufferCommand == false || remaining <= TimeSpan.Zero)
+		private void Heartbeat()
+		{
+			while (Engine.State == RaftEngineState.Leader && !Engine.CancellationToken.IsCancellationRequested)
 			{
-				_bufferCommand = true;
-				_timer.Restart();
+				Engine.CancellationToken.ThrowIfCancellationRequested();
 
 				foreach (var peer in Engine.AllPeers)
 				{
 					SendEntriesToPeer(peer);
 				}
+
+				Thread.Sleep(Engine.ElectionTimeout/6);
 			}
-
-			Thread.Sleep(remaining);
 		}
-
 
 		private void SendEntriesToPeer(string peer)
 		{
@@ -88,6 +86,11 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.Leader; }
 		}
 
+		public override void HandleTimeout()
+		{
+			// we don't have to do anything here
+		}
+
 		public override void Handle(string source, AppendEntriesResponse resp)
 		{
 			// there is a new leader in town, time to step down
@@ -96,21 +99,58 @@ namespace Rhino.Raft.Behaviors
 				Engine.UpdateCurrentTerm(resp.CurrentTerm);
 				return;
 			}
+
 			if (resp.Success == false)
 			{
 				// go back in the log, this peer isn't matching us at this location
 				_nextIndexes[source] = _nextIndexes[source] - 1;
+				return;
 			}
+
+			_matchIndexes[source] = resp.LastLogIndex;
+
+			var maxIndexOnQuorom = GetMaxindexOnQuorom();
+
+			if (maxIndexOnQuorom <= Engine.CommitIndex)
+				return;
+
+			Engine.ApplyCommits(Engine.CommitIndex, maxIndexOnQuorom);
 		}
 
-		public void Handle(string source, Command command)
-	    {
-		    if (command != null)
-		    {
-			    _bufferCommand &= command.BufferCommand;
-			    var commandEntry = Engine.CommandSerializer.Serialize(command);
-			    command.AssignedIndex = Engine.PersistentState.AppendToLeaderLog(commandEntry);
-		    }
-	    }
-    }
+		private long GetMaxindexOnQuorom()
+		{
+			var dic = new Dictionary<long, int>();
+			foreach (var matchIndex in _matchIndexes)
+			{
+				var index = matchIndex.Value;
+				int count;
+				dic.TryGetValue(index, out count);
+
+				dic[index] = count + 1;
+			}
+
+			var boost = 0;
+			foreach (var source in dic.OrderByDescending(x => x.Key))
+			{
+				var confirmationsForThisIndex = source.Value + boost;
+				boost += source.Value;
+				if (confirmationsForThisIndex >= Engine.QuorumSize)
+					return source.Key;
+			}
+
+			return -1;
+		}
+
+		public void AppendCommand(Command command)
+		{
+			var commandEntry = Engine.CommandSerializer.Serialize(command);
+			command.AssignedIndex = Engine.PersistentState.AppendToLeaderLog(commandEntry);
+			_pendingCommands.Enqueue(command);
+		}
+
+		public override void Dispose()
+		{
+			_heartbeatTask.Wait();
+		}
+	}
 }
