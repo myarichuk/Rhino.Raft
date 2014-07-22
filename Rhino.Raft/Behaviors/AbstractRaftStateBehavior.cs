@@ -7,7 +7,7 @@ using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
 {
-	public abstract class AbstractRaftStateBehavior : IHandler<RequestVoteRequest>, IHandler<AppendEntriesRequest>, IHandler<AppendEntriesResponse>
+	public abstract class AbstractRaftStateBehavior
 	{
 		protected readonly RaftEngine Engine;
 		protected readonly Stopwatch HeartbeatTimer;
@@ -16,6 +16,8 @@ namespace Rhino.Raft.Behaviors
 		{
 			get { return Engine.Name; }
 		}
+
+		public int Timeout { get; set; }
 
 		public virtual void RunOnce()
 		{
@@ -111,17 +113,9 @@ namespace Rhino.Raft.Behaviors
 			});
 		}
 
-		private bool HandleTimeout()
+		public void HandleTimeout()
 		{
-			bool isTimeout = false;
-			if (HeartbeatTimer.ElapsedMilliseconds > Engine.HeartbeatTimeout.TotalMilliseconds)
-			{
-				isTimeout = true;
-				OnTimeout();
-			}
-
-			HeartbeatTimer.Reset();
-			return isTimeout;
+		
 		}
 		
 		public virtual void Handle(string source, AppendEntriesRequest req)

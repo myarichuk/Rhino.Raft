@@ -1,4 +1,6 @@
 using System;
+using System.Security.Cryptography.X509Certificates;
+using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Interfaces
 {
@@ -8,15 +10,10 @@ namespace Rhino.Raft.Interfaces
 	/// </summary>
 	public interface ITransport
 	{
-		TimeSpan HeartbeatTimeout { get; set; }
-
-		void Send<T>(string dest, T message);
-		
-		void Send<T>(T message);
-
-		void RegisterHandler<T>(IHandler<T> messageHandler);
-
-		void Unregister<T>(IHandler<T> messageHandler);
+		void Send(string dest, AppendEntriesRequest req);
+		void Send(string dest, RequestVoteRequest req);
+		void Send(string dest, AppendEntriesResponse resp);
+		void Send(string dest, RequestVoteResponse resp);
 	}
 
 }
