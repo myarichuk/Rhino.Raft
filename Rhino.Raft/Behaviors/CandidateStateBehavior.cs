@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System;
+using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -15,9 +16,14 @@ namespace Rhino.Raft.Behaviors
 
 	    public CandidateStateBehavior(RaftEngine engine) : base(engine)
 	    {
-			Engine.Transport.Register<RequestVoteResponse>(this);
+			Engine.Transport.RegisterHandler<RequestVoteResponse>(this);
 			VoteForSelf();
 	    }
+
+		public override void RunOnce()
+		{
+			//TODO : finish logic here
+		}
 
 		private void VoteForSelf()
 		{

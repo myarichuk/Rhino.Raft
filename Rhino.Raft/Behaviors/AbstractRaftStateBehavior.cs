@@ -1,11 +1,11 @@
 using System;
-using Consensus.Raft;
+using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
 
 namespace Rhino.Raft.Behaviors
 {
-	public abstract class AbstractRaftStateBehavior : IHandler<RequestVoteRequest>, IHandler<AppendEntriesRequest>
+	public abstract class AbstractRaftStateBehavior : IHandler<RequestVoteRequest>, IHandler<AppendEntriesRequest>, IHandler<AppendEntriesResponse>
 	{
 		protected readonly RaftEngine Engine;
 
@@ -14,11 +14,20 @@ namespace Rhino.Raft.Behaviors
 			get { return Engine.Name; }
 		}
 
+		public abstract void RunOnce();
+
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
 			Engine = engine;
-			engine.Transport.Register<RequestVoteRequest>(this);
-			engine.Transport.Register<AppendEntriesRequest>(this);
+			engine.Transport.RegisterHandler<RequestVoteRequest>(this);
+			engine.Transport.RegisterHandler<AppendEntriesRequest>(this);
+			engine.Transport.RegisterHandler<AppendEntriesResponse>(this);
+		}
+
+		public virtual void Handle(string source, AppendEntriesResponse resp)
+		{
+			// not a leader, no idea what to do with this. Probably an old
+			// message from when we were a leader, ignoring.			
 		}
 
 		public virtual void Handle(string source, RequestVoteRequest req)

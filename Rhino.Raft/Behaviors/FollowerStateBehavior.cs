@@ -23,5 +23,10 @@ namespace Rhino.Raft.Behaviors
 	    {
 		    Engine.AnnounceCandidacy();
 	    }
-    }
+
+	    public override void RunOnce()
+		{
+			
+		}
+	}
 }

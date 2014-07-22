@@ -4,9 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Consensus.Raft;
+using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
-using Voron.Impl;
 
 namespace Rhino.Raft
 {
@@ -30,7 +29,6 @@ namespace Rhino.Raft
 			_cancellationTokenSource = new CancellationTokenSource();
 			_handlersByType = new ConcurrentDictionary<Type, List<dynamic>>();
 			_messageQueue = new BlockingCollection<MessageEnvelope>();
-
 
 			Task.Run(() => DispatchMessages(), _cancellationTokenSource.Token);
 		}
@@ -69,7 +67,7 @@ namespace Rhino.Raft
 
 							foreach (var handler in handlers)
 							{
-								handler.Handle(messageEnvelope.Destination, message);
+								handler.Handle(messageEnvelope.Source, message);
 							}
 						}
 					}
@@ -78,7 +76,7 @@ namespace Rhino.Raft
 		}
 
 
-		public void Register<T>(IHandler<T> messageHandler)
+		public void RegisterHandler<T>(IHandler<T> messageHandler)
 		{
 			if (messageHandler == null) throw new ArgumentNullException("messageHandler");
 
@@ -109,6 +107,7 @@ namespace Rhino.Raft
 		public void Dispose()
 		{
 			_messageQueue.CompleteAdding();
+			_cancellationTokenSource.Cancel();
 		}
 	}
 }

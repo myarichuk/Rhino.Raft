@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
+using Rhino.Raft.Interfaces;
 using Xunit;
 
 namespace Rhino.Raft.Tests
@@ -45,7 +43,7 @@ namespace Rhino.Raft.Tests
 		public void Subscriber_should_receive_messages_in_order()
 		{
 			var messages = new List<MessageA>();
-			for (int i = 0; i < 1000; i++)
+			for (int i = 0; i < 250; i++)
 				messages.Add(new MessageA{ Id = "A/" + i });
 
 			var receivedMessages = new ConcurrentQueue<MessageA>();
@@ -63,7 +61,7 @@ namespace Rhino.Raft.Tests
 			};
 			using (var transport = new InMemoryTransport("sourceNode"))
 			{
-				transport.Register(subscriber);
+				transport.RegisterHandler(subscriber);
 				
 				foreach(var message in messages)
 					transport.Send("A",message);
@@ -87,9 +85,8 @@ namespace Rhino.Raft.Tests
 				var subscriber1 = new Subscriber<MessageA>
 				{
 					Name = "A",
-					ValidateMessage = (destination, message) =>
+					ValidateMessage = (source, message) =>
 					{
-						Assert.Equal("A", destination);
 						Assert.Equal("ABC",message.Id);
 						messageReceivedEvent.Signal();
 					}
@@ -98,21 +95,20 @@ namespace Rhino.Raft.Tests
 				var subscriber2 = new Subscriber<MessageA>
 				{
 					Name = "A",
-					ValidateMessage = (destination, message) =>
+					ValidateMessage = (source, message) =>
 					{
-						Assert.Equal("A", destination);
 						Assert.Equal("ABC", message.Id);
 						messageReceivedEvent.Signal();						
 					}
 				};
 
-				transport.Register(subscriber1);
-				transport.Register(subscriber2);
+				transport.RegisterHandler(subscriber1);
+				transport.RegisterHandler(subscriber2);
 
 				transport.Send("A", new MessageB { Id = "BCD" });
 				transport.Send("A", new MessageA { Id = "ABC" });
 
-				Assert.True(messageReceivedEvent.Wait(300000));
+				Assert.True(messageReceivedEvent.Wait(20000));
 
 				Assert.True(subscriber1.HasReceivedMessage);
 				Assert.True(subscriber2.HasReceivedMessage);

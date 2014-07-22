@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
-using Consensus.Raft;
 using Rhino.Raft.Messages;
 using Voron;
 using Voron.Util.Conversion;
@@ -74,6 +73,30 @@ namespace Rhino.Raft.Storage
 				tx.Commit();
 			}
 		}
+
+		public long AppendToLeaderLog(byte[] commandEntry)
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
+			{
+				var logs = tx.ReadTree(LogsTreeName);
+				var terms = tx.ReadTree(EntryTermsTreeName);
+				var lastEntry = 0L;
+				var lastKey = logs.LastKeyOrDefault();
+				if (lastKey != null)
+					lastEntry = lastKey.CreateReader().ReadBigEndianInt64();
+
+				var nextEntryId = lastEntry + 1;
+				var key = new Slice(EndianBitConverter.Big.GetBytes(nextEntryId));
+
+				logs.Add(key, commandEntry);
+				terms.Add(key, BitConverter.GetBytes(CurrentTerm));
+
+				tx.Commit();
+
+				return nextEntryId;
+			}
+		}
+
 
 		public long? TermFor(long logIndex)
 		{

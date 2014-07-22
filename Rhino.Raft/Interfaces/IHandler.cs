@@ -1,4 +1,4 @@
-﻿namespace Rhino.Raft
+﻿namespace Rhino.Raft.Interfaces
 {
 	public interface IHandler<in T>
 	{
