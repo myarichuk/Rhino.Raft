@@ -4,29 +4,27 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using Rhino.Raft.Messages;
+using System.Threading;
 
 namespace Rhino.Raft.Behaviors
 {
     public class FollowerStateBehavior : AbstractRaftStateBehavior
     {
 	    public FollowerStateBehavior(RaftEngine engine) : base(engine)
-        {
-        }
-
-	    public void Handle(string source, RequestVoteRequest req)
 	    {
-		    
+		    HeartbeatTimeout += HandleHeartbeatTimeout;
 	    }
 
-	    public void Timeout()
+
+	    public void HandleHeartbeatTimeout()
 	    {
 		    Engine.AnnounceCandidacy();
 	    }
 
 	    public override void RunOnce()
 		{
-			
+			//nothing to do here
+			Thread.Sleep(100);
 		}
 	}
 }

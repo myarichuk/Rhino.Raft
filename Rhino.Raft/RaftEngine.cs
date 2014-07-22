@@ -85,8 +85,21 @@ namespace Rhino.Raft
 
 		}
 
-		internal void SetState(RaftEngineState raftEngineState)
+		internal void SetState(RaftEngineState state)
 		{
+			State = state;
+			switch (state)
+			{
+					case RaftEngineState.Follower:
+						_currentBehavior = new FollowerStateBehavior(this);
+					break;
+					case RaftEngineState.Candidate:
+						_currentBehavior = new CandidateStateBehavior(this);
+					break;
+					case RaftEngineState.Leader:
+						_currentBehavior = new LeaderStateBehavior(this);
+					break;
+			}
 		}
 
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)

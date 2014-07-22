@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -8,6 +9,7 @@ namespace Rhino.Raft.Behaviors
 	public abstract class AbstractRaftStateBehavior : IHandler<RequestVoteRequest>, IHandler<AppendEntriesRequest>, IHandler<AppendEntriesResponse>
 	{
 		protected readonly RaftEngine Engine;
+		protected readonly Stopwatch HeartbeatTimer;
 
 		public string Name
 		{
@@ -16,9 +18,18 @@ namespace Rhino.Raft.Behaviors
 
 		public abstract void RunOnce();
 
+		public event Action HeartbeatTimeout;
+
+		protected virtual void OnTimeout()
+		{
+			var handler = HeartbeatTimeout;
+			if (handler != null) handler();
+		}
+
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
 			Engine = engine;
+			HeartbeatTimer = Stopwatch.StartNew();
 			engine.Transport.RegisterHandler<RequestVoteRequest>(this);
 			engine.Transport.RegisterHandler<AppendEntriesRequest>(this);
 			engine.Transport.RegisterHandler<AppendEntriesResponse>(this);
@@ -26,12 +37,16 @@ namespace Rhino.Raft.Behaviors
 
 		public virtual void Handle(string source, AppendEntriesResponse resp)
 		{
+			HandleTimeout();
 			// not a leader, no idea what to do with this. Probably an old
 			// message from when we were a leader, ignoring.			
 		}
 
 		public virtual void Handle(string source, RequestVoteRequest req)
 		{
+			if (HandleTimeout())
+				return;
+
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
@@ -88,8 +103,23 @@ namespace Rhino.Raft.Behaviors
 			});
 		}
 
+		private bool HandleTimeout()
+		{
+			bool isTimeout = false;
+			if (HeartbeatTimer.ElapsedMilliseconds > Engine.HeartbeatTimeout.TotalMilliseconds)
+			{
+				isTimeout = true;
+				OnTimeout();
+			}
+
+			HeartbeatTimer.Reset();
+			return isTimeout;
+		}
+		
 		public virtual void Handle(string source, AppendEntriesRequest req)
 		{
+			if (HandleTimeout())
+				return;
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
@@ -107,6 +137,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				Engine.UpdateCurrentTerm(req.Term);
 			}
+
 			Engine.CurrentLeader = req.LeaderId;
 			long prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
 			if (prevTerm != req.PrevLogTerm)

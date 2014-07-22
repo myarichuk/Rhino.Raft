@@ -5,6 +5,8 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Data;
+using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -13,16 +15,22 @@ namespace Rhino.Raft.Behaviors
 	public class CandidateStateBehavior : AbstractRaftStateBehavior, IHandler<RequestVoteResponse>
     {
 	    private readonly Random _random = new Random();
+		private readonly TimeSpan _timeout;
 
-	    public CandidateStateBehavior(RaftEngine engine) : base(engine)
+		public CandidateStateBehavior(RaftEngine engine) : base(engine)
 	    {
 			Engine.Transport.RegisterHandler<RequestVoteResponse>(this);
+		    _timeout = Engine.ElectionTimeout;
 			VoteForSelf();
 	    }
 
 		public override void RunOnce()
 		{
-			//TODO : finish logic here
+			var remaining = _timeout - HeartbeatTimer.Elapsed;
+			if(remaining <= TimeSpan.Zero)
+				HandleTimeout();
+
+			Thread.Sleep(remaining);
 		}
 
 		private void VoteForSelf()
@@ -36,7 +44,7 @@ namespace Rhino.Raft.Behaviors
 				});
 		}
 
-	    public void Timeout()
+	    public void HandleTimeout()
 	    {
 			Engine.DebugLog.WriteLine("Timeout for elections in term {0} for {1}", Engine.PersistentState.CurrentTerm,
 				  Engine.Name);
