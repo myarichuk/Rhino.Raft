@@ -105,7 +105,6 @@ namespace Rhino.Raft
 			}
 		}
 
-
 		internal void UpdateCurrentTerm(long term)
 		{
 			PersistentState.UpdateTermTo(term);
