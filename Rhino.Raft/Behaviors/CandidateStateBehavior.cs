@@ -13,10 +13,16 @@ using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
 {
-	public class CandidateStateBehavior : AbstractRaftStateBehavior, IHandler<RequestVoteResponse>
+	public class CandidateStateBehavior : AbstractRaftStateBehavior
     {
 		private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
-		public int VotesForMyLeadership { get; set; }
+		private int _votesForMyLeadership;
+
+		public int VotesForMyLeadership
+		{
+			get { return _votesForMyLeadership; }
+			set { _votesForMyLeadership = value; }
+		}
 
 		public CandidateStateBehavior(RaftEngine engine) : base(engine)
 		{
@@ -31,7 +37,8 @@ namespace Rhino.Raft.Behaviors
 				new RequestVoteResponse
 				{
 					Term = Engine.PersistentState.CurrentTerm,
-					VoteGranted = true
+					VoteGranted = true,
+					Message = String.Format("Voting for myself, node = {0}", Engine.Name)
 				});
 		}
 
@@ -47,7 +54,8 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string source,RequestVoteResponse resp)
 		{
-			base.Handle(source,resp);
+			Engine.DebugLog.WriteLine("Received RequestVoteResponse on node = {2}, Term = {0}, VoteGranted = {1}, Message = {3}", resp.Term,resp.VoteGranted,Engine.Name,resp.Message);
+
 			if (resp.Term > Engine.PersistentState.CurrentTerm)
 			{
 				Engine.UpdateCurrentTerm(resp.Term);
@@ -55,16 +63,25 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			Timeout -= (int)_stopwatch.ElapsedMilliseconds;
+			if (Timeout <= 0)
+			{
+				Timeout = 0;
+				return;
+			}
+
 			_stopwatch.Restart();
 
-			if (resp.VoteGranted)
+			if (!resp.VoteGranted)
 			{
-				VotesForMyLeadership += 1;
-				if (VotesForMyLeadership < Engine.QuorumSize)
-					return;
-				Engine.DebugLog.WriteLine("{0} was selected as leader", Engine.Name);
-				Engine.SetState(RaftEngineState.Leader);
+				return;
 			}
+
+			Interlocked.Increment(ref _votesForMyLeadership);
+			if (_votesForMyLeadership < Engine.QuorumSize)
+				return;
+
+			Engine.DebugLog.WriteLine("{0} was selected as leader", Engine.Name);
+			Engine.SetState(RaftEngineState.Leader);
 		}
 
     }

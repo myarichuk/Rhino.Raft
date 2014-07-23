@@ -26,7 +26,7 @@ namespace Rhino.Raft
 		}
 
 		public bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope)
-		{
+		{			
 			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
 			return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}

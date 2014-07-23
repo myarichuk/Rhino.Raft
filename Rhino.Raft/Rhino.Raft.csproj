@@ -55,7 +55,6 @@
     <Compile Include="Commands\NopCommand.cs" />
     <Compile Include="Default.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
-    <Compile Include="Interfaces\IHandler.cs" />
     <Compile Include="InMemoryTransport.cs" />
     <Compile Include="Interfaces\IRaftStateMachine.cs" />
     <Compile Include="Interfaces\ITransport.cs" />

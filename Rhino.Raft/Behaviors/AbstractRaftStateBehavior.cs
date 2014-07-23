@@ -57,6 +57,7 @@ namespace Rhino.Raft.Behaviors
 
 		public void Handle(string destination, RequestVoteRequest req)
 		{
+			Engine.DebugLog.WriteLine("Received RequestVoteRequest on node = {2}, req.CandidateId = {0}, term = {1}", req.CandidateId,req.Term, Engine.Name);
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
@@ -105,7 +106,7 @@ namespace Rhino.Raft.Behaviors
 			}
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
 
-			Engine.Transport.Send(destination, new RequestVoteResponse
+			Engine.Transport.Send(req.CandidateId, new RequestVoteResponse
 			{
 				VoteGranted = true,
 				Term = Engine.PersistentState.CurrentTerm,
@@ -115,6 +116,8 @@ namespace Rhino.Raft.Behaviors
 
 		public virtual void Handle(string destination, AppendEntriesResponse resp)
 		{
+			Engine.DebugLog.WriteLine("Received AppendEntriesResponse, CurrentTerm = {0}", resp.CurrentTerm);
+
 			// not a leader, no idea what to do with this. Probably an old
 			// message from when we were a leader, ignoring.			
 		}

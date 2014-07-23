@@ -32,6 +32,6 @@ namespace Rhino.Raft
 
 		public IRaftStateMachine StateMachine { get; private set; }
 
-		public int MessageTimeout { get; private set; }
+		public int MessageTimeout { get; set; }
 	}
 }

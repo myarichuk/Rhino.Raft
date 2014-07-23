@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Rhino.Raft.Interfaces;
 using Voron;
 using Xunit;
 
@@ -32,18 +33,11 @@ namespace Rhino.Raft.Tests
 		{
 			var candidateChangeEvent = new ManualResetEventSlim();
 			var transport = new InMemoryTransport();
-			using (
-				var raftNode1 =
-					new RaftEngine(new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), transport,
-						new DictionaryStateMachine(),1000)
-					{
-						AllPeers = new[] { "node2" }
-					}))
-			using (new RaftEngine(new RaftEngineOptions("node2", StorageEnvironmentOptions.CreateMemoryOnly(), transport,
-				new DictionaryStateMachine(),10000)
-			{
-				AllPeers = new[] { "node1" }
-			}))
+			var node1Options = CreateNodeOptions("node1", transport, 1000, "node2");
+			var node2Options = CreateNodeOptions("node2", transport, 10000, "node1");
+
+			using (var raftNode1 = new RaftEngine(node1Options))
+			using (new RaftEngine(node2Options))
 			{
 				//less election timeout --> will send vote request sooner, and thus expected to become candidate first
 				raftNode1.StateChanged += state => candidateChangeEvent.Set();
@@ -58,18 +52,12 @@ namespace Rhino.Raft.Tests
 		{
 			var candidateChangeEvent = new CountdownEvent(2);
 			var transport = new InMemoryTransport();
-			using (
-				var raftNode1 =
-					new RaftEngine(new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), transport,
-						new DictionaryStateMachine(),1000)
-					{
-						AllPeers = new[] { "node2" }
-					}))
-			using (var raftNode2 = new RaftEngine(new RaftEngineOptions("node2", StorageEnvironmentOptions.CreateMemoryOnly(), transport,
-				new DictionaryStateMachine(),10000)
-			{
-				AllPeers = new[] { "node1" }
-			}))
+
+			var node1Options = CreateNodeOptions("node1", transport, 1000, "node2");
+			var node2Options = CreateNodeOptions("node2", transport, 20000, "node1");
+
+			using (var raftNode1 = new RaftEngine(node1Options))
+			using (var raftNode2 = new RaftEngine(node2Options))
 			{
 				//less election timeout --> will send vote request sooner, and thus expected to become candidate first
 				raftNode1.StateChanged += state =>
@@ -90,6 +78,73 @@ namespace Rhino.Raft.Tests
 
 				candidateChangeEvent.Wait();
 			}
+		}
+
+		[Fact]
+		public void On_many_node_network_first_to_become_candidate_becomes_leader()
+		{
+			var leaderEvent = new ManualResetEventSlim();
+			var transport = new InMemoryTransport();
+
+			List<RaftEngine> raftNodes = null;
+			try
+			{
+				bool changed = false;
+				raftNodes = CreateRaftNetwork(5,transport,1000, options =>
+				{
+					if (!changed)
+					{
+						options.MessageTimeout = 500;
+						changed = true;
+					}
+
+					return options;
+				}).ToList();
+
+				raftNodes.ForEach(node => node.StateChanged += state =>
+				{
+					if(state == RaftEngineState.Leader)
+						leaderEvent.Set();
+				});
+
+				Assert.True(leaderEvent.Wait(5000));
+			}
+			finally
+			{
+				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
+			}
+		}
+
+		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
+		{
+			var node1Options = new RaftEngineOptions(nodeName,
+				StorageEnvironmentOptions.CreateMemoryOnly(),
+				transport,
+				new DictionaryStateMachine(), 
+				messageTimeout)
+			{
+				AllPeers = peers
+			};
+			return node1Options;
+		}
+
+		private IEnumerable<RaftEngine> CreateRaftNetwork(int nodeCount, ITransport transport = null, int messageTimeout = 1000,Func<RaftEngineOptions,RaftEngineOptions> optionChangerFunc = null)
+		{
+			transport = transport ?? new InMemoryTransport();
+			var nodeNames = new List<string>();
+			for (int i = 0; i < nodeCount; i++)
+			{
+				nodeNames.Add("node" + i);
+			}
+
+			if(optionChangerFunc == null)
+				return nodeNames.Select(name => CreateNodeOptions(name, transport, messageTimeout, nodeNames.Where(x => !x.Equals(name)).ToArray()))
+								.Select(nodeOptions => new RaftEngine(nodeOptions))
+								.ToList();
+
+			return nodeNames.Select(name => optionChangerFunc(CreateNodeOptions(name, transport, messageTimeout, nodeNames.Where(x => !x.Equals(name)).ToArray())))
+				.Select(nodeOptions => new RaftEngine(nodeOptions))
+				.ToList();
 		}
 	}
 }

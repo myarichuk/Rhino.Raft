@@ -41,7 +41,10 @@ namespace Rhino.Raft
 			set { Interlocked.Exchange(ref _commitIndex, value); }
 		}
 
-		public int QuorumSize { get; set; }
+		public int QuorumSize
+		{
+			get { return ((AllVotingPeers.Count() + 1)/2) + 1; }
+		}
 
 		public RaftEngineState State { get; private set; }
 
@@ -65,9 +68,10 @@ namespace Rhino.Raft
 		{
 			AllPeers = raftEngineOptions.AllPeers ?? new List<string>();
 			AllVotingPeers = raftEngineOptions.AllPeers ?? new List<string>();
+
 			CommandSerializer = new JsonCommandSerializer();
 			MessageTimeout = raftEngineOptions.MessageTimeout;
-
+			
 			_cancellationTokenSource = new CancellationTokenSource();
 
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
@@ -116,6 +120,9 @@ namespace Rhino.Raft
 
 		internal void SetState(RaftEngineState state)
 		{
+			if (state == State)
+				return;
+
 			State = state;
 			var oldState = StateBehavior;
 			using (oldState)
