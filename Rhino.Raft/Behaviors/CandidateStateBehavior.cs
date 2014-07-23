@@ -80,7 +80,7 @@ namespace Rhino.Raft.Behaviors
 			if (_votesForMyLeadership < Engine.QuorumSize)
 				return;
 
-			Engine.DebugLog.WriteLine("{0} was selected as leader", Engine.Name);
+			Engine.DebugLog.WriteLine("{0} was selected as leader, term = {1}", Engine.Name, resp.Term + 1);
 			Engine.SetState(RaftEngineState.Leader);
 		}
 

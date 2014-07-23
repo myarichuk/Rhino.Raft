@@ -84,22 +84,11 @@ namespace Rhino.Raft.Tests
 		public void On_many_node_network_first_to_become_candidate_becomes_leader()
 		{
 			var leaderEvent = new ManualResetEventSlim();
-			var transport = new InMemoryTransport();
 
 			List<RaftEngine> raftNodes = null;
 			try
 			{
-				bool changed = false;
-				raftNodes = CreateRaftNetwork(5,transport,1000, options =>
-				{
-					if (!changed)
-					{
-						options.MessageTimeout = 500;
-						changed = true;
-					}
-
-					return options;
-				}).ToList();
+				raftNodes = CreateRaftNetwork(10).ToList();
 
 				raftNodes.ForEach(node => node.StateChanged += state =>
 				{
@@ -107,7 +96,8 @@ namespace Rhino.Raft.Tests
 						leaderEvent.Set();
 				});
 
-				Assert.True(leaderEvent.Wait(5000));
+				Assert.True(leaderEvent.Wait(25000));
+				Assert.Equal(1, raftNodes.Count(node => node.State == RaftEngineState.Leader));
 			}
 			finally
 			{
