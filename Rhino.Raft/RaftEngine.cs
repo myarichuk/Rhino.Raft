@@ -5,7 +5,6 @@
 // -----------------------------------------------------------------------
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -21,7 +20,7 @@ namespace Rhino.Raft
 {
 	public class RaftEngine : IDisposable
 	{
-		private readonly CancellationTokenSource _cancellationToken;
+		private readonly CancellationTokenSource _cancellationTokenSource;
 		public TextWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
 		public IRaftStateMachine StateMachine { get; set; }
@@ -50,27 +49,30 @@ namespace Rhino.Raft
 
 		private readonly Task _eventLoopTask;
 
-		private readonly BlockingCollection<MessageEnvelope> _messages = new BlockingCollection<MessageEnvelope>();
 		private long _commitIndex;
 
 		private AbstractRaftStateBehavior StateBehavior { get; set; }
 
-		public int ElectionTimeout { get; set; }
-		public CancellationToken CancellationToken { get { return _cancellationToken.Token; } }
-
+		/// <summary>
+		/// can be heartbeat timeout or election timeout - depends on the state behavior
+		/// </summary>
+		public int MessageTimeout { get; set; }
+		public CancellationToken CancellationToken { get { return _cancellationTokenSource.Token; } }
+		
 		public event Action<RaftEngineState> StateChanged;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
 			AllPeers = raftEngineOptions.AllPeers ?? new List<string>();
-			AllVotingPeers = new List<string>();
+			AllVotingPeers = raftEngineOptions.AllPeers ?? new List<string>();
 			CommandSerializer = new JsonCommandSerializer();
+			MessageTimeout = raftEngineOptions.MessageTimeout;
 
-			_cancellationToken = new CancellationTokenSource();
+			_cancellationTokenSource = new CancellationTokenSource();
 
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
 			Name = raftEngineOptions.Name;
-			PersistentState = new PersistentState(raftEngineOptions.Options, _cancellationToken.Token);
+			PersistentState = new PersistentState(raftEngineOptions.Options, _cancellationTokenSource.Token);
 			Transport = raftEngineOptions.Transport;
 			StateMachine = raftEngineOptions.StateMachine;
 
@@ -83,12 +85,12 @@ namespace Rhino.Raft
 
 		protected void EventLoop()
 		{
-			while (_cancellationToken.IsCancellationRequested == false)
+			while (_cancellationTokenSource.IsCancellationRequested == false)
 			{
 				try
 				{
 					MessageEnvelope message;
-					var hasMessage = _messages.TryTake(out message, StateBehavior.Timeout, _cancellationToken.Token);
+					var hasMessage = Transport.TryReceiveMessage(Name, StateBehavior.Timeout, _cancellationTokenSource.Token, out message);
 
 					if (hasMessage == false)
 					{
@@ -138,7 +140,8 @@ namespace Rhino.Raft
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
 		{
 			// Raft paper 5.4.1
-			var lastLogEntry = PersistentState.LastLogEntry();
+			var lastLogEntry = PersistentState.LastLogEntry() ?? new LogEntry();
+
 			if (lastLogEntry.Term < lastLogTerm)
 				return true;
 			return lastLogEntry.Index <= lastLogIndex;
@@ -178,7 +181,7 @@ namespace Rhino.Raft
 
 		public void Dispose()
 		{
-			_cancellationToken.Cancel();
+			_cancellationTokenSource.Cancel();
 			_eventLoopTask.Wait();
 			PersistentState.Dispose();
 		}

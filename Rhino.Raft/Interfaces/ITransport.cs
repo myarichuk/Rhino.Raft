@@ -11,7 +11,7 @@ namespace Rhino.Raft.Interfaces
 	/// </summary>
 	public interface ITransport
 	{
-		bool TryReceiveMessage(out MessageEnvelope messageEnvelope, int timeout, CancellationToken cancellationToken);
+		bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope);
 
 		void Send(string dest, AppendEntriesRequest req);
 		void Send(string dest, RequestVoteRequest req);

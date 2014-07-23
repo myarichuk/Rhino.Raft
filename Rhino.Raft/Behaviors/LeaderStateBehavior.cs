@@ -53,7 +53,7 @@ namespace Rhino.Raft.Behaviors
 					SendEntriesToPeer(peer);
 				}
 
-				Thread.Sleep(Engine.ElectionTimeout/6);
+				Thread.Sleep(Engine.MessageTimeout/6);
 			}
 		}
 
@@ -67,6 +67,8 @@ namespace Rhino.Raft.Behaviors
 			var prevLogEntry = entries.Length == 0
 				? Engine.PersistentState.LastLogEntry()
 				: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
+
+			Debug.Assert(prevLogEntry != null);
 
 			var aer = new AppendEntriesRequest
 			{

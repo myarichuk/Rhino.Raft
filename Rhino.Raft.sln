@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft", "Rhino.Raft\Rh
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft.Tests", "Rhino.Raft.Tests\Rhino.Raft.Tests.csproj", "{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tryouts", "Tryouts\Tryouts.csproj", "{54412F82-A711-4AF6-931B-D8AF808E57C5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}.Release|Any CPU.Build.0 = Release|Any CPU
+		{54412F82-A711-4AF6-931B-D8AF808E57C5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{54412F82-A711-4AF6-931B-D8AF808E57C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{54412F82-A711-4AF6-931B-D8AF808E57C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{54412F82-A711-4AF6-931B-D8AF808E57C5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

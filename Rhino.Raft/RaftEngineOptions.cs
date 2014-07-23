@@ -8,7 +8,7 @@ namespace Rhino.Raft
 {
 	public class RaftEngineOptions
 	{
-		public RaftEngineOptions(string name, StorageEnvironmentOptions options, ITransport transport, IRaftStateMachine stateMachine)
+		public RaftEngineOptions(string name, StorageEnvironmentOptions options, ITransport transport, IRaftStateMachine stateMachine, int messageTimeout)
 		{
 			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
 			if (options == null) throw new ArgumentNullException("options");
@@ -19,6 +19,7 @@ namespace Rhino.Raft
 			Options = options;
 			Transport = transport;
 			StateMachine = stateMachine;
+			MessageTimeout = messageTimeout;
 		}
 
 		public IEnumerable<string> AllPeers { get; set; }
@@ -30,5 +31,7 @@ namespace Rhino.Raft
 		public ITransport Transport { get; private set; }
 
 		public IRaftStateMachine StateMachine { get; private set; }
+
+		public int MessageTimeout { get; private set; }
 	}
 }

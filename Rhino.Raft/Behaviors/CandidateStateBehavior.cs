@@ -20,7 +20,7 @@ namespace Rhino.Raft.Behaviors
 
 		public CandidateStateBehavior(RaftEngine engine) : base(engine)
 		{
-			Timeout = new Random().Next(engine.ElectionTimeout/2, engine.ElectionTimeout);
+			Timeout = new Random().Next(engine.MessageTimeout/2, engine.MessageTimeout);
 			VoteForSelf();
 	    }
 

@@ -28,18 +28,17 @@ namespace Rhino.Raft.Behaviors
 			AppendEntriesRequest appendEntriesRequest;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
-				Handle(envelope.Source, requestVoteRequest);
+				Handle(envelope.Destination, requestVoteRequest);
 			else if (TryCastMessage(envelope.Message, out appendEntriesResponse))
-				Handle(envelope.Source, appendEntriesResponse);
+				Handle(envelope.Destination, appendEntriesResponse);
 			else if (TryCastMessage(envelope.Message, out appendEntriesRequest))
-				Handle(envelope.Source, appendEntriesRequest);
+				Handle(envelope.Destination, appendEntriesRequest);
 			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
-				Handle(envelope.Source, requestVoteResponse);
+				Handle(envelope.Destination, requestVoteResponse);
 		}
 
-		public virtual void Handle(string source, RequestVoteResponse resp)
+		public virtual void Handle(string destination, RequestVoteResponse resp)
 		{
-			Engine.AllVotingPeers = Engine.AllVotingPeers.Concat(new[] {source});
 		}
 
 		protected static bool TryCastMessage<T>(object abstractMessage, out T typedMessage)
@@ -56,14 +55,14 @@ namespace Rhino.Raft.Behaviors
 			Engine = engine;
 		}
 
-		public void Handle(string source, RequestVoteRequest req)
+		public void Handle(string destination, RequestVoteRequest req)
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
 					req.Term, Engine.PersistentState.CurrentTerm);
 				Engine.DebugLog.WriteLine(msg);
-				Engine.Transport.Send(source, new RequestVoteResponse
+				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -82,7 +81,7 @@ namespace Rhino.Raft.Behaviors
 				string msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
 					Engine.PersistentState.VotedFor, req.Term);
 				Engine.DebugLog.WriteLine(msg);
-				Engine.Transport.Send(source, new RequestVoteResponse
+				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -96,7 +95,7 @@ namespace Rhino.Raft.Behaviors
 				string msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.",
 					req.CandidateId);
 				Engine.DebugLog.WriteLine(msg);
-				Engine.Transport.Send(source, new RequestVoteResponse
+				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -106,7 +105,7 @@ namespace Rhino.Raft.Behaviors
 			}
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
 
-			Engine.Transport.Send(source, new RequestVoteResponse
+			Engine.Transport.Send(destination, new RequestVoteResponse
 			{
 				VoteGranted = true,
 				Term = Engine.PersistentState.CurrentTerm,
@@ -114,20 +113,20 @@ namespace Rhino.Raft.Behaviors
 			});
 		}
 
-		public virtual void Handle(string source, AppendEntriesResponse resp)
+		public virtual void Handle(string destination, AppendEntriesResponse resp)
 		{
 			// not a leader, no idea what to do with this. Probably an old
 			// message from when we were a leader, ignoring.			
 		}
 	
-		public virtual void Handle(string source, AppendEntriesRequest req)
+		public virtual void Handle(string destination, AppendEntriesRequest req)
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				string msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
 					req.Term, Engine.PersistentState.CurrentTerm);
 				Engine.DebugLog.WriteLine(msg);
-				Engine.Transport.Send(source, new AppendEntriesResponse
+				Engine.Transport.Send(destination, new AppendEntriesResponse
 				{
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
@@ -148,7 +147,7 @@ namespace Rhino.Raft.Behaviors
 					"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}",
 					req.PrevLogTerm, prevTerm, req.PrevLogIndex);
 				Engine.DebugLog.WriteLine(msg);
-				Engine.Transport.Send(source, new AppendEntriesResponse
+				Engine.Transport.Send(destination, new AppendEntriesResponse
 				{
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
@@ -173,7 +172,7 @@ namespace Rhino.Raft.Behaviors
 				Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 			}
 
-			Engine.Transport.Send(source, new AppendEntriesResponse
+			Engine.Transport.Send(destination, new AppendEntriesResponse
 			{
 				Success = true,
 				CurrentTerm = Engine.PersistentState.CurrentTerm,

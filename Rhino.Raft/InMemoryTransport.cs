@@ -1,9 +1,5 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Concurrent;
 using System.Threading;
-using System.Threading.Tasks;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -11,20 +7,28 @@ namespace Rhino.Raft
 {
 	public class InMemoryTransport : ITransport
 	{
-		private readonly BlockingCollection<MessageEnvelope> _messageQueue = new BlockingCollection<MessageEnvelope>();
+		private readonly ConcurrentDictionary<string,BlockingCollection<MessageEnvelope>> _messageQueue = new ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>>();
 
 		private void AddToQueue<T>(string dest, T message)
 		{
-			_messageQueue.Add(new MessageEnvelope
+			var newMessage = new MessageEnvelope
 			{
 				Destination = dest,
 				Message = message
-			});
+			};
+
+			_messageQueue.AddOrUpdate(dest,new BlockingCollection<MessageEnvelope> { newMessage }, 
+			(destination, envelopes) =>
+			{
+				envelopes.Add(newMessage);
+				return envelopes;
+			} );
 		}
 
-		public bool TryReceiveMessage(out MessageEnvelope messageEnvelope, int timeout, CancellationToken cancellationToken)
+		public bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope)
 		{
-			return _messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
+			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
+			return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
 		public void Send(string dest, AppendEntriesRequest req)
