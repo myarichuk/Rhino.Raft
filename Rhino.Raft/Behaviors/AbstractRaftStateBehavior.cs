@@ -116,8 +116,6 @@ namespace Rhino.Raft.Behaviors
 
 		public virtual void Handle(string destination, AppendEntriesResponse resp)
 		{
-			Engine.DebugLog.WriteLine("Received AppendEntriesResponse, CurrentTerm = {0}", resp.CurrentTerm);
-
 			// not a leader, no idea what to do with this. Probably an old
 			// message from when we were a leader, ignoring.			
 		}

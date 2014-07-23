@@ -2,10 +2,13 @@
 using System.Collections.Generic;
 using System.Data.Odbc;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentAssertions;
 using Rhino.Raft.Interfaces;
+using Rhino.Raft.Messages;
 using Voron;
 using Xunit;
 
@@ -81,7 +84,7 @@ namespace Rhino.Raft.Tests
 		}
 
 		[Fact]
-		public void On_many_node_network_first_to_become_candidate_becomes_leader()
+		public void On_many_node_network_can_be_only_one_leader()
 		{
 			var leaderEvent = new ManualResetEventSlim();
 
@@ -103,6 +106,43 @@ namespace Rhino.Raft.Tests
 			{
 				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
 			}
+		}
+
+		[Fact]
+		public void On_many_node_network_after_leader_establishment_all_nodes_know_who_is_leader()
+		{
+			var leaderEvent = new ManualResetEventSlim();
+			var followerEvent = new CountdownEvent(4);
+
+			List<RaftEngine> raftNodes = null;
+			try
+			{
+				raftNodes = CreateRaftNetwork(5).ToList();
+
+				raftNodes.ForEach(node => node.StateChanged += state =>
+				{
+					if (state == RaftEngineState.Leader)
+						leaderEvent.Set();
+					else if (state == RaftEngineState.Follower)
+						followerEvent.Signal();
+
+				});
+
+				Assert.True(leaderEvent.Wait(25000));
+
+				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+				Assert.NotNull(leaderNode);
+
+				followerEvent.Wait(15000); //wait until all other nodes become followers
+
+				Assert.True(raftNodes.Select(x => x.CurrentLeader).All(x => x != null && x.Equals(leaderNode.CurrentLeader)));
+				
+			}
+			finally
+			{
+				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
+			}
+			
 		}
 
 		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)

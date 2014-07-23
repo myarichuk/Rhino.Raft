@@ -4,7 +4,6 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,7 +11,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Rhino.Raft.Commands;
-using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -47,13 +45,17 @@ namespace Rhino.Raft.Behaviors
 			while (Engine.State == RaftEngineState.Leader && !Engine.CancellationToken.IsCancellationRequested)
 			{
 				Engine.CancellationToken.ThrowIfCancellationRequested();
-
-				foreach (var peer in Engine.AllPeers)
-				{
-					SendEntriesToPeer(peer);
-				}
+				SendEntriesToAllPeers();
 
 				Thread.Sleep(Engine.MessageTimeout/6);
+			}
+		}
+
+		private void SendEntriesToAllPeers()
+		{
+			foreach (var peer in Engine.AllPeers)
+			{
+				SendEntriesToPeer(peer);
 			}
 		}
 
@@ -68,7 +70,7 @@ namespace Rhino.Raft.Behaviors
 				? Engine.PersistentState.LastLogEntry()
 				: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
 
-			Debug.Assert(prevLogEntry != null);
+			prevLogEntry = prevLogEntry ?? new LogEntry();
 
 			var aer = new AppendEntriesRequest
 			{

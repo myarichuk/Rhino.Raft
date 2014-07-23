@@ -136,6 +136,7 @@ namespace Rhino.Raft
 						StateBehavior = new CandidateStateBehavior(this);
 						break;
 					case RaftEngineState.Leader:
+						CurrentLeader = Name;
 						StateBehavior = new LeaderStateBehavior(this);
 						break;
 				}
