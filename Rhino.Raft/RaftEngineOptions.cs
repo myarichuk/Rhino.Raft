@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Rhino.Raft.Interfaces;
 using Voron;
 
@@ -21,6 +22,8 @@ namespace Rhino.Raft
 			StateMachine = stateMachine;
 			MessageTimeout = messageTimeout;
 		}
+
+		public Stopwatch Stopwatch { get; set; }
 
 		public IEnumerable<string> AllPeers { get; set; }
 

@@ -27,6 +27,8 @@ namespace Rhino.Raft.Behaviors
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
+			Timeout = engine.MessageTimeout;
+
 			var lastLogEntry = Engine.PersistentState.LastLogEntry() ?? new LogEntry();
 
 			foreach (var peer in Engine.AllPeers)
@@ -36,7 +38,6 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			AppendCommand(new NopCommand());
-
 			_heartbeatTask = Task.Run(() => Heartbeat(), Engine.CancellationToken);
 		}
 
@@ -44,7 +45,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			while (Engine.State == RaftEngineState.Leader && !Engine.CancellationToken.IsCancellationRequested)
 			{
-				Engine.DebugLog.WriteLine("{0} -> Leader heartbeat", Engine.Name);
+				Engine.DebugLog.Write("Leader heartbeat");
 				Engine.CancellationToken.ThrowIfCancellationRequested();
 				SendEntriesToAllPeers();
 
@@ -72,6 +73,9 @@ namespace Rhino.Raft.Behaviors
 				: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
 
 			prevLogEntry = prevLogEntry ?? new LogEntry();
+
+			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}", entries.Length, peer);
+
 
 			var aer = new AppendEntriesRequest
 			{

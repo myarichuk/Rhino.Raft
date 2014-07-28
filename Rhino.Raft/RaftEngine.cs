@@ -6,6 +6,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -15,13 +16,15 @@ using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
+using Rhino.Raft.Utils;
 
 namespace Rhino.Raft
 {
 	public class RaftEngine : IDisposable
 	{
 		private readonly CancellationTokenSource _cancellationTokenSource;
-		public TextWriter DebugLog { get; set; }
+
+		public DebugWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
 		public IRaftStateMachine StateMachine { get; set; }
 		public IEnumerable<string> AllVotingPeers { get; set; }
@@ -66,10 +69,17 @@ namespace Rhino.Raft
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
+
+			DebugLog = new DebugWriter(raftEngineOptions.Name, raftEngineOptions.Stopwatch);
+
 			AllPeers = raftEngineOptions.AllPeers ?? new List<string>();
 			AllVotingPeers = raftEngineOptions.AllPeers ?? new List<string>();
 
 			CommandSerializer = new JsonCommandSerializer();
+
+			//warm up!
+			CommandSerializer.Serialize(new NopCommand());
+
 			MessageTimeout = raftEngineOptions.MessageTimeout;
 			
 			_cancellationTokenSource = new CancellationTokenSource();
@@ -81,8 +91,6 @@ namespace Rhino.Raft
 			StateMachine = raftEngineOptions.StateMachine;
 
 			SetState(AllPeers.Any() ? RaftEngineState.Follower : RaftEngineState.Leader);
-
-			DebugLog = Console.Out;
 
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
@@ -99,11 +107,11 @@ namespace Rhino.Raft
 
 					if (hasMessage == false)
 					{
-						DebugLog.WriteLine("{0} -> State {1} timeout ({2:#,#;;0} ms).", Name, State, behavior.Timeout);
+						DebugLog.Write("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
 						behavior.HandleTimeout();
 						continue;
 					}
-					DebugLog.WriteLine("{0} -> State {1} message {2}", Name, State, message.Message);
+					DebugLog.Write("State {0} message {1}", State, message.Message);
 					behavior.HandleMessage(message);
 				}
 				catch (OperationCanceledException)
@@ -181,7 +189,7 @@ namespace Rhino.Raft
 
 			SetState(RaftEngineState.Candidate);
 
-			DebugLog.WriteLine("{1} -> Calling an election in term {0}", PersistentState.CurrentTerm, Name);
+			DebugLog.Write("Calling an election in term {0}", PersistentState.CurrentTerm);
 
 			var lastLogEntry = PersistentState.LastLogEntry() ?? new LogEntry();
 			var rvr = new RequestVoteRequest

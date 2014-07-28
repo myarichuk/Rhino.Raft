@@ -57,12 +57,12 @@ namespace Rhino.Raft.Behaviors
 
 		public void Handle(string destination, RequestVoteRequest req)
 		{
-			Engine.DebugLog.WriteLine("{0} -> Received RequestVoteRequest, req.CandidateId = {1}, term = {2}", Engine.Name,req.CandidateId, req.Term);
+			Engine.DebugLog.Write("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				var msg = string.Format("{0} -> Rejecting request vote because term {1} is lower than current term {2}",
-					Engine.Name, req.Term, Engine.PersistentState.CurrentTerm);
-				Engine.DebugLog.WriteLine(msg);
+				var msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
+					req.Term, Engine.PersistentState.CurrentTerm);
+				Engine.DebugLog.Write(msg);
 				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -79,10 +79,10 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.CandidateId)
 			{
-				var msg = string.Format("{0} -> Rejecting request vote because already voted for {1} in term {2}",
-					Engine.Name, Engine.PersistentState.VotedFor, req.Term);
+				var msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
+					Engine.PersistentState.VotedFor, req.Term);
 
-				Engine.DebugLog.WriteLine(msg);
+				Engine.DebugLog.Write(msg);
 				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -94,8 +94,8 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.LogIsUpToDate(req.LastLogTerm, req.LastLogIndex) == false)
 			{
-				var msg = string.Format("{0} -> Rejecting request vote because remote log for {1} in not up to date.", Engine.Name, req.CandidateId);
-				Engine.DebugLog.WriteLine(msg);
+				var msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.", req.CandidateId);
+				Engine.DebugLog.Write(msg);
 				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -105,7 +105,7 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			Engine.DebugLog.WriteLine("{0} -> Recording vote for candidate = {1}", Engine.Name,req.CandidateId);
+			Engine.DebugLog.Write("Recording vote for candidate = {0}",req.CandidateId);
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
 
 			Engine.Transport.Send(req.CandidateId, new RequestVoteResponse
@@ -126,9 +126,9 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				var msg = string.Format("{0} -> Rejecting append entries because msg term {1} is lower than current term {2}",
-					Engine.Name,req.Term, Engine.PersistentState.CurrentTerm);
-				Engine.DebugLog.WriteLine(msg);
+				var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
+					req.Term, Engine.PersistentState.CurrentTerm);
+				Engine.DebugLog.Write(msg);
 				Engine.Transport.Send(destination, new AppendEntriesResponse
 				{
 					Success = false,
@@ -147,9 +147,8 @@ namespace Rhino.Raft.Behaviors
 			if (prevTerm != req.PrevLogTerm)
 			{
 				string msg = string.Format(
-					"{0} Rejecting append entries because msg previous term {1} is not the same as the persisted current term {2} at log index {3}",
-					Engine.Name, req.PrevLogTerm, prevTerm, req.PrevLogIndex);
-				Engine.DebugLog.WriteLine(msg);
+					"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}", req.PrevLogTerm, prevTerm, req.PrevLogIndex);
+				Engine.DebugLog.Write(msg);
 				Engine.Transport.Send(destination, new AppendEntriesResponse
 				{
 					Success = false,
@@ -161,8 +160,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.Entries.Length > 0)
 			{
-// ReSharper disable once CoVariantArrayConversion
-				Engine.DebugLog.WriteLine("{0} ,Appending log, entries count: {1} (node state = {2})", Engine.Name, req.Entries.Length, Engine.State);
+				Engine.DebugLog.Write("Appending log, entries count: {0} (node state = {1})", req.Entries.Length, Engine.State);
 				Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
 			}
 

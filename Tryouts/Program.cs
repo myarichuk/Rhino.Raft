@@ -6,13 +6,19 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			try
+			for (int i = 0; i < 100; i++)
 			{
-				new RaftTests().AfterHeartbeatTimeout_Node_should_change_state_to_candidate();
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine(e);
+				Console.Clear();
+				Console.WriteLine(i);
+				try
+				{
+					new RaftTests().On_many_node_network_can_be_only_one_leader(3);
+				}
+				catch (Exception e)
+				{
+					Console.WriteLine(e);
+					break;
+				}
 			}
 		}
 	}

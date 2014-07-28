@@ -1,16 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data.Odbc;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using FluentAssertions;
-using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
-using Rhino.Raft.Messages;
 using Voron;
 using Xunit;
 using Xunit.Extensions;
@@ -99,7 +92,12 @@ namespace Rhino.Raft.Tests
 			List<RaftEngine> raftNodes = null;
 			try
 			{
-				raftNodes = CreateRaftNetwork(nodeCount,messageTimeout:100).ToList();
+				var sp = Stopwatch.StartNew();
+				raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
+				{
+					options.Stopwatch = sp;
+					return options;
+				}).ToList();
 				raftNodes.ForEach(node => node.StateChanged += state =>
 				{
 					if (state == RaftEngineState.Leader)
@@ -225,7 +223,8 @@ namespace Rhino.Raft.Tests
 				new DictionaryStateMachine(), 
 				messageTimeout)
 			{
-				AllPeers = peers
+				AllPeers = peers,
+				Stopwatch = Stopwatch.StartNew()
 			};
 			return node1Options;
 		}
@@ -239,10 +238,8 @@ namespace Rhino.Raft.Tests
 				nodeNames.Add("node" + i);
 			}
 
-			if(optionChangerFunc == null)
-				return nodeNames.Select(name => CreateNodeOptions(name, transport, messageTimeout, nodeNames.Where(x => !x.Equals(name)).ToArray()))
-								.Select(nodeOptions => new RaftEngine(nodeOptions))
-								.ToList();
+			if (optionChangerFunc == null)
+				optionChangerFunc = options => options;
 
 			return nodeNames.Select(name => optionChangerFunc(CreateNodeOptions(name, transport, messageTimeout, nodeNames.Where(x => !x.Equals(name)).ToArray())))
 				.Select(nodeOptions => new RaftEngine(nodeOptions))

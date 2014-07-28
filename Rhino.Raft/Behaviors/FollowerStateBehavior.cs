@@ -13,13 +13,13 @@ namespace Rhino.Raft.Behaviors
     {
 	    public FollowerStateBehavior(RaftEngine engine) : base(engine)
 	    {
-		    Timeout = new Random().Next(engine.MessageTimeout/2, engine.MessageTimeout);
+		    var random = new Random(Engine.Name.GetHashCode());
+		    Timeout = random.Next(engine.MessageTimeout/2, engine.MessageTimeout);
 	    }
 
 	    public override void HandleTimeout()
 	    {
-		    Engine.DebugLog.WriteLine("{0} -> Got timeout in follower mode in term {1}", Engine.Name,
-			    Engine.PersistentState.CurrentTerm);
+		    Engine.DebugLog.Write("Got timeout in follower mode in term {0}", Engine.PersistentState.CurrentTerm);
 			Engine.AnnounceCandidacy();
 		}
     }

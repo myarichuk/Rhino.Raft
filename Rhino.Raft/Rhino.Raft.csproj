@@ -41,9 +41,8 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
-    <Reference Include="Voron, Version=1.0.0.0, Culture=neutral, PublicKeyToken=37f41c7f99471593, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\ravendb-3.0\Raven.Voron\Voron\bin\Debug\Voron.dll</HintPath>
+    <Reference Include="Voron">
+      <HintPath>..\..\ravendb3\Raven.Voron\Voron\bin\Debug\Voron.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -70,6 +69,7 @@
     <Compile Include="RaftEngine.cs" />
     <Compile Include="RaftEngineOptions.cs" />
     <Compile Include="Storage\PersistentState.cs" />
+    <Compile Include="Utils\DebugWriter.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
