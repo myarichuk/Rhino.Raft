@@ -94,15 +94,17 @@ namespace Rhino.Raft
 				try
 				{
 					MessageEnvelope message;
-					var hasMessage = Transport.TryReceiveMessage(Name, StateBehavior.Timeout, _cancellationTokenSource.Token, out message);
+					var behavior = StateBehavior;
+					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout, _cancellationTokenSource.Token, out message);
 
 					if (hasMessage == false)
 					{
-						StateBehavior.HandleTimeout();
+						DebugLog.WriteLine("{0} -> State {1} timeout ({2:#,#;;0} ms).", Name, State, behavior.Timeout);
+						behavior.HandleTimeout();
 						continue;
 					}
-
-					StateBehavior.HandleMessage(message);
+					DebugLog.WriteLine("{0} -> State {1} message {2}", Name, State, message.Message);
+					behavior.HandleMessage(message);
 				}
 				catch (OperationCanceledException)
 				{
@@ -155,6 +157,15 @@ namespace Rhino.Raft
 			return lastLogEntry.Index <= lastLogIndex;
 		}
 
+		public void AppendCommand(Command command)
+		{
+			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
+			if(leaderStateBehavior == null)
+				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " + CurrentLeader);
+
+			leaderStateBehavior.AppendCommand(command);
+		}
+
 		public void ApplyCommits(long from, long to)
 		{
 			foreach (LogEntry entry in PersistentState.LogEntriesAfter(from, to))
@@ -170,7 +181,7 @@ namespace Rhino.Raft
 
 			SetState(RaftEngineState.Candidate);
 
-			DebugLog.WriteLine("Calling an election in term {0}", PersistentState.CurrentTerm);
+			DebugLog.WriteLine("{1} -> Calling an election in term {0}", PersistentState.CurrentTerm, Name);
 
 			var lastLogEntry = PersistentState.LastLogEntry() ?? new LogEntry();
 			var rvr = new RequestVoteRequest

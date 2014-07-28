@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Diagnostics;
 
 namespace Rhino.Raft.Behaviors
 {
@@ -17,6 +18,8 @@ namespace Rhino.Raft.Behaviors
 
 	    public override void HandleTimeout()
 	    {
+		    Engine.DebugLog.WriteLine("{0} -> Got timeout in follower mode in term {1}", Engine.Name,
+			    Engine.PersistentState.CurrentTerm);
 			Engine.AnnounceCandidacy();
 		}
     }

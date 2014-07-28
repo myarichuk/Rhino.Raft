@@ -57,11 +57,11 @@ namespace Rhino.Raft.Behaviors
 
 		public void Handle(string destination, RequestVoteRequest req)
 		{
-			Engine.DebugLog.WriteLine("Received RequestVoteRequest on node = {2}, req.CandidateId = {0}, term = {1}", req.CandidateId,req.Term, Engine.Name);
+			Engine.DebugLog.WriteLine("{0} -> Received RequestVoteRequest, req.CandidateId = {1}, term = {2}", Engine.Name,req.CandidateId, req.Term);
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				string msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
-					req.Term, Engine.PersistentState.CurrentTerm);
+				var msg = string.Format("{0} -> Rejecting request vote because term {1} is lower than current term {2}",
+					Engine.Name, req.Term, Engine.PersistentState.CurrentTerm);
 				Engine.DebugLog.WriteLine(msg);
 				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
@@ -79,8 +79,9 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.CandidateId)
 			{
-				string msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
-					Engine.PersistentState.VotedFor, req.Term);
+				var msg = string.Format("{0} -> Rejecting request vote because already voted for {1} in term {2}",
+					Engine.Name, Engine.PersistentState.VotedFor, req.Term);
+
 				Engine.DebugLog.WriteLine(msg);
 				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
@@ -93,8 +94,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.LogIsUpToDate(req.LastLogTerm, req.LastLogIndex) == false)
 			{
-				string msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.",
-					req.CandidateId);
+				var msg = string.Format("{0} -> Rejecting request vote because remote log for {1} in not up to date.", Engine.Name, req.CandidateId);
 				Engine.DebugLog.WriteLine(msg);
 				Engine.Transport.Send(destination, new RequestVoteResponse
 				{
@@ -104,6 +104,8 @@ namespace Rhino.Raft.Behaviors
 				});
 				return;
 			}
+
+			Engine.DebugLog.WriteLine("{0} -> Recording vote for candidate = {1}", Engine.Name,req.CandidateId);
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
 
 			Engine.Transport.Send(req.CandidateId, new RequestVoteResponse
@@ -124,8 +126,8 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				string msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
-					req.Term, Engine.PersistentState.CurrentTerm);
+				var msg = string.Format("{0} -> Rejecting append entries because msg term {1} is lower than current term {2}",
+					Engine.Name,req.Term, Engine.PersistentState.CurrentTerm);
 				Engine.DebugLog.WriteLine(msg);
 				Engine.Transport.Send(destination, new AppendEntriesResponse
 				{
@@ -141,12 +143,12 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			Engine.CurrentLeader = req.LeaderId;
-			long prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
+			var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
 			if (prevTerm != req.PrevLogTerm)
 			{
 				string msg = string.Format(
-					"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}",
-					req.PrevLogTerm, prevTerm, req.PrevLogIndex);
+					"{0} Rejecting append entries because msg previous term {1} is not the same as the persisted current term {2} at log index {3}",
+					Engine.Name, req.PrevLogTerm, prevTerm, req.PrevLogIndex);
 				Engine.DebugLog.WriteLine(msg);
 				Engine.Transport.Send(destination, new AppendEntriesResponse
 				{
@@ -159,25 +161,40 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.Entries.Length > 0)
 			{
+// ReSharper disable once CoVariantArrayConversion
+				Engine.DebugLog.WriteLine("{0} ,Appending log, entries count: {1} (node state = {2})", Engine.Name, req.Entries.Length, Engine.State);
 				Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
 			}
 
-			var lastIndex = req.Entries[req.Entries.Length - 1].Index;
+			string message;
+			long lastIndex;
 
-			if (req.LeaderCommit > Engine.CommitIndex)
+			if (req.Entries.Length > 0)
 			{
-				long oldCommitIndex = Engine.CommitIndex;
+				lastIndex = req.Entries[req.Entries.Length - 1].Index;
 
-				Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
+				if (req.LeaderCommit > Engine.CommitIndex)
+				{
+					long oldCommitIndex = Engine.CommitIndex;
 
-				Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
+					Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
+
+					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
+				}
+				message = "Applied commits";
+			}
+			else
+			{
+				message = "No commits to apply";
+				lastIndex = Engine.CommitIndex;
 			}
 
 			Engine.Transport.Send(destination, new AppendEntriesResponse
 			{
 				Success = true,
 				CurrentTerm = Engine.PersistentState.CurrentTerm,
-				LastLogIndex = lastIndex
+				LastLogIndex = lastIndex,
+				Message = message 
 			});
 		}
 

@@ -44,6 +44,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			while (Engine.State == RaftEngineState.Leader && !Engine.CancellationToken.IsCancellationRequested)
 			{
+				Engine.DebugLog.WriteLine("{0} -> Leader heartbeat", Engine.Name);
 				Engine.CancellationToken.ThrowIfCancellationRequested();
 				SendEntriesToAllPeers();
 

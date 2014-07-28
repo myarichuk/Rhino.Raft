@@ -184,6 +184,7 @@ namespace Rhino.Raft.Storage
 			{
 				var metadata = tx.ReadTree("$metadata");
 				CurrentTerm++;
+				VotedFor = name;
 				metadata.Add("current-term", BitConverter.GetBytes(CurrentTerm));
 				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name)); 
 				tx.Commit();
@@ -201,6 +202,9 @@ namespace Rhino.Raft.Storage
 
 				metadata.Add("current-term", BitConverter.GetBytes(term));
 				metadata.Add("voted-for", new byte[0]); // clearing who we voted for
+
+				VotedFor = null;
+				CurrentTerm = term;
 
 				tx.Commit();
 			}

@@ -1,16 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data.Odbc;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Voron;
 using Xunit;
+using Xunit.Extensions;
 
 namespace Rhino.Raft.Tests
 {
@@ -83,20 +86,26 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		[Fact]
-		public void On_many_node_network_can_be_only_one_leader()
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
+		[InlineData(10)]
+		public void On_many_node_network_can_be_only_one_leader(int nodeCount)
 		{
 			var leaderEvent = new ManualResetEventSlim();
 
 			List<RaftEngine> raftNodes = null;
 			try
 			{
-				raftNodes = CreateRaftNetwork(10).ToList();
-
+				raftNodes = CreateRaftNetwork(nodeCount,messageTimeout:100).ToList();
 				raftNodes.ForEach(node => node.StateChanged += state =>
 				{
-					if(state == RaftEngineState.Leader)
+					if (state == RaftEngineState.Leader)
+					{
 						leaderEvent.Set();
+					}
 				});
 
 				Assert.True(leaderEvent.Wait(25000));
@@ -136,6 +145,69 @@ namespace Rhino.Raft.Tests
 				followerEvent.Wait(15000); //wait until all other nodes become followers
 
 				Assert.True(raftNodes.Select(x => x.CurrentLeader).All(x => x != null && x.Equals(leaderNode.CurrentLeader)));
+				
+			}
+			finally
+			{
+				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
+			}
+			
+		}
+
+		[Fact]
+		public void On_many_node_network_after_leader_establishment_commands_are_distritbuted_to_follower()
+		{
+			var leaderEvent = new ManualResetEventSlim();
+			var followerEvent = new CountdownEvent(3);
+
+			List<RaftEngine> raftNodes = null;
+			try
+			{
+				raftNodes = CreateRaftNetwork(4).ToList();
+
+				raftNodes.ForEach(node => node.StateChanged += state =>
+				{
+					if (state == RaftEngineState.Leader)
+						leaderEvent.Set();
+					else if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
+						followerEvent.Signal();
+
+				});
+
+				Assert.True(leaderEvent.Wait(2000));
+				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);				
+				Assert.True(followerEvent.Wait(8000)); //wait until all other nodes become followers
+
+				var nonLeaderNode = raftNodes.FirstOrDefault(x => x != leaderNode);
+
+				// ReSharper disable once PossibleNullReferenceException
+				//if you try to append command on non-leader node,exception should be thrown
+//				Assert.Throws<InvalidOperationException>(() => nonLeaderNode.AppendCommand(new NopCommand()));
+
+// ReSharper disable once PossibleNullReferenceException
+				leaderNode.AppendCommand(new DictionaryCommand.Set
+				{
+					Key = "Foo",
+					Value = 123
+				});
+
+				leaderNode.AppendCommand(new DictionaryCommand.Set
+				{
+					Key = "Bar",
+					Value = 456
+				});
+
+				leaderNode.AppendCommand(new DictionaryCommand.Del
+				{
+					Key = "Foo"
+				});
+
+				leaderNode.AppendCommand(new DictionaryCommand.Inc
+				{
+					Key = "Bar",
+					Value = 5
+				});
+
 				
 			}
 			finally
