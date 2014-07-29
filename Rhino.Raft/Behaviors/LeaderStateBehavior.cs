@@ -104,8 +104,8 @@ namespace Rhino.Raft.Behaviors
 		{
 			// there is a new leader in town, time to step down
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm)
-			{
-				Engine.UpdateCurrentTerm(resp.CurrentTerm);
+			{				
+				Engine.UpdateCurrentTerm(resp.CurrentTerm,resp.LeaderId);
 				return;
 			}
 

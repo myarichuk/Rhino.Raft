@@ -57,7 +57,8 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (resp.Term > Engine.PersistentState.CurrentTerm)
 			{
-				Engine.UpdateCurrentTerm(resp.Term);
+				Engine.DebugLog.Write("CandidateStateBehavior -> UpdateCurrentTerm called");
+				Engine.UpdateCurrentTerm(resp.Term, null);
 				return;
 			}
 

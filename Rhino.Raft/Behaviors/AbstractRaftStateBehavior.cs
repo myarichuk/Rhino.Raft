@@ -74,7 +74,8 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
-				Engine.UpdateCurrentTerm(req.Term);
+				Engine.DebugLog.Write("{0} -> UpdateCurrentTerm() is called from Abstract Behavior", GetType().Name);
+				Engine.UpdateCurrentTerm(req.Term, null);
 			}
 
 			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.CandidateId)
@@ -139,10 +140,12 @@ namespace Rhino.Raft.Behaviors
 			}
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
-				Engine.UpdateCurrentTerm(req.Term);
+				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
 			}
 
 			Engine.CurrentLeader = req.LeaderId;
+			Engine.DebugLog.Write("Set current leader to {0}", req.LeaderId);
+
 			var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
 			if (prevTerm != req.PrevLogTerm)
 			{
@@ -154,6 +157,7 @@ namespace Rhino.Raft.Behaviors
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					Message = msg,
+					LeaderId = req.LeaderId
 				});
 				return;
 			}

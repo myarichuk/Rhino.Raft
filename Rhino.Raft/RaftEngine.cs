@@ -66,6 +66,8 @@ namespace Rhino.Raft
 		public CancellationToken CancellationToken { get { return _cancellationTokenSource.Token; } }
 		
 		public event Action<RaftEngineState> StateChanged;
+		public event Action CandidacyAnnounced;
+		public event Action StateTimeout;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -109,6 +111,7 @@ namespace Rhino.Raft
 					{
 						DebugLog.Write("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
 						behavior.HandleTimeout();
+						OnStateTimeout();
 						continue;
 					}
 					DebugLog.Write("State {0} message {1}", State, message.Message);
@@ -121,11 +124,12 @@ namespace Rhino.Raft
 			}
 		}
 
-		internal void UpdateCurrentTerm(long term)
+		internal void UpdateCurrentTerm(long term,string leader)
 		{
 			PersistentState.UpdateTermTo(term);
 			SetState(RaftEngineState.Follower);
-			CurrentLeader = null;
+			DebugLog.Write("UpdateCurrentTerm() setting new leader : {0}",leader ?? "no leader currently");
+			CurrentLeader = leader;
 		}
 
 		internal void SetState(RaftEngineState state)
@@ -204,6 +208,8 @@ namespace Rhino.Raft
 			{
 				Transport.Send(votingPeer, rvr);
 			}
+
+			OnCandidacyAnnounced();
 		}
 
 		public void Dispose()
@@ -213,12 +219,23 @@ namespace Rhino.Raft
 			PersistentState.Dispose();
 		}
 
+		protected virtual void OnCandidacyAnnounced()
+		{
+			var handler = CandidacyAnnounced;
+			if (handler != null) handler();
+		}
+
 		protected virtual void OnStateChanged(RaftEngineState state)
 		{
 			var handler = StateChanged;
 			if (handler != null) handler(state);
 		}
 
+		protected virtual void OnStateTimeout()
+		{
+			var handler = StateTimeout;
+			if (handler != null) handler();
+		}
 	}
 
 	public enum RaftEngineState

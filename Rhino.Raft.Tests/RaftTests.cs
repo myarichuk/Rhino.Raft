@@ -1,12 +1,15 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Rhino.Raft.Interfaces;
+using Rhino.Raft.Messages;
 using Voron;
 using Xunit;
 using Xunit.Extensions;
+using Rhino.Raft.Commands;
 
 namespace Rhino.Raft.Tests
 {
@@ -115,72 +118,79 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		[Fact]
-		public void On_many_node_network_after_leader_establishment_all_nodes_know_who_is_leader()
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
+		public void On_many_node_network_after_leader_establishment_all_nodes_know_who_is_leader(int nodeCount)
 		{
 			var leaderEvent = new ManualResetEventSlim();
-			var followerEvent = new CountdownEvent(4);
+			var followerEvent = new CountdownEvent(nodeCount);
 
 			List<RaftEngine> raftNodes = null;
 			try
 			{
-				raftNodes = CreateRaftNetwork(5).ToList();
-
-				raftNodes.ForEach(node => node.StateChanged += state =>
-				{
-					if (state == RaftEngineState.Leader)
-						leaderEvent.Set();
-					else if (state == RaftEngineState.Follower)
-						followerEvent.Signal();
-
-				});
-
-				Assert.True(leaderEvent.Wait(25000));
-
-				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-				Assert.NotNull(leaderNode);
-
-				followerEvent.Wait(15000); //wait until all other nodes become followers
-
-				Assert.True(raftNodes.Select(x => x.CurrentLeader).All(x => x != null && x.Equals(leaderNode.CurrentLeader)));
-				
-			}
-			finally
-			{
-				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
-			}
-			
-		}
-
-		[Fact]
-		public void On_many_node_network_after_leader_establishment_commands_are_distritbuted_to_follower()
-		{
-			var leaderEvent = new ManualResetEventSlim();
-			var followerEvent = new CountdownEvent(3);
-
-			List<RaftEngine> raftNodes = null;
-			try
-			{
-				raftNodes = CreateRaftNetwork(4).ToList();
-
+				raftNodes = CreateRaftNetwork(nodeCount,messageTimeout:250).ToList();
 				raftNodes.ForEach(node => node.StateChanged += state =>
 				{
 					if (state == RaftEngineState.Leader)
 						leaderEvent.Set();
 					else if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
 						followerEvent.Signal();
-
 				});
 
-				Assert.True(leaderEvent.Wait(2000));
-				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);				
-				Assert.True(followerEvent.Wait(8000)); //wait until all other nodes become followers
+				Assert.True(leaderEvent.Wait(25000));
+				
+				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+				Assert.NotNull(leaderNode);
+				var currentLeader = leaderNode.CurrentLeader;
+				
+				followerEvent.Wait(15000); //wait until all other nodes become followers		
+				var leaders = raftNodes.Select(x => x.CurrentLeader).ToList();
 
+				Assert.True(leaders.All(x => x != null && x.Equals(currentLeader)));
+			}
+			finally
+			{
+				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
+			}
+		}
+
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
+		public void On_many_node_network_after_leader_establishment_commands_are_distritbuted_to_follower(int nodeCount)
+		{
+			var leaderEvent = new ManualResetEventSlim();
+			var followerEvent = new CountdownEvent(nodeCount);
+
+			List<RaftEngine> raftNodes = null;
+			try
+			{
+				raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 250).ToList();
+				raftNodes.ForEach(node => node.StateChanged += state =>
+				{
+					if (state == RaftEngineState.Leader)
+						leaderEvent.Set();
+					else if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
+						followerEvent.Signal();
+				});
+
+				Assert.True(leaderEvent.Wait(25000));
+
+				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+				Assert.NotNull(leaderNode);
+				var currentLeader = leaderNode.CurrentLeader;
+
+				followerEvent.Wait(15000); //wait until all other nodes become followers	
 				var nonLeaderNode = raftNodes.FirstOrDefault(x => x != leaderNode);
 
 				// ReSharper disable once PossibleNullReferenceException
 				//if you try to append command on non-leader node,exception should be thrown
-//				Assert.Throws<InvalidOperationException>(() => nonLeaderNode.AppendCommand(new NopCommand()));
+				Assert.Throws<InvalidOperationException>(() => nonLeaderNode.AppendCommand(new NopCommand()));
 
 // ReSharper disable once PossibleNullReferenceException
 				leaderNode.AppendCommand(new DictionaryCommand.Set
@@ -214,6 +224,158 @@ namespace Rhino.Raft.Tests
 			}
 			
 		}
+
+		[Fact]
+		public void Candidate_with_enough_votes_becomes_leader()
+		{
+			var transport = new InMemoryTransport();
+			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1", "fakeNode2",
+				"fakeNode3");
+
+			using (var node = new RaftEngine(nodeOptions))
+			{
+				var stateChangeEvent = new ManualResetEventSlim();
+				node.StateChanged += state =>
+				{
+					stateChangeEvent.Set();
+				};
+
+				Assert.True(stateChangeEvent.Wait(101)); //wait for elections to start
+
+				stateChangeEvent.Reset();
+				for (int i = 0; i < 3; i++)
+				{
+					transport.Send("realNode", new RequestVoteResponse
+					{
+						Term = 1,
+						VoteGranted = true
+					});
+				}
+
+				Assert.True(stateChangeEvent.Wait(50), "wait for votes to be acknowledged -> acknowledgement should happen at most within 50ms");
+				Assert.Equal(RaftEngineState.Leader, node.State);
+			}
+		}
+
+		[Fact]
+		public void Candidate_with_split_vote_should_restart_elections_on_timeout()
+		{
+			var transport = new InMemoryTransport();
+			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1", "fakeNode2",
+				"fakeNode3");
+
+			using (var node = new RaftEngine(nodeOptions))
+			{
+				var candidacyAnnoucementEvent = new ManualResetEventSlim();
+				var stateTimeoutEvent = new ManualResetEventSlim();
+
+				node.CandidacyAnnounced += candidacyAnnoucementEvent.Set;
+
+				candidacyAnnoucementEvent.Wait(node.MessageTimeout + 5); //wait for elections to start
+				node.StateTimeout += stateTimeoutEvent.Set;
+
+				//clear transport queues
+				for (int i = 1; i <= 3; i++)
+				{
+					transport.MessageQueue["fakeNode" + i] = new BlockingCollection<MessageEnvelope>();
+				}				
+
+				Assert.True(stateTimeoutEvent.Wait(node.MessageTimeout + 5));
+				
+				for (int i = 1; i <= 3; i++)
+				{
+					var requestVoteMessage = transport.MessageQueue["fakeNode" + i].Where(x => x.Message is RequestVoteRequest)
+																				   .Select(x => x.Message as RequestVoteRequest)
+																				   .OrderByDescending(x => x.Term)
+																				   .First();
+
+					Assert.Equal("realNode", requestVoteMessage.CandidateId);			
+					Assert.Equal(2,requestVoteMessage.Term);
+				}
+			}
+		}
+
+		[Fact]
+		public void Leader_should_step_down_if_another_leader_is_up()
+		{
+			var transport = new InMemoryTransport();
+			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1", "fakeNode2",
+				"fakeNode3");
+
+			using (var node = new RaftEngine(nodeOptions))
+			{
+				var stateChangeEvent = new ManualResetEventSlim();
+				node.StateChanged += state =>
+				{
+					stateChangeEvent.Set();
+				};
+
+				stateChangeEvent.Wait(101); //wait for elections to start
+
+				stateChangeEvent.Reset();
+				for (int i = 0; i < 3; i++)
+				{
+					transport.Send("realNode", new RequestVoteResponse
+					{
+						Term = 1,
+						VoteGranted = true
+					});
+				}
+
+				stateChangeEvent.Wait(50); //now the node should be a leader, no checks here because this is tested for in another test
+
+				stateChangeEvent.Reset();
+				transport.Send("realNode",new AppendEntriesRequest
+				{
+					Entries = new[] { new LogEntry() },
+					LeaderCommit = 0,
+					LeaderId = "fakeNode1",
+					PrevLogIndex = 0,
+					PrevLogTerm = 1,
+					Term = 2
+				});
+
+				Assert.True(stateChangeEvent.Wait(50),"acknolwedgement of a new leader should happen at most within 50ms (state change to leader)"); //wait for acknolwedgement of a new leader
+				Assert.Equal(RaftEngineState.Follower, node.State);
+			}
+		}
+
+		[Fact]
+		public void Follower_on_timeout_should_become_candidate()
+		{
+			var transport = new InMemoryTransport();
+			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode");
+
+			using (var node = new RaftEngine(nodeOptions))
+			{
+				Thread.Sleep(101); //let realNode timeout
+				Assert.Equal(RaftEngineState.Candidate,node.State);
+			}
+		}
+
+		[Fact]
+		public void Follower_on_timeout_should_send_vote_requests()
+		{
+			var transport = new InMemoryTransport();
+			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1","fakeNode2");
+
+			using (var node = new RaftEngine(nodeOptions))
+			{
+				Thread.Sleep(101); //let realNode timeout
+
+				var fakeNodeMessage = transport.MessageQueue["fakeNode1"].First();
+				Assert.IsType<RequestVoteRequest>(fakeNodeMessage.Message);
+				var requestVoteMessage = fakeNodeMessage.Message as RequestVoteRequest;
+				Assert.Equal("realNode", requestVoteMessage.CandidateId);
+
+				Assert.Equal(1, transport.MessageQueue["fakeNode2"].Count);
+				fakeNodeMessage = transport.MessageQueue["fakeNode2"].First();
+				Assert.IsType<RequestVoteRequest>(fakeNodeMessage.Message);
+				requestVoteMessage = fakeNodeMessage.Message as RequestVoteRequest;
+				Assert.Equal("realNode", requestVoteMessage.CandidateId);
+			}
+		}
+
 
 		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
 		{

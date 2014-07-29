@@ -9,6 +9,11 @@ namespace Rhino.Raft
 	{
 		private readonly ConcurrentDictionary<string,BlockingCollection<MessageEnvelope>> _messageQueue = new ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>>();
 
+		public ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>> MessageQueue
+		{
+			get { return _messageQueue; }
+		}
+
 		private void AddToQueue<T>(string dest, T message)
 		{
 			var newMessage = new MessageEnvelope
