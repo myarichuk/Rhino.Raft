@@ -20,8 +20,6 @@ namespace Rhino.Raft.Behaviors
 		private readonly Dictionary<string, long> _matchIndexes = new Dictionary<string, long>();
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>();
 
-		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
-
 		private readonly Task _heartbeatTask;
 
 		public LeaderStateBehavior(RaftEngine engine)
@@ -64,18 +62,19 @@ namespace Rhino.Raft.Behaviors
 		private void SendEntriesToPeer(string peer)
 		{
 			var nextIndex = _nextIndexes[peer];
+			
 			var entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
 												.Take(Engine.MaxEntriesPerRequest)
-												.ToArray();
+												.ToArray();			
+			_nextIndexes[peer] += entries.Length;
 
 			var prevLogEntry = entries.Length == 0
 				? Engine.PersistentState.LastLogEntry()
 				: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
 
 			prevLogEntry = prevLogEntry ?? new LogEntry();
-
+			
 			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}", entries.Length, peer);
-
 
 			var aer = new AppendEntriesRequest
 			{
@@ -88,6 +87,7 @@ namespace Rhino.Raft.Behaviors
 			};
 
 			Engine.Transport.Send(peer, aer);
+			OnEntriesAppended(entries); //equivalent to followers receiving the entries			
 		}
 
 		protected RaftEngineState State
@@ -100,7 +100,7 @@ namespace Rhino.Raft.Behaviors
 			// we don't have to do anything here
 		}
 
-		public override void Handle(string source, AppendEntriesResponse resp)
+		public override void Handle(string destination, AppendEntriesResponse resp)
 		{
 			// there is a new leader in town, time to step down
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm)
@@ -108,15 +108,16 @@ namespace Rhino.Raft.Behaviors
 				Engine.UpdateCurrentTerm(resp.CurrentTerm,resp.LeaderId);
 				return;
 			}
-
+			
 			if (resp.Success == false)
 			{
 				// go back in the log, this peer isn't matching us at this location
-				_nextIndexes[source] = _nextIndexes[source] - 1;
+				_nextIndexes[resp.Source] = _nextIndexes[resp.Source] - 1;
 				return;
 			}
 
-			_matchIndexes[source] = resp.LastLogIndex;
+			Debug.Assert(resp.Source != null);
+			_matchIndexes[resp.Source] = resp.LastLogIndex;
 
 			var maxIndexOnQuorom = GetMaxindexOnQuorom();
 
@@ -152,9 +153,8 @@ namespace Rhino.Raft.Behaviors
 
 		public void AppendCommand(Command command)
 		{
-			var commandEntry = Engine.CommandSerializer.Serialize(command);
-			command.AssignedIndex = Engine.PersistentState.AppendToLeaderLog(commandEntry);
-			_pendingCommands.Enqueue(command);
+			var commandEntry = Engine.CommandSerializer.Serialize(command);			
+			_matchIndexes[Engine.Name] = command.AssignedIndex = Engine.PersistentState.AppendToLeaderLog(commandEntry);
 		}
 
 		public override void Dispose()

@@ -20,6 +20,8 @@ namespace Rhino.Raft.Behaviors
 
 		public int Timeout { get; set; }
 
+		public event Action<LogEntry[]> EntriesAppended;
+
 		public virtual void HandleMessage(MessageEnvelope envelope)
 		{
 			RequestVoteRequest requestVoteRequest;
@@ -134,7 +136,8 @@ namespace Rhino.Raft.Behaviors
 				{
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					Message = msg
+					Message = msg,
+					Source = Engine.Name
 				});
 				return;
 			}
@@ -157,7 +160,8 @@ namespace Rhino.Raft.Behaviors
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					Message = msg,
-					LeaderId = req.LeaderId
+					LeaderId = req.LeaderId,
+					Source = Engine.Name
 				});
 				return;
 			}
@@ -180,10 +184,10 @@ namespace Rhino.Raft.Behaviors
 					long oldCommitIndex = Engine.CommitIndex;
 
 					Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
-
 					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 				}
 				message = "Applied commits";
+				OnEntriesAppended(req.Entries);
 			}
 			else
 			{
@@ -196,13 +200,19 @@ namespace Rhino.Raft.Behaviors
 				Success = true,
 				CurrentTerm = Engine.PersistentState.CurrentTerm,
 				LastLogIndex = lastIndex,
-				Message = message 
+				Message = message,
+				Source = Engine.Name
 			});
 		}
 
 		public virtual void Dispose()
 		{
 			
+		}
+		protected virtual void OnEntriesAppended(LogEntry[] logEntries)
+		{
+			var handler = EntriesAppended;
+			if (handler != null) handler(logEntries);
 		}
 	}
 }

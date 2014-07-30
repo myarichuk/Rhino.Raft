@@ -56,8 +56,17 @@ namespace Rhino.Raft
 		private readonly Task _eventLoopTask;
 
 		private long _commitIndex;
+		private AbstractRaftStateBehavior _stateBehavior;
 
-		private AbstractRaftStateBehavior StateBehavior { get; set; }
+		private AbstractRaftStateBehavior StateBehavior
+		{
+			get { return _stateBehavior; }
+			set
+			{
+				_stateBehavior = value;
+				_stateBehavior.EntriesAppended += OnEntriesAppended;
+			}
+		}
 
 		/// <summary>
 		/// can be heartbeat timeout or election timeout - depends on the state behavior
@@ -68,6 +77,8 @@ namespace Rhino.Raft
 		public event Action<RaftEngineState> StateChanged;
 		public event Action CandidacyAnnounced;
 		public event Action StateTimeout;
+		public event Action<LogEntry[]> EntriesAppended;
+		public event Action<long> CommitIndexChanged;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -137,6 +148,9 @@ namespace Rhino.Raft
 			if (state == State)
 				return;
 
+			if (StateBehavior != null)
+				StateBehavior.EntriesAppended -= OnEntriesAppended;
+
 			State = state;
 			var oldState = StateBehavior;
 			using (oldState)
@@ -155,7 +169,7 @@ namespace Rhino.Raft
 						break;
 				}
 			}
-
+			
 			OnStateChanged(state);
 		}
 
@@ -180,11 +194,12 @@ namespace Rhino.Raft
 
 		public void ApplyCommits(long from, long to)
 		{
-			foreach (LogEntry entry in PersistentState.LogEntriesAfter(from, to))
+			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
 				StateMachine.Apply(entry);
 			}
 			CommitIndex = to;
+			OnCommitIndexChanged(CommitIndex);
 		}
 
 		internal void AnnounceCandidacy()
@@ -236,6 +251,19 @@ namespace Rhino.Raft
 			var handler = StateTimeout;
 			if (handler != null) handler();
 		}
+
+		protected virtual void OnEntriesAppended(LogEntry[] logEntries)
+		{
+			var handler = EntriesAppended;
+			if (handler != null) handler(logEntries);
+		}
+
+		protected virtual void OnCommitIndexChanged(long commitIndex)
+		{
+			var handler = CommitIndexChanged;
+			if (handler != null) handler(commitIndex);
+		}
+
 	}
 
 	public enum RaftEngineState

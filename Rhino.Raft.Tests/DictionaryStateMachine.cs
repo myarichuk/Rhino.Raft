@@ -27,8 +27,9 @@ namespace Rhino.Raft.Tests
 
 			LastApplied = entry.Index;
 
-			var command = (DictionaryCommand)_jsonCommandSerializer.Deserialize(entry.Data);
-			command.Apply(Data);
+			var command = _jsonCommandSerializer.Deserialize(entry.Data) as DictionaryCommand; 
+			if(command != null) //this means NopCommand -> it shouldn't be in the log
+				command.Apply(Data);
 		}
 	}
 }

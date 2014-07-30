@@ -9,5 +9,7 @@
 		public string Message { get; set; }
 
 		public string LeaderId { get; set; }
+
+		public string Source { get; set; }
 	}
 }
