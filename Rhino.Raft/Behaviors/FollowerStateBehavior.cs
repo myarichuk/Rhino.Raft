@@ -13,7 +13,7 @@ namespace Rhino.Raft.Behaviors
     {
 	    public FollowerStateBehavior(RaftEngine engine) : base(engine)
 	    {
-		    var random = new Random(Engine.Name.GetHashCode());
+		    var random = new Random((int) (Engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
 		    Timeout = random.Next(engine.MessageTimeout/2, engine.MessageTimeout);
 	    }
 

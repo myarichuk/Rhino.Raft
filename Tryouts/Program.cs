@@ -6,19 +6,13 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			for (int i = 0; i < 100; i++)
+			try
 			{
-				Console.Clear();
-				Console.WriteLine(i);
-				try
-				{
-					new RaftTests().On_many_node_network_can_be_only_one_leader(3);
-				}
-				catch (Exception e)
-				{
-					Console.WriteLine(e);
-					break;
-				}
+				new RaftTests().Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes().Wait();
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine(e);
 			}
 		}
 	}

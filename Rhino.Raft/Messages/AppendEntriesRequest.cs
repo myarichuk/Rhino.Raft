@@ -8,5 +8,6 @@ namespace Rhino.Raft.Messages
 		public long PrevLogTerm { get; set; }
 		public LogEntry[] Entries { get; set; }
 		public long LeaderCommit { get; set; }
+
 	}
 }

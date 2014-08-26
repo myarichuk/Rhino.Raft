@@ -17,7 +17,7 @@ namespace Rhino.Raft.Behaviors
 {
 	public class LeaderStateBehavior : AbstractRaftStateBehavior
 	{
-		private readonly Dictionary<string, long> _matchIndexes = new Dictionary<string, long>();
+		private readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>();
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>();
 
 		private readonly Task _heartbeatTask;
@@ -102,6 +102,8 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string destination, AppendEntriesResponse resp)
 		{
+			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.Source);
+			
 			// there is a new leader in town, time to step down
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm)
 			{				
@@ -118,21 +120,30 @@ namespace Rhino.Raft.Behaviors
 
 			Debug.Assert(resp.Source != null);
 			_matchIndexes[resp.Source] = resp.LastLogIndex;
+			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}",resp.Source,resp.LastLogIndex);
 
-			var maxIndexOnQuorom = GetMaxindexOnQuorom();
+			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
+			if (maxIndexOnQuorom == -1)
+			{
+				Engine.DebugLog.Write("Not enough followers committed, not applying commits yet");
+				return;
+			}
 
 			if (maxIndexOnQuorom <= Engine.CommitIndex)
+			{
+				Engine.DebugLog.Write("maxIndexOnQuorom = {0} <= Engine.CommitIndex = {1} --> no need to apply commits", maxIndexOnQuorom, Engine.CommitIndex);
 				return;
+			}
 
-			Engine.ApplyCommits(Engine.CommitIndex, maxIndexOnQuorom);
+			Engine.DebugLog.Write("AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnQuorom, Engine.CommitIndex);
+			Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnQuorom);
 		}
 
-		private long GetMaxindexOnQuorom()
+		private long GetMaxIndexOnQuorom()
 		{
 			var dic = new Dictionary<long, int>();
-			foreach (var matchIndex in _matchIndexes)
+			foreach (var index in _matchIndexes.Select(matchIndex => matchIndex.Value))
 			{
-				var index = matchIndex.Value;
 				int count;
 				dic.TryGetValue(index, out count);
 

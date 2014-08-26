@@ -17,12 +17,14 @@ using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
 using Rhino.Raft.Utils;
+using Voron.Util;
 
 namespace Rhino.Raft
 {
 	public class RaftEngine : IDisposable
 	{
 		private readonly CancellationTokenSource _cancellationTokenSource;
+		private readonly ManualResetEventSlim _leaderSelectedEvent = new ManualResetEventSlim();
 
 		public DebugWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
@@ -32,7 +34,26 @@ namespace Rhino.Raft
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
 		public ICommandSerializer CommandSerializer { get; set; }
-		public string CurrentLeader { get; set; }
+
+		public string CurrentLeader
+		{
+			get
+			{
+					return _currentLeader;
+			}
+			set
+			{
+				if (_currentLeader == value)
+					return;
+
+				DebugLog.Write("Setting CurrentLeader: " + value);
+				_currentLeader = value;
+				if (_currentLeader == null)
+					_leaderSelectedEvent.Reset();
+				else
+					_leaderSelectedEvent.Set();
+			}
+		}
 
 		/// <summary>
 		/// This is a thread safe operation, since this is being used by both the leader's message processing thread
@@ -41,7 +62,10 @@ namespace Rhino.Raft
 		public long CommitIndex
 		{
 			get { return Thread.VolatileRead(ref _commitIndex); }
-			set { Interlocked.Exchange(ref _commitIndex, value); }
+			set
+			{
+				Interlocked.Exchange(ref _commitIndex, value);
+			}
 		}
 
 		public int QuorumSize
@@ -57,6 +81,7 @@ namespace Rhino.Raft
 
 		private long _commitIndex;
 		private AbstractRaftStateBehavior _stateBehavior;
+		private string _currentLeader;
 
 		private AbstractRaftStateBehavior StateBehavior
 		{
@@ -75,10 +100,11 @@ namespace Rhino.Raft
 		public CancellationToken CancellationToken { get { return _cancellationTokenSource.Token; } }
 		
 		public event Action<RaftEngineState> StateChanged;
-		public event Action CandidacyAnnounced;
+		public event Action ElectionStarted;
 		public event Action StateTimeout;
 		public event Action<LogEntry[]> EntriesAppended;
-		public event Action<long> CommitIndexChanged;
+		public event Action<long, long> CommitIndexChanged;
+		public event Action ElectedAsLeader;		
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -166,6 +192,7 @@ namespace Rhino.Raft
 					case RaftEngineState.Leader:
 						CurrentLeader = Name;
 						StateBehavior = new LeaderStateBehavior(this);
+						OnElectedAsLeader();
 						break;
 				}
 			}
@@ -183,23 +210,42 @@ namespace Rhino.Raft
 			return lastLogEntry.Index <= lastLogIndex;
 		}
 
+		public Task WaitForLeader()
+		{
+			return Task.Run(() => _leaderSelectedEvent.Wait(CancellationToken), CancellationToken);
+		}
+
 		public void AppendCommand(Command command)
 		{
+			if (command == null) throw new ArgumentNullException("command");
+
 			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
 			if(leaderStateBehavior == null)
-				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " + CurrentLeader);
+				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " + CurrentLeader + ", node type is " + StateBehavior.GetType().Name);
 
 			leaderStateBehavior.AppendCommand(command);
 		}
 
 		public void ApplyCommits(long from, long to)
 		{
+			Debug.Assert(to >= from);
+
 			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
-				StateMachine.Apply(entry);
+				try
+				{
+					StateMachine.Apply(entry);
+				}
+				catch (InvalidOperationException e)
+				{
+					DebugLog.Write("Failed to apply commit. {0}",e);
+					throw;
+				}
 			}
+			var oldCommitIndex = CommitIndex;
 			CommitIndex = to;
-			OnCommitIndexChanged(CommitIndex);
+			DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
+			OnCommitIndexChanged(oldCommitIndex,CommitIndex);
 		}
 
 		internal void AnnounceCandidacy()
@@ -236,7 +282,7 @@ namespace Rhino.Raft
 
 		protected virtual void OnCandidacyAnnounced()
 		{
-			var handler = CandidacyAnnounced;
+			var handler = ElectionStarted;
 			if (handler != null) handler();
 		}
 
@@ -258,12 +304,18 @@ namespace Rhino.Raft
 			if (handler != null) handler(logEntries);
 		}
 
-		protected virtual void OnCommitIndexChanged(long commitIndex)
+		protected virtual void OnCommitIndexChanged(long oldCommitIndex,long newCommitIndex)
 		{
 			var handler = CommitIndexChanged;
-			if (handler != null) handler(commitIndex);
+			if (handler != null) handler(oldCommitIndex,newCommitIndex);
 		}
 
+		protected virtual void OnElectedAsLeader()
+		{
+			_leaderSelectedEvent.Set();
+			var handler = ElectedAsLeader;
+			if (handler != null) handler();
+		}
 	}
 
 	public enum RaftEngineState

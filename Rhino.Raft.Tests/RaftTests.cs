@@ -3,7 +3,11 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reactive;
+using System.Reactive.Linq;
 using System.Threading;
+using System.Threading.Tasks;
+using FizzWare.NBuilder;
 using FluentAssertions;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
@@ -14,8 +18,10 @@ using Rhino.Raft.Commands;
 
 namespace Rhino.Raft.Tests
 {
-	public class RaftTests
+	public class RaftTests : IDisposable
 	{
+		private readonly List<RaftEngine> _nodes = new List<RaftEngine>();
+
 		[Fact]
 		public void Follower_as_a_single_node_becomes_leader_automatically()
 		{
@@ -76,29 +82,22 @@ namespace Rhino.Raft.Tests
 			var leaderEvent = new ManualResetEventSlim();
 
 			List<RaftEngine> raftNodes = null;
-			try
+			var sp = Stopwatch.StartNew();
+			raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
 			{
-				var sp = Stopwatch.StartNew();
-				raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
+				options.Stopwatch = sp;
+				return options;
+			}).ToList();
+			raftNodes.ForEach(node => node.StateChanged += state =>
+			{
+				if (state == RaftEngineState.Leader)
 				{
-					options.Stopwatch = sp;
-					return options;
-				}).ToList();
-				raftNodes.ForEach(node => node.StateChanged += state =>
-				{
-					if (state == RaftEngineState.Leader)
-					{
-						leaderEvent.Set();
-					}
-				});
+					leaderEvent.Set();
+				}
+			});
 
-				Assert.True(leaderEvent.Wait(25000));
-				Assert.Equal(1, raftNodes.Count(node => node.State == RaftEngineState.Leader));
-			}
-			finally
-			{
-				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
-			}
+			Assert.True(leaderEvent.Wait(25000));
+			Assert.Equal(1, raftNodes.Count(node => node.State == RaftEngineState.Leader));
 		}
 
 		[Theory]
@@ -112,32 +111,25 @@ namespace Rhino.Raft.Tests
 			var followerEvent = new CountdownEvent(nodeCount);
 
 			List<RaftEngine> raftNodes = null;
-			try
+			raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 250).ToList();
+			raftNodes.ForEach(node => node.StateChanged += state =>
 			{
-				raftNodes = CreateRaftNetwork(nodeCount,messageTimeout:250).ToList();
-				raftNodes.ForEach(node => node.StateChanged += state =>
-				{
-					if (state == RaftEngineState.Leader)
-						leaderEvent.Set();
-					else if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
-						followerEvent.Signal();
-				});
+				if (state == RaftEngineState.Leader)
+					leaderEvent.Set();
+				else if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
+					followerEvent.Signal();
+			});
 
-				Assert.True(leaderEvent.Wait(25000));
-				
-				var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-				Assert.NotNull(leaderNode);
-				var currentLeader = leaderNode.CurrentLeader;
-				
-				followerEvent.Wait(15000); //wait until all other nodes become followers		
-				var leaders = raftNodes.Select(x => x.CurrentLeader).ToList();
+			Assert.True(leaderEvent.Wait(25000));
 
-				Assert.True(leaders.All(x => x != null && x.Equals(currentLeader)));
-			}
-			finally
-			{
-				if (raftNodes != null) raftNodes.ForEach(node => node.Dispose());
-			}
+			var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leaderNode);
+			var currentLeader = leaderNode.CurrentLeader;
+
+			followerEvent.Wait(15000); //wait until all other nodes become followers		
+			var leaders = raftNodes.Select(x => x.CurrentLeader).ToList();
+
+			Assert.True(leaders.All(x => x != null && x.Equals(currentLeader)));
 		}
 
 		[Fact]
@@ -187,7 +179,7 @@ namespace Rhino.Raft.Tests
 		}
 
 		[Fact]
-		public void Leader_AppendCommand_command_is_not_resent_if_accepted_to_other_node()
+		public void Leader_AppendCommand_command_is_not_resent_if_committed()
 		{
 			var transport = new InMemoryTransport();
 			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode");
@@ -229,9 +221,9 @@ namespace Rhino.Raft.Tests
 				var appendEntriesCommand = transport.MessageQueue["fakeNode"].Last().Message as AppendEntriesRequest;
 
 				var appendEntriesAcknowledgedEvent = new ManualResetEventSlim();
-				node.CommitIndexChanged += commitIndex => appendEntriesAcknowledgedEvent.Set();
+				node.CommitIndexChanged += (oldCommitIndex,newCommitIndex) => appendEntriesAcknowledgedEvent.Set();
 
-				//send verification that fakeNode received entries
+				//send verification that fakeNode received entries --> essentially do the commit
 				var appendEntriesResponse = new AppendEntriesResponse
 				{
 					CurrentTerm = 1,
@@ -244,7 +236,6 @@ namespace Rhino.Raft.Tests
 				transport.Send("realNode", appendEntriesResponse);
 
 				appendEntriesAcknowledgedEvent.Wait();
-
 				
 				entriesAppendedEvent.Reset();
 				var command2 = new DictionaryCommand.Del
@@ -268,6 +259,48 @@ namespace Rhino.Raft.Tests
 				Assert.Equal(1, appendEntriesCommand.Entries.Count(x => AreEqual(x.Data, serializedCommand2)));
 				Assert.Equal(0, appendEntriesCommand.Entries.Count(x => AreEqual(x.Data, serializedCommand)));
 			}
+		}
+
+		[Fact(Timeout = 30000)]
+		public async Task Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes()
+		{
+			const int NodeCount = 3;
+			const int CommandCount = 5; 
+			var commandsToDistribute = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
+				.All()
+				.With(x => x.Completion = null)
+				.Build()
+				.ToList();
+			
+			var raftNodes = CreateRaftNetwork(NodeCount, messageTimeout: 2000).ToList();
+			var entriesAppended = new Dictionary<string, List<LogEntry>>();
+			raftNodes.ForEach(node =>
+			{
+				entriesAppended.Add(node.Name, new List<LogEntry>());
+				node.EntriesAppended += logEntries => entriesAppended[node.Name].AddRange(logEntries);
+			});
+
+			// ReSharper disable once PossibleNullReferenceException
+			var first = raftNodes.First();
+			await first.WaitForLeader();
+			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
+
+			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
+
+			commandsToDistribute.ForEach(leader.AppendCommand);
+			
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+			if (nonLeaderNode.CommitIndex == CommandCount + 1) //precaution
+				commitsAppliedEvent.Set();
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+			//CommandCount + 1 --> take into account NOP command that leader sends after election
+				if(newIndex == CommandCount + 1)
+					commitsAppliedEvent.Set();
+			};
+			
+			Assert.True(commitsAppliedEvent.Wait(30000),"within 30 sec. non leader node should have all relevant commands committed");
 		}
 
 		[Fact]
@@ -311,7 +344,7 @@ namespace Rhino.Raft.Tests
 				var candidacyAnnoucementEvent = new ManualResetEventSlim();
 				var stateTimeoutEvent = new ManualResetEventSlim();
 
-				node.CandidacyAnnounced += candidacyAnnoucementEvent.Set;
+				node.ElectionStarted += candidacyAnnoucementEvent.Set;
 
 				candidacyAnnoucementEvent.Wait(node.MessageTimeout + 5); //wait for elections to start
 				node.StateTimeout += stateTimeoutEvent.Set;
@@ -453,9 +486,18 @@ namespace Rhino.Raft.Tests
 			if (optionChangerFunc == null)
 				optionChangerFunc = options => options;
 
-			return nodeNames.Select(name => optionChangerFunc(CreateNodeOptions(name, transport, messageTimeout, nodeNames.Where(x => !x.Equals(name)).ToArray())))
+			var raftNetwork = nodeNames.Select(name => optionChangerFunc(CreateNodeOptions(name, transport, messageTimeout, nodeNames.Where(x => !x.Equals(name)).ToArray())))
 				.Select(nodeOptions => new RaftEngine(nodeOptions))
 				.ToList();
+
+			_nodes.AddRange(raftNetwork);
+
+			return raftNetwork;
+		}
+
+		public void Dispose()
+		{
+			_nodes.ForEach(node => node.Dispose());
 		}
 	}
 }

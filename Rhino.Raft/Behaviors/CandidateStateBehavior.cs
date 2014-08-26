@@ -25,7 +25,7 @@ namespace Rhino.Raft.Behaviors
 
 		public CandidateStateBehavior(RaftEngine engine) : base(engine)
 		{
-			_random = new Random(engine.Name.GetHashCode());
+			_random = new Random((int) (engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
 			Timeout = _random.Next(engine.MessageTimeout / 2, engine.MessageTimeout);
 			VoteForSelf();
 	    }
@@ -74,8 +74,8 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			Engine.DebugLog.Write("Selected as leader 1, term = {0}", resp.Term);
 			Engine.SetState(RaftEngineState.Leader);
+			Engine.DebugLog.Write("Selected as leader, term = {0}", resp.Term);
 		}
 
     }

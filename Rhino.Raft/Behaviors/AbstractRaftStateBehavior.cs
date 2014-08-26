@@ -1,10 +1,6 @@
 using System;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading;
-using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
-using Voron;
 
 
 namespace Rhino.Raft.Behaviors
@@ -12,6 +8,7 @@ namespace Rhino.Raft.Behaviors
 	public abstract class AbstractRaftStateBehavior : IDisposable
 	{
 		protected readonly RaftEngine Engine;
+		private readonly object _appendRequestSyncObj = new object();
 
 		public string Name
 		{
@@ -127,82 +124,98 @@ namespace Rhino.Raft.Behaviors
 	
 		public virtual void Handle(string destination, AppendEntriesRequest req)
 		{
-			if (req.Term < Engine.PersistentState.CurrentTerm)
+			lock (_appendRequestSyncObj) //precaution, should never be contested
 			{
-				var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
-					req.Term, Engine.PersistentState.CurrentTerm);
-				Engine.DebugLog.Write(msg);
-				Engine.Transport.Send(destination, new AppendEntriesResponse
+				if (req.Term < Engine.PersistentState.CurrentTerm)
 				{
-					Success = false,
-					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					Message = msg,
-					Source = Engine.Name
-				});
-				return;
-			}
-			if (req.Term > Engine.PersistentState.CurrentTerm)
-			{
-				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
-			}
+					var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
+						req.Term, Engine.PersistentState.CurrentTerm);
+					Engine.DebugLog.Write(msg);
+					Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+					{
+						Success = false,
+						CurrentTerm = Engine.PersistentState.CurrentTerm,
+						Message = msg,
+						Source = Engine.Name
+					});
+					return;
+				}
 
-			Engine.CurrentLeader = req.LeaderId;
-			Engine.DebugLog.Write("Set current leader to {0}", req.LeaderId);
-
-			var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
-			if (prevTerm != req.PrevLogTerm)
-			{
-				string msg = string.Format(
-					"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}", req.PrevLogTerm, prevTerm, req.PrevLogIndex);
-				Engine.DebugLog.Write(msg);
-				Engine.Transport.Send(destination, new AppendEntriesResponse
+				if (req.Term > Engine.PersistentState.CurrentTerm)
 				{
-					Success = false,
-					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					Message = msg,
-					LeaderId = req.LeaderId,
-					Source = Engine.Name
-				});
-				return;
-			}
+					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+				}
 
-			if (req.Entries.Length > 0)
-			{
-				Engine.DebugLog.Write("Appending log, entries count: {0} (node state = {1})", req.Entries.Length, Engine.State);
-				Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
-			}
+				if (Engine.CurrentLeader == null || req.LeaderId.Equals(Engine.CurrentLeader) == false)
+				{
+					Engine.CurrentLeader = req.LeaderId;
+					Engine.DebugLog.Write("Set current leader to {0}", req.LeaderId);
+				}
 
-			string message;
-			long lastIndex;
+				var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
+				if (prevTerm != req.PrevLogTerm)
+				{
+					var msg = string.Format(
+						"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}",
+						req.PrevLogTerm, prevTerm, req.PrevLogIndex);
+					Engine.DebugLog.Write(msg);
+					Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+					{
+						Success = false,
+						CurrentTerm = Engine.PersistentState.CurrentTerm,
+						Message = msg,
+						LeaderId = req.LeaderId,
+						Source = Engine.Name
+					});
+					return;
+				}
 
-			if (req.Entries.Length > 0)
-			{
-				lastIndex = req.Entries[req.Entries.Length - 1].Index;
+				if (req.Entries.Length > 0)
+				{
+					Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
+						Engine.State);
+					Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
+				}
 
+				string message;
+
+				var isHeartbeat = req.Entries.Length == 0;
+				if (isHeartbeat)
+				{
+					Engine.DebugLog.Write("Heartbeat received, req.LeaderCommit: {0}, Engine.CommitIndex: {1}", req.LeaderCommit,
+						Engine.CommitIndex);
+				}
+				
+				var lastIndex = req.Entries.Length == 0 ? 0 : req.Entries[req.Entries.Length - 1].Index;
 				if (req.LeaderCommit > Engine.CommitIndex)
 				{
-					long oldCommitIndex = Engine.CommitIndex;
+					Engine.DebugLog.Write(
+						"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
+						Engine.CommitIndex, lastIndex);
+					var oldCommitIndex = Engine.CommitIndex;
+					
+					Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
+					Engine.ApplyCommits(oldCommitIndex + 1, Engine.CommitIndex);
+					message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
+					Engine.DebugLog.Write(message);
 
-					Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
-					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
+					OnEntriesAppended(req.Entries);
 				}
-				message = "Applied commits";
-				OnEntriesAppended(req.Entries);
-			}
-			else
-			{
-				message = "No commits to apply";
-				lastIndex = Engine.CommitIndex;
-			}
+				else
+				{
+					message = "Got new entries";
+				}
 
-			Engine.Transport.Send(destination, new AppendEntriesResponse
-			{
-				Success = true,
-				CurrentTerm = Engine.PersistentState.CurrentTerm,
-				LastLogIndex = lastIndex,
-				Message = message,
-				Source = Engine.Name
-			});
+
+				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+				{
+					Success = true,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					LastLogIndex = (Engine.PersistentState.LastLogEntry() ?? new LogEntry()).Index,
+					Message = message,
+					Source = Engine.Name
+				});
+			}
 		}
 
 		public virtual void Dispose()
