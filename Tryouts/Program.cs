@@ -6,13 +6,15 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			try
+			for (int i = 0; i < 1000; i++)
 			{
-				new RaftTests().Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes().Wait();
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine(e);
+				Console.WriteLine("--------------------------------------------------------------------------");
+				Console.WriteLine(i);
+				using (var test = new RaftTests())
+				{
+					test.Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes().Wait();
+				}
+				Console.WriteLine("--------------------------------------------------------------------------");
 			}
 		}
 	}
