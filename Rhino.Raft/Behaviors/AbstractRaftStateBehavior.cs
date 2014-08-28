@@ -206,7 +206,6 @@ namespace Rhino.Raft.Behaviors
 					message = "Got new entries";
 				}
 
-
 				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
 				{
 					Success = true,

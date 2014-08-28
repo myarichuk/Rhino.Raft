@@ -4,12 +4,14 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 
@@ -67,7 +69,6 @@ namespace Rhino.Raft.Behaviors
 			var entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
 												.Take(Engine.MaxEntriesPerRequest)
 												.ToArray();
-			_nextIndexes[peer] += entries.Length;
 
 			var prevLogEntry = entries.Length == 0
 				? Engine.PersistentState.LastLogEntry()
@@ -75,7 +76,7 @@ namespace Rhino.Raft.Behaviors
 
 			prevLogEntry = prevLogEntry ?? new LogEntry();
 
-			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}", entries.Length, peer);
+			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}. Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)));
 
 			var aer = new AppendEntriesRequest
 			{
@@ -114,13 +115,15 @@ namespace Rhino.Raft.Behaviors
 
 			if (resp.Success == false)
 			{
-				// go back in the log, this peer isn't matching us at this location
-				_nextIndexes[resp.Source] = _nextIndexes[resp.Source] - 1;
+				// go back in the log, this peer isn't matching us at this location				
+				_nextIndexes[resp.Source] -= 1;
+				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",_nextIndexes[resp.Source] , resp.Source);
 				return;
 			}
 
 			Debug.Assert(resp.Source != null);
 			_matchIndexes[resp.Source] = resp.LastLogIndex;
+			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
 			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
 
 			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
@@ -182,7 +185,6 @@ namespace Rhino.Raft.Behaviors
 		public override void Dispose()
 		{
 			_heartbeatTask.Wait(Timeout * 2);
-			_heartbeatTask.Dispose();
 		}
 	}
 }

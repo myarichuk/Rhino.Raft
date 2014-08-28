@@ -177,30 +177,151 @@ namespace Rhino.Raft.Tests
 			Assert.Equal(timeout, result);
 		}
 
-//		[Theory]
-////		[InlineData(2)]
-//		[InlineData(3)]
-////		[InlineData(4)]
-////		[InlineData(5)]
-//		public void Network_partition_can_be_healed(int nodeCount)
-//		{
-//			var transport = new InMemoryTransport();
-//			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 500, transport: transport).ToList();
-//
-//			raftNodes.First().WaitForLeader().Wait();
-//			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
-//
-//			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
-//			transport.DisconnectNode(leader.Name);
-//
-//			Thread.Sleep(500);
-//
-//			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
-//			transport.ReconnectNode(leader.Name);
-//
-//			Thread.Sleep(500);
-//
-//		}
+		[Fact]
+		public void Network_partition_should_cause_message_resend()
+		{
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(4)
+				.All()
+				.With(x => x.Completion = new TaskCompletionSource<object>())
+				.With(x => x.AssignedIndex = -1)
+				.Build()
+				.ToList();
+
+			var transport = new InMemoryTransport();
+			var nodeOptions = CreateNodeOptions("leader", transport, 1000, "fake1");
+
+			using (var leader = new RaftEngine(nodeOptions))
+			{
+				var stateChangeEvent = new ManualResetEventSlim();
+				leader.StateChanged += state => stateChangeEvent.Set();
+
+				stateChangeEvent.Wait(); //wait for elections to start
+
+				stateChangeEvent.Reset();
+
+				transport.Send("leader", new RequestVoteResponse
+				{
+					Term = 1,
+					VoteGranted = true
+				});
+				
+				Trace.WriteLine("<ack for NOP command sent>");
+				Thread.Sleep(150);
+
+				Assert.True(stateChangeEvent.Wait(50),
+					"wait for votes to be acknowledged -> acknowledgement should happen at most within 50ms");
+
+				//ack for NOP command reaching the fake1 node
+				transport.Send("leader", new AppendEntriesResponse
+				{
+					CurrentTerm = 1,
+					LastLogIndex = 1,
+					LeaderId = "leader",
+					Success = true,
+					Source = "fake1"
+				});
+
+				leader.AppendCommand(commands[0]);
+				transport.Send("leader", new AppendEntriesResponse
+				{
+					CurrentTerm = 1,
+					LastLogIndex = 2,
+					LeaderId = "leader",
+					Success = true,
+					Source = "fake1"
+				});
+				
+				//make sure the command is committed (quorum)
+				Thread.Sleep(150);
+				Assert.Equal(2, leader.CommitIndex);
+
+				//"clear" the message queue for fake1 node
+				transport.MessageQueue["fake1"] = new BlockingCollection<MessageEnvelope>();
+				leader.AppendCommand(commands[1]);
+				leader.AppendCommand(commands[2]);
+				transport.Send("leader", new AppendEntriesResponse
+				{
+					CurrentTerm = 1,
+					LeaderId = "leader",
+					Success = false,
+					Source = "fake1"
+				});
+
+				Thread.Sleep(150);
+
+				var commandResendingMessage = transport.MessageQueue["fake1"].Where(x => x.Message is AppendEntriesRequest)
+																			 .Select(x => (AppendEntriesRequest)x.Message)
+																			 .FirstOrDefault(x => x.Entries.Length > 0);
+				Assert.NotNull(commandResendingMessage);
+				var deserializedCommands =
+					commandResendingMessage.Entries.Select(x => leader.PersistentState.CommandSerializer.Deserialize(x.Data) as DictionaryCommand.Set)
+												   .ToList();
+
+				for (int i = 1; i < 3; i++)
+				{
+					Assert.Equal(commands[i].Value, deserializedCommands[i].Value);
+					Assert.Equal(commands[i].AssignedIndex, deserializedCommands[i].AssignedIndex);
+				}
+			}
+		}
+
+
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
+		[InlineData(10)]
+		public void Network_partition_for_less_time_than_timeout_can_be_healed_without_elections(int nodeCount)
+		{
+			var transport = new InMemoryTransport();
+			const int CommandCount = 5;
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
+				.All()
+				.With(x => x.Completion = new TaskCompletionSource<object>())
+				.With(x => x.AssignedIndex = -1)
+				.Build()
+				.ToList();
+
+			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
+
+			raftNodes.First().WaitForLeader().Wait();
+			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex == CommandCount + 1)
+					commitsAppliedEvent.Set();
+			};
+
+			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
+			Thread.Sleep(250); //allow the process to start
+
+			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
+			transport.DisconnectNode(leader.Name);
+
+			leader.AppendCommand(commands.Last());
+			
+			//some time passes,but not enough for new elections
+			Thread.Sleep(leader.MessageTimeout / 10);
+
+			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");			
+			transport.ReconnectNode(leader.Name);
+			Assert.Equal(RaftEngineState.Leader, leader.State);
+
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 2));
+
+			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
+																					.OfType<DictionaryCommand.Set>()
+																					.ToList();
+			for (int i = 0; i < CommandCount; i++)
+			{
+				Assert.Equal(commands[i].Value, committedCommands[i].Value);
+				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
+			}
+		}
 
 		[Theory]
 		[InlineData(2)]
