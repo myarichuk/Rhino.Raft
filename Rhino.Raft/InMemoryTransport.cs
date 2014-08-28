@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
@@ -9,6 +11,8 @@ namespace Rhino.Raft
 	{
 		private readonly ConcurrentDictionary<string,BlockingCollection<MessageEnvelope>> _messageQueue = new ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>>();
 
+		private readonly HashSet<string> _disconnectedNodes = new HashSet<string>();
+
 		public ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>> MessageQueue
 		{
 			get { return _messageQueue; }
@@ -16,6 +20,10 @@ namespace Rhino.Raft
 
 		private void AddToQueue<T>(string dest, T message)
 		{
+			//if destination is considered disconnected --> drop the message so it never arrives
+			if(_disconnectedNodes.Contains(dest))
+				return;
+
 			var newMessage = new MessageEnvelope
 			{
 				Destination = dest,
@@ -30,19 +38,37 @@ namespace Rhino.Raft
 			} );
 		}
 
+		public void DisconnectNode(string node)
+		{
+			_disconnectedNodes.Add(node);
+		}
+
+		public void ReconnectNode(string node)
+		{
+			_disconnectedNodes.RemoveWhere(n => n.Equals(node, StringComparison.InvariantCultureIgnoreCase));
+		}
+
 		public bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope)
-		{			
+		{
+			messageEnvelope = null;
+			if (_disconnectedNodes.Contains(dest))
+				return false;
+
 			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
 			return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
 		public void Send(string dest, AppendEntriesRequest req)
 		{
+			if (_disconnectedNodes.Contains(req.LeaderId))
+				return;
 			AddToQueue(dest, req);
 		}
 
 		public void Send(string dest, RequestVoteRequest req)
 		{
+			if (_disconnectedNodes.Contains(req.CandidateId))
+				return;
 			AddToQueue(dest, req);
 		}
 
@@ -54,7 +80,6 @@ namespace Rhino.Raft
 		public void Send(string dest, RequestVoteResponse resp)
 		{
 			AddToQueue(dest, resp);
-
 		}
 	}
 }

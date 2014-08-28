@@ -180,7 +180,7 @@ namespace Rhino.Raft.Behaviors
 				string message;
 
 				var isHeartbeat = req.Entries.Length == 0;
-				if (isHeartbeat)
+				if (isHeartbeat) ;
 				{
 					Engine.DebugLog.Write("Heartbeat received, req.LeaderCommit: {0}, Engine.CommitIndex: {1}", req.LeaderCommit,
 						Engine.CommitIndex);
@@ -192,10 +192,10 @@ namespace Rhino.Raft.Behaviors
 					Engine.DebugLog.Write(
 						"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
 						Engine.CommitIndex, lastIndex);
-					var oldCommitIndex = Engine.CommitIndex;
+					var oldCommitIndex = Engine.CommitIndex + 1;
 					
 					Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
-					Engine.ApplyCommits(oldCommitIndex + 1, Engine.CommitIndex);
+					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 					message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
 					Engine.DebugLog.Write(message);
 

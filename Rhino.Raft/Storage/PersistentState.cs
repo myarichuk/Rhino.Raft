@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
+using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 using Voron;
 using Voron.Util.Conversion;
@@ -29,6 +31,8 @@ namespace Rhino.Raft.Storage
 		private readonly StorageEnvironment _env;
 
 		private readonly CancellationToken _cancellationToken;
+
+		public ICommandSerializer CommandSerializer { get; set; }
 
 		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
 		{
@@ -74,8 +78,8 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		public long AppendToLeaderLog(byte[] commandEntry)
-		{
+		public long AppendToLeaderLog(Command command)
+		{			
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
@@ -88,6 +92,8 @@ namespace Rhino.Raft.Storage
 				var nextEntryId = lastEntry + 1;
 				var key = new Slice(EndianBitConverter.Big.GetBytes(nextEntryId));
 
+				command.AssignedIndex = nextEntryId;
+				var commandEntry = CommandSerializer.Serialize(command);
 				logs.Add(key, commandEntry);
 				terms.Add(key, BitConverter.GetBytes(CurrentTerm));
 
@@ -212,6 +218,8 @@ namespace Rhino.Raft.Storage
 
 		public IEnumerable<LogEntry> LogEntriesAfter(long index, long stopAfter = long.MaxValue)
 		{
+			Debug.Assert(index >= 0);
+
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var logs = tx.ReadTree(LogsTreeName);

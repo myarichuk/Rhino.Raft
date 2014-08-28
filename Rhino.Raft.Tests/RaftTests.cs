@@ -100,6 +100,108 @@ namespace Rhino.Raft.Tests
 			Assert.Equal(1, raftNodes.Count(node => node.State == RaftEngineState.Leader));
 		}
 
+		[Fact]
+		public async Task When_command_committed_CompletionTaskSource_is_notified()
+		{
+			const int CommandCount = 5;
+			var raftNodes = CreateRaftNetwork(3).ToList();
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
+				.All()
+				.With(x => x.Completion = new TaskCompletionSource<object>())
+				.With(x => x.AssignedIndex = -1)
+				.Build()
+				.ToList();
+
+			await raftNodes.First().WaitForLeader();
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+			
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				//CommandCount + 1 --> take into account NOP command that leader sends after election
+				if (newIndex == CommandCount + 1)
+					commitsAppliedEvent.Set();
+			};
+
+			commands.ForEach(leader.AppendCommand);
+
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 2));
+			commands.Should().OnlyContain(cmd => cmd.Completion.Task.Status == TaskStatus.RanToCompletion);
+		}
+
+		//this test is a show-case of how to check for command commit time-out
+		[Fact]
+		public async Task While_command_not_committed_CompletionTaskSource_is_not_notified()
+		{
+			const int CommandCount = 5;
+			var dataTransport = new InMemoryTransport();
+			var raftNodes = CreateRaftNetwork(3,dataTransport).ToList();
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
+				.All()
+				.With(x => x.Completion = new TaskCompletionSource<object>())
+				.With(x => x.AssignedIndex = -1)
+				.Build()
+				.ToList();
+
+			await raftNodes.First().WaitForLeader();
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				//essentially fire event for (CommandCount - 1) + Nop command
+				if (newIndex == CommandCount)
+					commitsAppliedEvent.Set();
+			};
+
+			//don't append the last command yet
+			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
+			//make sure commands that were appended before network leader disconnection are replicated
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 2));
+
+			dataTransport.DisconnectNode(leader.Name);
+			
+			var lastCommand = commands.Last();
+			var commandCompletionTask = lastCommand.Completion.Task;
+			var timeout = Task.Delay(leader.MessageTimeout);
+			
+			leader.AppendCommand(lastCommand);
+
+			var result = await Task.WhenAny(commandCompletionTask, timeout);
+			Assert.Equal(timeout, result);
+		}
+
+//		[Theory]
+////		[InlineData(2)]
+//		[InlineData(3)]
+////		[InlineData(4)]
+////		[InlineData(5)]
+//		public void Network_partition_can_be_healed(int nodeCount)
+//		{
+//			var transport = new InMemoryTransport();
+//			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 500, transport: transport).ToList();
+//
+//			raftNodes.First().WaitForLeader().Wait();
+//			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
+//
+//			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
+//			transport.DisconnectNode(leader.Name);
+//
+//			Thread.Sleep(500);
+//
+//			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
+//			transport.ReconnectNode(leader.Name);
+//
+//			Thread.Sleep(500);
+//
+//		}
+
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
@@ -114,13 +216,11 @@ namespace Rhino.Raft.Tests
 			raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 250).ToList();
 			raftNodes.ForEach(node => node.StateChanged += state =>
 			{
-				if (state == RaftEngineState.Leader)
-					leaderEvent.Set();
-				else if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
+				if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
 					followerEvent.Signal();
 			});
 
-			Assert.True(leaderEvent.Wait(25000));
+			raftNodes.First().WaitForLeader().Wait();
 
 			var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leaderNode);
@@ -142,7 +242,7 @@ namespace Rhino.Raft.Tests
 			{
 				var stateChangeEvent = new ManualResetEventSlim();
 				node.StateChanged += state => stateChangeEvent.Set();
-				Assert.True(stateChangeEvent.Wait(101)); //wait for elections to start
+				stateChangeEvent.Wait(); //wait for elections to start
 
 				stateChangeEvent.Reset();
 				transport.Send("realNode", new RequestVoteResponse
@@ -159,9 +259,10 @@ namespace Rhino.Raft.Tests
 				var command = new DictionaryCommand.Set
 				{
 					Key = "Foo",
-					Value = 123
+					Value = 123,
+					AssignedIndex = 2 //NOP command is in the 1st index
 				};
-				var serializedCommand = node.CommandSerializer.Serialize(command);
+				var serializedCommand = node.PersistentState.CommandSerializer.Serialize(command);
 				var entriesAppendedEvent = new ManualResetEventSlim();
 				node.EntriesAppended += entries =>
 				{
@@ -188,7 +289,7 @@ namespace Rhino.Raft.Tests
 			{
 				var stateChangeEvent = new ManualResetEventSlim();
 				node.StateChanged += state => stateChangeEvent.Set();
-				Assert.True(stateChangeEvent.Wait(101)); //wait for elections to start
+				stateChangeEvent.Wait(); //wait for elections to start
 
 				stateChangeEvent.Reset();
 				transport.Send("realNode", new RequestVoteResponse
@@ -206,9 +307,10 @@ namespace Rhino.Raft.Tests
 				var command = new DictionaryCommand.Set
 				{
 					Key = "Foo",
-					Value = 123
+					Value = 123,
+					AssignedIndex = 2
 				};
-				var serializedCommand = node.CommandSerializer.Serialize(command);
+				var serializedCommand = node.PersistentState.CommandSerializer.Serialize(command);
 				var entriesAppendedEvent = new ManualResetEventSlim();
 				node.EntriesAppended += entries =>
 				{
@@ -240,9 +342,10 @@ namespace Rhino.Raft.Tests
 				entriesAppendedEvent.Reset();
 				var command2 = new DictionaryCommand.Del
 				{
-					Key = "Foo"
+					Key = "Foo",
+					AssignedIndex = 3
 				};
-				var serializedCommand2 = node.CommandSerializer.Serialize(command2);
+				var serializedCommand2 = node.PersistentState.CommandSerializer.Serialize(command2);
 				node.EntriesAppended += entries =>
 				{
 					if (entries.Any(x => AreEqual(x.Data, serializedCommand2)))
@@ -261,18 +364,21 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		[Fact(Timeout = 30000)]
-		public async Task Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes()
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
+		public async Task Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes(int nodeCount)
 		{
-			const int NodeCount = 3;
 			const int CommandCount = 5; 
 			var commandsToDistribute = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = null)
 				.Build()
 				.ToList();
-			
-			var raftNodes = CreateRaftNetwork(NodeCount, messageTimeout: 2000).ToList();
+
+			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 2000).ToList();
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
 			raftNodes.ForEach(node =>
 			{
@@ -287,7 +393,6 @@ namespace Rhino.Raft.Tests
 
 			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
 
-			commandsToDistribute.ForEach(leader.AppendCommand);
 			
 			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
@@ -299,8 +404,73 @@ namespace Rhino.Raft.Tests
 				if(newIndex == CommandCount + 1)
 					commitsAppliedEvent.Set();
 			};
+
+			commandsToDistribute.ForEach(leader.AppendCommand);
+
+			var millisecondsTimeout = 10000 * nodeCount;
+			Assert.True(commitsAppliedEvent.Wait(millisecondsTimeout), "within " + millisecondsTimeout + " sec. non leader node should have all relevant commands committed");
+		}
+
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
+		[InlineData(10)]
+		public async Task Leader_AppendCommand_several_times_should_distribute_commands_between_nodes(int nodeCount)
+		{
+			const int CommandCount = 5;
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount * 2)
+				.All()
+				.With(x => x.Completion = null)
+				.Build()
+				.ToList();
+
+			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 10000).ToList();
+			var entriesAppended = new Dictionary<string, List<LogEntry>>();
+			raftNodes.ForEach(node =>
+			{
+				entriesAppended.Add(node.Name, new List<LogEntry>());
+				node.EntriesAppended += logEntries => entriesAppended[node.Name].AddRange(logEntries);
+			});
+
+			// ReSharper disable once PossibleNullReferenceException
+			var first = raftNodes.First();
+			await first.WaitForLeader();
+			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
+
+			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
+
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex >= (CommandCount * 2 + 1))
+					commitsAppliedEvent.Set();
+			};
+
+			commands.Take(CommandCount).ToList().ForEach(leader.AppendCommand);
+
+
+
+
+			await first.WaitForLeader();
+			Trace.WriteLine("<!made sure the leader is still selected, proceeding with the test!>");
 			
-			Assert.True(commitsAppliedEvent.Wait(30000),"within 30 sec. non leader node should have all relevant commands committed");
+			leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
+			commands.Skip(CommandCount).ToList().ForEach(leader.AppendCommand);
+
+			var millisecondsTimeout = 10000 * nodeCount;
+			Assert.True(commitsAppliedEvent.Wait(millisecondsTimeout), "within " + millisecondsTimeout + " sec. non leader node should have all relevant commands committed");
+			Assert.Equal(CommandCount*2 + 1, nonLeaderNode.CommitIndex);
+
+			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
+																					.OfType<DictionaryCommand.Set>().ToList();
+			for (int i = 0; i < 10; i++)
+			{
+				Assert.Equal(commands[i].Value, committedCommands[i].Value);
+				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
+			}
 		}
 
 		[Fact]
@@ -315,7 +485,7 @@ namespace Rhino.Raft.Tests
 				var stateChangeEvent = new ManualResetEventSlim();
 				node.StateChanged += state => stateChangeEvent.Set();
 
-				Assert.True(stateChangeEvent.Wait(101)); //wait for elections to start
+				stateChangeEvent.Wait(); //wait for elections to start
 
 				stateChangeEvent.Reset();
 				for (int i = 0; i < 3; i++)
@@ -346,7 +516,7 @@ namespace Rhino.Raft.Tests
 
 				node.ElectionStarted += candidacyAnnoucementEvent.Set;
 
-				candidacyAnnoucementEvent.Wait(node.MessageTimeout + 5); //wait for elections to start
+				candidacyAnnoucementEvent.Wait(); //wait for elections to start
 				node.StateTimeout += stateTimeoutEvent.Set;
 
 				//clear transport queues
@@ -382,7 +552,7 @@ namespace Rhino.Raft.Tests
 				var stateChangeEvent = new ManualResetEventSlim();
 				node.StateChanged += state => stateChangeEvent.Set();
 
-				stateChangeEvent.Wait(101); //wait for elections to start
+				stateChangeEvent.Wait(); //wait for elections to start
 
 				stateChangeEvent.Reset();
 				for (int i = 0; i < 3; i++)
@@ -423,7 +593,7 @@ namespace Rhino.Raft.Tests
 				var timeoutEvent = new ManualResetEventSlim();
 				node.StateTimeout += timeoutEvent.Set;
 
-				Assert.True(timeoutEvent.Wait(node.MessageTimeout + 5));
+				timeoutEvent.Wait();
 				Assert.Equal(RaftEngineState.Candidate,node.State);
 			}
 		}
@@ -436,14 +606,21 @@ namespace Rhino.Raft.Tests
 
 			using (var node = new RaftEngine(nodeOptions))
 			{
-				Thread.Sleep(101); //let realNode timeout
+				var electionEvent = new ManualResetEventSlim();
+				node.ElectionStarted += electionEvent.Set;
+				
+				electionEvent.Wait();
+				
+				Trace.WriteLine("<Finished realNode timeout>");
 
-				var fakeNodeMessage = transport.MessageQueue["fakeNode1"].First();
+				var fakeNodeMessage = transport.MessageQueue["fakeNode1"].FirstOrDefault();
+				Assert.NotNull(fakeNodeMessage);
 				Assert.IsType<RequestVoteRequest>(fakeNodeMessage.Message);
 				var requestVoteMessage = fakeNodeMessage.Message as RequestVoteRequest;
 				Assert.Equal("realNode", requestVoteMessage.CandidateId);
 
 				Assert.Equal(1, transport.MessageQueue["fakeNode2"].Count);
+				
 				fakeNodeMessage = transport.MessageQueue["fakeNode2"].First();
 				Assert.IsType<RequestVoteRequest>(fakeNodeMessage.Message);
 				requestVoteMessage = fakeNodeMessage.Message as RequestVoteRequest;

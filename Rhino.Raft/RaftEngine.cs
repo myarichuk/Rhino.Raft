@@ -34,13 +34,14 @@ namespace Rhino.Raft
 		public IEnumerable<string> AllPeers { get; set; }
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
-		public ICommandSerializer CommandSerializer { get; set; }
+
+		public long CommandCommitTimeout { get; private set; }
 
 		public string CurrentLeader
 		{
 			get
 			{
-					return _currentLeader;
+				return _currentLeader;
 			}
 			set
 			{
@@ -74,7 +75,17 @@ namespace Rhino.Raft
 			get { return ((AllVotingPeers.Count() + 1)/2) + 1; }
 		}
 
-		public RaftEngineState State { get; private set; }
+		private RaftEngineState _state;
+
+		public RaftEngineState State 
+		{
+			get
+			{
+				lock(_stateChangingSyncObject)
+					return _state;
+			}
+			
+		}
 
 		public int MaxEntriesPerRequest { get; set; }
 
@@ -109,24 +120,26 @@ namespace Rhino.Raft
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
-
+			Debug.Assert(raftEngineOptions.Stopwatch != null);
 			DebugLog = new DebugWriter(raftEngineOptions.Name, raftEngineOptions.Stopwatch);
 
 			AllPeers = raftEngineOptions.AllPeers ?? new List<string>();
 			AllVotingPeers = raftEngineOptions.AllPeers ?? new List<string>();
-
-			CommandSerializer = new JsonCommandSerializer();
-
-			//warm up!
-			CommandSerializer.Serialize(new NopCommand());
-
+			CommandCommitTimeout = raftEngineOptions.CommandCommitTimeout;
 			MessageTimeout = raftEngineOptions.MessageTimeout;
 			
 			_cancellationTokenSource = new CancellationTokenSource();
 
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
 			Name = raftEngineOptions.Name;
-			PersistentState = new PersistentState(raftEngineOptions.Options, _cancellationTokenSource.Token);
+			PersistentState = new PersistentState(raftEngineOptions.Options, _cancellationTokenSource.Token)
+			{
+				CommandSerializer = new JsonCommandSerializer()
+			};
+
+			//warm up
+			PersistentState.CommandSerializer.Serialize(new NopCommand());
+
 			Transport = raftEngineOptions.Transport;
 			StateMachine = raftEngineOptions.StateMachine;
 
@@ -178,12 +191,14 @@ namespace Rhino.Raft
 			if (StateBehavior != null)
 				StateBehavior.EntriesAppended -= OnEntriesAppended;
 
-			State = state;
+
 			var oldState = StateBehavior;
-			
+
 			lock (_stateChangingSyncObject)
 			using (oldState)
 			{
+				_state = state;
+
 				switch (state)
 				{
 					case RaftEngineState.Follower:
@@ -198,9 +213,10 @@ namespace Rhino.Raft
 						OnElectedAsLeader();
 						break;
 				}
+
+				OnStateChanged(state);
 			}
 			
-			OnStateChanged(state);
 		}
 
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
@@ -215,7 +231,9 @@ namespace Rhino.Raft
 
 		public Task WaitForLeader()
 		{
-			return Task.Run(() => _leaderSelectedEvent.Wait(CancellationToken), CancellationToken);
+			lock(_stateChangingSyncObject) //change to leader state makes _leaderSelectedEvent to be set, 
+										   //so wait for state to finish changing
+				return Task.Run(() => _leaderSelectedEvent.Wait(CancellationToken), CancellationToken);
 		}
 
 		public void AppendCommand(Command command)

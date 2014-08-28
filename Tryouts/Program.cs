@@ -12,7 +12,7 @@ namespace Tryouts
 				Console.WriteLine(i);
 				using (var test = new RaftTests())
 				{
-					test.Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes().Wait();
+					test.Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes(4).Wait();
 				}
 				Console.WriteLine("--------------------------------------------------------------------------");
 			}

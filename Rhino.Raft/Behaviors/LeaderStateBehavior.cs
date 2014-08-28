@@ -20,6 +20,7 @@ namespace Rhino.Raft.Behaviors
 		private readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>();
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>();
 
+		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
 		private readonly Task _heartbeatTask;
 
 		public LeaderStateBehavior(RaftEngine engine)
@@ -47,7 +48,7 @@ namespace Rhino.Raft.Behaviors
 				Engine.CancellationToken.ThrowIfCancellationRequested();
 				SendEntriesToAllPeers();
 
-				Thread.Sleep(Engine.MessageTimeout/6);
+				Thread.Sleep(Engine.MessageTimeout / 6);
 			}
 		}
 
@@ -62,10 +63,10 @@ namespace Rhino.Raft.Behaviors
 		private void SendEntriesToPeer(string peer)
 		{
 			var nextIndex = _nextIndexes[peer];
-			
+
 			var entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
 												.Take(Engine.MaxEntriesPerRequest)
-												.ToArray();			
+												.ToArray();
 			_nextIndexes[peer] += entries.Length;
 
 			var prevLogEntry = entries.Length == 0
@@ -73,7 +74,7 @@ namespace Rhino.Raft.Behaviors
 				: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
 
 			prevLogEntry = prevLogEntry ?? new LogEntry();
-			
+
 			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}", entries.Length, peer);
 
 			var aer = new AppendEntriesRequest
@@ -103,14 +104,14 @@ namespace Rhino.Raft.Behaviors
 		public override void Handle(string destination, AppendEntriesResponse resp)
 		{
 			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.Source);
-			
+
 			// there is a new leader in town, time to step down
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm)
-			{				
-				Engine.UpdateCurrentTerm(resp.CurrentTerm,resp.LeaderId);
+			{
+				Engine.UpdateCurrentTerm(resp.CurrentTerm, resp.LeaderId);
 				return;
 			}
-			
+
 			if (resp.Success == false)
 			{
 				// go back in the log, this peer isn't matching us at this location
@@ -120,7 +121,7 @@ namespace Rhino.Raft.Behaviors
 
 			Debug.Assert(resp.Source != null);
 			_matchIndexes[resp.Source] = resp.LastLogIndex;
-			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}",resp.Source,resp.LastLogIndex);
+			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
 
 			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
 			if (maxIndexOnQuorom == -1)
@@ -137,6 +138,15 @@ namespace Rhino.Raft.Behaviors
 
 			Engine.DebugLog.Write("AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnQuorom, Engine.CommitIndex);
 			Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnQuorom);
+
+			Command result;
+			while (_pendingCommands.TryPeek(out result) && result.AssignedIndex <= maxIndexOnQuorom)
+			{
+				if (_pendingCommands.TryDequeue(out result) == false)
+					break;// should never happen
+
+				result.Completion.TrySetResult(null);
+			}
 		}
 
 		private long GetMaxIndexOnQuorom()
@@ -164,13 +174,15 @@ namespace Rhino.Raft.Behaviors
 
 		public void AppendCommand(Command command)
 		{
-			var commandEntry = Engine.CommandSerializer.Serialize(command);			
-			_matchIndexes[Engine.Name] = command.AssignedIndex = Engine.PersistentState.AppendToLeaderLog(commandEntry);
+			_matchIndexes[Engine.Name] = Engine.PersistentState.AppendToLeaderLog(command);
+			if (command.Completion != null)
+				_pendingCommands.Enqueue(command);
 		}
 
 		public override void Dispose()
 		{
-			_heartbeatTask.Wait();
+			_heartbeatTask.Wait(Timeout * 2);
+			_heartbeatTask.Dispose();
 		}
 	}
 }
