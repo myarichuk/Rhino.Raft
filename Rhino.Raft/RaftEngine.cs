@@ -157,6 +157,8 @@ namespace Rhino.Raft
 					MessageEnvelope message;
 					var behavior = StateBehavior;
 					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout, _cancellationTokenSource.Token, out message);
+					if (_cancellationTokenSource.IsCancellationRequested)
+						break;
 
 					if (hasMessage == false)
 					{
@@ -247,7 +249,7 @@ namespace Rhino.Raft
 				var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
 				if (leaderStateBehavior == null)
 					throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
-					                                    CurrentLeader + ", node type is " + StateBehavior.GetType().Name);
+					                                    (CurrentLeader ?? "(no current node)") + ", node type is " + StateBehavior.GetType().Name);
 
 				leaderStateBehavior.AppendCommand(command);
 			}
@@ -303,7 +305,8 @@ namespace Rhino.Raft
 		public void Dispose()
 		{
 			_cancellationTokenSource.Cancel();
-			_eventLoopTask.Wait();
+			_eventLoopTask.Wait(500);			
+
 			PersistentState.Dispose();
 		}
 

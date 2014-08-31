@@ -12,7 +12,8 @@ namespace Tryouts
 				Console.WriteLine(i);
 				using (var test = new RaftTests())
 				{
-					test.Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes(4).Wait();
+					for(int j = 2; j < 5; j++)
+						test.Network_partition_for_less_time_than_timeout_can_be_healed_without_elections(j);
 				}
 				Console.WriteLine("--------------------------------------------------------------------------");
 			}

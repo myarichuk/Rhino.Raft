@@ -266,12 +266,80 @@ namespace Rhino.Raft.Tests
 		}
 
 
+		/*
+		 * This test deals with network "partition" -> leader is detached from the rest of the nodes (simulation of network issues)
+		 * Before the network is partitioned the leader distributes the first three commands, then the partition happens.
+		 * Then the detached leader has 2 more commands appended - but because of network partition, they are not distributed to other nodes
+		 * When communication is restored, the leader from before becomes follower, and the new leader makes roll back on log of former leader, 
+		 * so only the first three commands are in the log of former leader node
+		 */
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
 		[InlineData(4)]
 		[InlineData(5)]
-		[InlineData(10)]
+		public void Network_partition_for_more_time_than_timeout_can_be_healed(int nodeCount)
+		{
+			var transport = new InMemoryTransport();
+			const int CommandCount = 5;
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
+				.All()
+				.With(x => x.Completion = new TaskCompletionSource<object>())
+				.With(x => x.AssignedIndex = -1)
+				.Build()
+				.ToList();
+
+			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
+			raftNodes.First().WaitForLeader().Wait();
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex == 4) //index == 4 --> NOP command + first three commands
+					commitsAppliedEvent.Set();
+			};
+
+			commands.Take(3).ToList().ForEach(leader.AppendCommand);
+			Assert.True(commitsAppliedEvent.Wait(5000)); //with in-memory transport it shouldn't take more than 5 sec
+
+			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
+			transport.DisconnectNode(leader.Name);
+
+			commands.Skip(3).ToList().ForEach(leader.AppendCommand);
+			var formerLeader = leader;
+			Thread.Sleep(raftNodes.Max(x => x.MessageTimeout) + 5); // cause election while current leader is disconnected
+
+			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
+			transport.ReconnectNode(leader.Name);
+
+			//other leader was selected
+			raftNodes.First().WaitForLeader().Wait();
+			leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);			
+			Assert.NotNull(leader);
+			
+			//former leader that is now a follower, should get the first 3 entries it distributed
+			while (formerLeader.CommitIndex < 4) //CommitIndex == 4 --> NOP command + first three commands
+				Thread.Sleep(50);
+
+			Assert.True(formerLeader.CommitIndex == 4);
+			var committedCommands = formerLeader.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
+																					.OfType<DictionaryCommand.Set>()
+																					.ToList();
+			for (int i = 0; i < 3; i++)
+			{
+				commands[i].Value.Should().Be(committedCommands[i].Value);
+				commands[i].AssignedIndex.Should().Be(committedCommands[i].AssignedIndex);
+			}
+		}
+		
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
+		[InlineData(5)]
 		public void Network_partition_for_less_time_than_timeout_can_be_healed_without_elections(int nodeCount)
 		{
 			var transport = new InMemoryTransport();
@@ -286,7 +354,9 @@ namespace Rhino.Raft.Tests
 			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
 
 			raftNodes.First().WaitForLeader().Wait();
-			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
 			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 
@@ -297,29 +367,27 @@ namespace Rhino.Raft.Tests
 			};
 
 			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
-			Thread.Sleep(250); //allow the process to start
+			while(nonLeaderNode.CommitIndex < 2) //make sure at least one command is committed
+				Thread.Sleep(50);
 
 			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
 			transport.DisconnectNode(leader.Name);
 
 			leader.AppendCommand(commands.Last());
 			
-			//some time passes,but not enough for new elections
-			Thread.Sleep(leader.MessageTimeout / 10);
-
 			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");			
 			transport.ReconnectNode(leader.Name);
 			Assert.Equal(RaftEngineState.Leader, leader.State);
 
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 2));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * nodeCount));
 
 			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																					.OfType<DictionaryCommand.Set>()
 																					.ToList();
 			for (int i = 0; i < CommandCount; i++)
 			{
-				Assert.Equal(commands[i].Value, committedCommands[i].Value);
-				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
+				commands[i].Value.Should().Be(committedCommands[i].Value);
+				commands[i].AssignedIndex.Should().Be(committedCommands[i].AssignedIndex);
 			}
 		}
 
