@@ -14,7 +14,7 @@ namespace Rhino.Raft.Storage
 	/// Uses Voron to store the persistent state / log of the raft state machine.
 	/// Structure:
 	/// 
-	/// * $metadata tree - db id, version, current term, voted form, configuration info (like peer lists)
+	/// * $metadata tree - db id, version, current term, voted form, Topology info (like peer lists)
 	/// * logs - the actual entry logs
 	/// * entry-terms - the term for each entry id
 	/// * peers - the data about the peers in the cluster
@@ -36,27 +36,27 @@ namespace Rhino.Raft.Storage
 
 		public ICommandSerializer CommandSerializer { get; set; }
 
-		public event Action<Configuration> ConfigurationChanged;
+		public event Action<Topology> ConfigurationChanged;
 
-		public void SetCurrentConfiguration(Configuration configuration)
+		public void SetCurrentTopology(Topology topology)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 
-				foreach (var peer in configuration.AllPeers)
+				foreach (var peer in topology.AllPeers)
 					metadata.MultiAdd("current-config-allpeers", peer);
 
-				foreach (var peer in configuration.AllVotingPeers)
+				foreach (var peer in topology.AllVotingPeers)
 					metadata.MultiAdd("current-config-allvotingpeers", peer);
 
 				tx.Commit();
 			}
 
-			OnConfigurationChanged(configuration);
+			OnConfigurationChanged(topology);
 		}
 
-		public Configuration GetCurrentConfiguration()
+		public Topology GetCurrentConfiguration()
 		{
 			var allPeers = new List<string>();
 			var allVotingPeers = new List<string>();
@@ -90,7 +90,7 @@ namespace Rhino.Raft.Storage
 				}
 			}
 
-			return new Configuration(allPeers,allVotingPeers);
+			return new Topology(allPeers,allVotingPeers);
 		}
 
 		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
@@ -353,10 +353,10 @@ namespace Rhino.Raft.Storage
 				tx.Commit();
 			}
 		}
-		protected virtual void OnConfigurationChanged(Configuration newConfiguration)
+		protected virtual void OnConfigurationChanged(Topology newTopology)
 		{
 			var handler = ConfigurationChanged;
-			if (handler != null) handler(newConfiguration);
+			if (handler != null) handler(newTopology);
 		}
 
 	}

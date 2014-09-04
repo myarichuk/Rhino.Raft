@@ -2,18 +2,18 @@
 {
 	public class TopologyChanges
 	{
-		public Configuration OldConfiguration { get; set; }
+		public Topology OldTopology { get; set; }
 		
-		public Configuration NewConfiguration { get; set; }
+		public Topology NewTopology { get; set; }
 
 		public int OldQuorum
 		{
-			get { return ((OldConfiguration.AllVotingPeers.Length + 1) / 2) + 1; }
+			get { return ((OldTopology.AllVotingPeers.Length + 1) / 2) + 1; }
 		}
 
 		public int NewQuorum
 		{
-			get { return ((NewConfiguration.AllVotingPeers.Length + 1) / 2) + 1; }
+			get { return ((NewTopology.AllVotingPeers.Length + 1) / 2) + 1; }
 		}
 	}
 }

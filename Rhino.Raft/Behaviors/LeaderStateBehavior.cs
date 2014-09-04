@@ -168,7 +168,7 @@ namespace Rhino.Raft.Behaviors
 
 				if (maxIndexOnQuorums.Item1 <= Engine.CommitIndex && maxIndexOnQuorums.Item2 <= Engine.CommitIndex)
 				{
-					Engine.DebugLog.Write("maxIndexOnQuorom on old configuration = {0}/maxIndexOnQuorom on new configuration {1} <= Engine.CommitIndex = {2} --> no need to apply commits",
+					Engine.DebugLog.Write("maxIndexOnQuorom on old Topology = {0}/maxIndexOnQuorom on new Topology {1} <= Engine.CommitIndex = {2} --> no need to apply commits",
 						maxIndexOnQuorums.Item1,maxIndexOnQuorums.Item2, Engine.CommitIndex);
 					return;
 				}
@@ -187,7 +187,7 @@ namespace Rhino.Raft.Behaviors
 						result.Completion.TrySetResult(null);
 					}
 
-					foreach (var peer in TopologyChanges.NewConfiguration.AllPeers)
+					foreach (var peer in TopologyChanges.NewTopology.AllPeers)
 					{
 						Engine.Transport.Send(peer, new TopologyChanges()); //empty TopologyChanges --> end of change state
 					}
@@ -203,10 +203,10 @@ namespace Rhino.Raft.Behaviors
 
 		private Tuple<long, long> GetMaxIndexOnOldAndNewQuorums()
 		{
-			var oldDic = CountIndexPerPeer(_matchIndexes.Where(x => TopologyChanges.OldConfiguration.AllVotingPeers.Contains(x.Key)));
+			var oldDic = CountIndexPerPeer(_matchIndexes.Where(x => TopologyChanges.OldTopology.AllVotingPeers.Contains(x.Key)));
 			var maxIndexOnOldQuorum = MaxIndexOnQuorom(oldDic, TopologyChanges.OldQuorum);
 
-			var newDic = CountIndexPerPeer(_matchIndexes.Where(x => TopologyChanges.NewConfiguration.AllVotingPeers.Contains(x.Key)));
+			var newDic = CountIndexPerPeer(_matchIndexes.Where(x => TopologyChanges.NewTopology.AllVotingPeers.Contains(x.Key)));
 			var maxIndexOnNewQuorum = MaxIndexOnQuorom(newDic, TopologyChanges.NewQuorum);
 
 			return Tuple.Create(maxIndexOnOldQuorum, maxIndexOnNewQuorum);

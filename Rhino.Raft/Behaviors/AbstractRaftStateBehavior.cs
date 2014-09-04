@@ -46,7 +46,7 @@ namespace Rhino.Raft.Behaviors
 
 		public virtual void Handle(string destination, TopologyChanges req)
 		{
-			if (req.NewConfiguration != null && req.OldConfiguration != null)
+			if (req.NewTopology != null && req.OldTopology != null)
 				TopologyChanges = req;
 			else
 			{
@@ -55,10 +55,10 @@ namespace Rhino.Raft.Behaviors
 					if(TopologyChanges == null)
 						Debugger.Break();
 					var adjustedNewConfiguration =
-						new Configuration(
-							TopologyChanges.NewConfiguration.AllPeers.Where(
+						new Topology(
+							TopologyChanges.NewTopology.AllPeers.Where(
 								peer => !String.Equals(peer, Engine.Name, StringComparison.InvariantCultureIgnoreCase)),
-							TopologyChanges.NewConfiguration.AllVotingPeers.Where(
+							TopologyChanges.NewTopology.AllVotingPeers.Where(
 								peer => !String.Equals(peer, Engine.Name, StringComparison.InvariantCultureIgnoreCase)));
 
 					Engine.SetCurrentConfiguration(adjustedNewConfiguration);
@@ -259,17 +259,17 @@ namespace Rhino.Raft.Behaviors
 			if (handler != null) handler(logEntries);
 		}
 
-		public virtual void PublishTopologyChanges(Configuration oldConfig, Configuration newConfig)
+		public virtual void PublishTopologyChanges(Topology oldConfig, Topology newConfig)
 		{
 			var topologyChange = new TopologyChanges
 			{
-				OldConfiguration = oldConfig,
-				NewConfiguration = newConfig
+				OldTopology = oldConfig,
+				NewTopology = newConfig
 			};
 
 			TopologyChanges = topologyChange;
 
-			foreach (var peer in TopologyChanges.NewConfiguration.AllPeers)
+			foreach (var peer in TopologyChanges.NewTopology.AllPeers)
 			{
 				Engine.Transport.Send(peer, topologyChange); //declare to the cluster --> starting topology changes
 			}
