@@ -27,11 +27,32 @@ namespace Rhino.Raft
 		private readonly ManualResetEventSlim _leaderSelectedEvent = new ManualResetEventSlim();
 		private readonly object _stateChangingSyncObject = new object();
 
+		private Configuration _currentConfiguration;
+
 		public DebugWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
 		public IRaftStateMachine StateMachine { get; set; }
-		public IEnumerable<string> AllVotingPeers { get; set; }
-		public IEnumerable<string> AllPeers { get; set; }
+
+		public IEnumerable<string> AllVotingPeers
+		{
+			get { return _currentConfiguration.AllVotingPeers; }
+			set
+			{
+				_currentConfiguration = new Configuration(_currentConfiguration.AllPeers,value);
+				PersistentState.SetCurrentConfiguration(_currentConfiguration);
+			}
+		}
+
+		public IEnumerable<string> AllPeers
+		{
+			get { return _currentConfiguration.AllPeers; }
+			set
+			{
+				_currentConfiguration = new Configuration(value, _currentConfiguration.AllVotingPeers);
+				PersistentState.SetCurrentConfiguration(_currentConfiguration);
+			}
+		}
+
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
 
@@ -63,7 +84,10 @@ namespace Rhino.Raft
 		/// </summary>
 		public long CommitIndex
 		{
-			get { return Thread.VolatileRead(ref _commitIndex); }
+			get
+			{
+				return Thread.VolatileRead(ref _commitIndex);
+			}
 			set
 			{
 				Interlocked.Exchange(ref _commitIndex, value);
@@ -72,7 +96,10 @@ namespace Rhino.Raft
 
 		public int QuorumSize
 		{
-			get { return ((AllVotingPeers.Count() + 1)/2) + 1; }
+			get
+			{
+				return ((AllVotingPeers.Count() + 1)/2) + 1;
+			}
 		}
 
 		private RaftEngineState _state;
@@ -116,15 +143,14 @@ namespace Rhino.Raft
 		public event Action StateTimeout;
 		public event Action<LogEntry[]> EntriesAppended;
 		public event Action<long, long> CommitIndexChanged;
-		public event Action ElectedAsLeader;		
+		public event Action ElectedAsLeader;
+		public event Action TopologyChanged;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
 			Debug.Assert(raftEngineOptions.Stopwatch != null);
 			DebugLog = new DebugWriter(raftEngineOptions.Name, raftEngineOptions.Stopwatch);
 
-			AllPeers = raftEngineOptions.AllPeers ?? new List<string>();
-			AllVotingPeers = raftEngineOptions.AllPeers ?? new List<string>();
 			CommandCommitTimeout = raftEngineOptions.CommandCommitTimeout;
 			MessageTimeout = raftEngineOptions.MessageTimeout;
 			
@@ -137,6 +163,16 @@ namespace Rhino.Raft
 				CommandSerializer = new JsonCommandSerializer()
 			};
 
+			if (raftEngineOptions.AllPeers != null || raftEngineOptions.AllPeers != null)
+			{
+// ReSharper disable ConstantNullCoalescingCondition
+				_currentConfiguration = new Configuration(raftEngineOptions.AllPeers ?? new String[0], raftEngineOptions.AllVotingPeers ?? new String[0]);
+// ReSharper restore ConstantNullCoalescingCondition
+				PersistentState.SetCurrentConfiguration(_currentConfiguration);
+			}
+			else
+				_currentConfiguration = PersistentState.GetCurrentConfiguration();
+
 			//warm up
 			PersistentState.CommandSerializer.Serialize(new NopCommand());
 
@@ -146,6 +182,29 @@ namespace Rhino.Raft
 			SetState(AllPeers.Any() ? RaftEngineState.Follower : RaftEngineState.Leader);
 
 			_eventLoopTask = Task.Run(() => EventLoop());
+		}
+
+		public void RemoveFromCluster()
+		{
+			DebugLog.Write("Removal of node {0} from cluster --> started", Name);
+			_cancellationTokenSource.Cancel();
+			DebugLog.Write("Removal of node {0} from cluster --> cancelling event loop on the node", Name);
+			var oldConfig = PersistentState.GetCurrentConfiguration();
+
+			var allVotingPeersWithoutThis = oldConfig.AllVotingPeers;
+			var allPeersWithoutThis = oldConfig.AllPeers;
+			var newConfig = new Configuration(allPeersWithoutThis, allVotingPeersWithoutThis);
+			
+			oldConfig = new Configuration(oldConfig.AllPeers.Concat(Name), oldConfig.AllVotingPeers.Concat(Name));
+			
+			_stateBehavior.PublishTopologyChanges(oldConfig, newConfig);
+		}
+
+		internal void SetCurrentConfiguration(Configuration configuration)
+		{
+			_currentConfiguration = configuration;
+			PersistentState.SetCurrentConfiguration(_currentConfiguration);
+			DebugLog.Write("SetCurrentConfiguration: {0}", String.Join(",", _currentConfiguration.AllPeers));
 		}
 
 		protected void EventLoop()
@@ -193,7 +252,6 @@ namespace Rhino.Raft
 			if (StateBehavior != null)
 				StateBehavior.EntriesAppended -= OnEntriesAppended;
 
-
 			var oldState = StateBehavior;
 
 			lock (_stateChangingSyncObject)
@@ -216,9 +274,11 @@ namespace Rhino.Raft
 						break;
 				}
 
+// ReSharper disable once PossibleNullReferenceException
+				if(oldState != null)
+					StateBehavior.TopologyChanges = oldState.TopologyChanges;
 				OnStateChanged(state);
 			}
-			
 		}
 
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
@@ -344,6 +404,11 @@ namespace Rhino.Raft
 		{
 			_leaderSelectedEvent.Set();
 			var handler = ElectedAsLeader;
+			if (handler != null) handler();
+		}
+		protected virtual void OnTopologyChanged()
+		{
+			var handler = TopologyChanged;
 			if (handler != null) handler();
 		}
 	}

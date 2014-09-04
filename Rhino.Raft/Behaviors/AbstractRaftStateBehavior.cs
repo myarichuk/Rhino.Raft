@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 
 namespace Rhino.Raft.Behaviors
@@ -15,6 +17,9 @@ namespace Rhino.Raft.Behaviors
 			get { return Engine.Name; }
 		}
 
+
+		public TopologyChanges TopologyChanges { get; set; }
+
 		public int Timeout { get; set; }
 
 		public event Action<LogEntry[]> EntriesAppended;
@@ -25,6 +30,7 @@ namespace Rhino.Raft.Behaviors
 			RequestVoteResponse requestVoteResponse;
 			AppendEntriesResponse appendEntriesResponse;
 			AppendEntriesRequest appendEntriesRequest;
+			TopologyChanges topologyChanges;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
 				Handle(envelope.Destination, requestVoteRequest);
@@ -34,10 +40,36 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, appendEntriesRequest);
 			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
 				Handle(envelope.Destination, requestVoteResponse);
+			else if (TryCastMessage(envelope.Message, out topologyChanges))
+				Handle(envelope.Destination, topologyChanges);
+		}
+
+		public virtual void Handle(string destination, TopologyChanges req)
+		{
+			if (req.NewConfiguration != null && req.OldConfiguration != null)
+				TopologyChanges = req;
+			else
+			{
+				lock (this)
+				{
+					if(TopologyChanges == null)
+						Debugger.Break();
+					var adjustedNewConfiguration =
+						new Configuration(
+							TopologyChanges.NewConfiguration.AllPeers.Where(
+								peer => !String.Equals(peer, Engine.Name, StringComparison.InvariantCultureIgnoreCase)),
+							TopologyChanges.NewConfiguration.AllVotingPeers.Where(
+								peer => !String.Equals(peer, Engine.Name, StringComparison.InvariantCultureIgnoreCase)));
+
+					Engine.SetCurrentConfiguration(adjustedNewConfiguration);
+					TopologyChanges = null;
+				}
+			}
 		}
 
 		public virtual void Handle(string destination, RequestVoteResponse resp)
 		{
+
 		}
 
 		protected static bool TryCastMessage<T>(object abstractMessage, out T typedMessage)
@@ -51,7 +83,7 @@ namespace Rhino.Raft.Behaviors
 
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
-			Engine = engine;
+			Engine = engine;			
 		}
 
 		public void Handle(string destination, RequestVoteRequest req)
@@ -180,7 +212,7 @@ namespace Rhino.Raft.Behaviors
 				string message;
 
 				var isHeartbeat = req.Entries.Length == 0;
-				if (isHeartbeat) ;
+				if (isHeartbeat)
 				{
 					Engine.DebugLog.Write("Heartbeat received, req.LeaderCommit: {0}, Engine.CommitIndex: {1}", req.LeaderCommit,
 						Engine.CommitIndex);
@@ -225,6 +257,22 @@ namespace Rhino.Raft.Behaviors
 		{
 			var handler = EntriesAppended;
 			if (handler != null) handler(logEntries);
+		}
+
+		public virtual void PublishTopologyChanges(Configuration oldConfig, Configuration newConfig)
+		{
+			var topologyChange = new TopologyChanges
+			{
+				OldConfiguration = oldConfig,
+				NewConfiguration = newConfig
+			};
+
+			TopologyChanges = topologyChange;
+
+			foreach (var peer in TopologyChanges.NewConfiguration.AllPeers)
+			{
+				Engine.Transport.Send(peer, topologyChange); //declare to the cluster --> starting topology changes
+			}
 		}
 	}
 }

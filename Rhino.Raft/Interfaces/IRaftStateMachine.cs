@@ -1,4 +1,5 @@
-﻿using Rhino.Raft.Messages;
+﻿using System.IO;
+using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Interfaces
 {
@@ -6,5 +7,8 @@ namespace Rhino.Raft.Interfaces
 	{
 		long LastApplied { get; }
 		void Apply(LogEntry entry);
+		
+		//void SendSnapshot(Stream stream);
+		//Task SendSanpshotAsync(Stream stream);
 	}
 }

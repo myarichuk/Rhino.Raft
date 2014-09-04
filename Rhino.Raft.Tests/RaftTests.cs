@@ -2,15 +2,19 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Dynamic;
+using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Security.AccessControl;
 using System.Threading;
 using System.Threading.Tasks;
 using FizzWare.NBuilder;
 using FluentAssertions;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 using Voron;
 using Xunit;
 using Xunit.Extensions;
@@ -817,19 +821,185 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
+		[Fact]
+		public void AllPeers_and_AllVotingPeers_can_be_persistantly_saved_and_loaded()
+		{
+			var cancellationTokenSource = new CancellationTokenSource();
+
+			var path = "test" + Guid.NewGuid();
+			try
+			{
+				var expectedAllPeers = new List<string> { "Node1", "Node2", "NodeA", "NodeB" };
+				var expectedAllVotingPeers = new List<string> { "Node123", "Node1", "Node2", "NodeG", "NodeB", "NodeABC" };
+
+				using (var options = StorageEnvironmentOptions.ForPath(path))
+				{
+					using (var persistentState = new PersistentState(options, cancellationTokenSource.Token)
+					{
+						CommandSerializer = new JsonCommandSerializer()
+					})
+					{
+						var currentConfiguration = persistentState.GetCurrentConfiguration();
+						Assert.Empty(currentConfiguration.AllPeers);
+						Assert.Empty(currentConfiguration.AllVotingPeers);
+
+						persistentState.SetCurrentConfiguration(new Configuration(expectedAllPeers,expectedAllVotingPeers));
+					}
+				}
+				using (var options = StorageEnvironmentOptions.ForPath(path))
+				{
+					using (var persistentState = new PersistentState(options, cancellationTokenSource.Token)
+					{
+						CommandSerializer = new JsonCommandSerializer()
+					})
+					{
+						var currentConfiguration = persistentState.GetCurrentConfiguration();
+						expectedAllPeers.Should().Contain(currentConfiguration.AllPeers);
+						expectedAllVotingPeers.Should().Contain(currentConfiguration.AllVotingPeers);
+					}
+				}
+			}
+			finally
+			{
+				new DirectoryInfo(path).Delete(true);
+			}
+		}
+
+		[Fact]
+		public async Task Follower_removed_from_cluster_does_not_affect_leader_and_commits()
+		{
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(5)
+						.All()
+						.With(x => x.Completion = null)
+						.Build()
+						.ToList();
+
+			var raftNodes = CreateRaftNetwork(4).ToList();
+			await raftNodes.First().WaitForLeader();
+
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex >= 3) //two commands and NOP
+					commitsAppliedEvent.Set();
+			};
+
+			leader.AppendCommand(commands[0]);
+			leader.AppendCommand(commands[1]);
+
+			Assert.True(commitsAppliedEvent.Wait(2000));
+
+			Assert.Equal(3, leader.QuorumSize);
+			Trace.WriteLine("<--- Removing from cluster --->");
+
+			var otherNonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader && !ReferenceEquals(x, nonLeaderNode));
+
+			nonLeaderNode.RemoveFromCluster();			
+			var allCommitsAppliedEvent = new ManualResetEventSlim();
+			otherNonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex >= 6) //5 commands and NOP command
+					allCommitsAppliedEvent.Set();
+			};
+
+			leader.AppendCommand(commands[0]);
+			leader.AppendCommand(commands[1]);
+			leader.AppendCommand(commands[2]);
+			leader.AppendCommand(commands[3]);
+		}
+
+		[Fact]
+		public async Task Leader_removed_from_cluster_will_cause_reelection()
+		{
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(5)
+				.All()
+				.With(x => x.Completion = null)
+				.Build()
+				.ToList();
+
+			var raftNodes = CreateRaftNetwork(4).ToList();
+			await raftNodes.First().WaitForLeader();
+
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var commitsAppliedEvent = new ManualResetEventSlim();
+			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex >= 3) //two commands and NOP
+					commitsAppliedEvent.Set();
+			};
+			
+			leader.AppendCommand(commands[0]);
+			leader.AppendCommand(commands[1]);
+
+			Assert.True(commitsAppliedEvent.Wait(2000));
+			commitsAppliedEvent.Reset();
+
+			Assert.Equal(3, leader.QuorumSize);
+			Trace.WriteLine("<--- Removing from cluster --->");
+			leader.RemoveFromCluster();
+
+			Thread.Sleep(nonLeaderNode.MessageTimeout + 1);
+
+			await nonLeaderNode.WaitForLeader();
+			Thread.Sleep(nonLeaderNode.MessageTimeout + 1);
+			var newLeader = raftNodes.FirstOrDefault(node => node.State == RaftEngineState.Leader && !ReferenceEquals(node,leader));
+			Assert.NotNull(newLeader);
+
+			newLeader.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex >= 5) //three commands and two NOP (two leader elections)
+					commitsAppliedEvent.Set();
+			};
+
+			newLeader.AppendCommand(commands[2]);
+			Assert.True(commitsAppliedEvent.Wait(2000));
+
+			//because one node was removed from cluster, quorum size was changed
+			newLeader.Should().NotBeSameAs(leader);
+			newLeader.QuorumSize.Should().Be(2);
+			var allCommitsAppliedEvent = new ManualResetEventSlim();
+			newLeader.CommitIndexChanged += (oldIndex, newIndex) =>
+			{
+				if (newIndex >= 7) //5 commands and two NOP (two leader elections)
+					allCommitsAppliedEvent.Set();
+			};
+
+			newLeader.AppendCommand(commands[3]);
+			newLeader.AppendCommand(commands[4]);
+
+			Assert.True(allCommitsAppliedEvent.Wait(3000));
+
+			var committedCommands = newLeader.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
+																				.OfType<DictionaryCommand.Set>().ToList();
+
+			committedCommands.Should().HaveCount(5);
+			for (int i = 0; i < 5; i++)
+			{
+				Assert.Equal(commands[i].Value, committedCommands[i].Value);
+				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
+			}
+		}
 
 		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
 		{
-			var node1Options = new RaftEngineOptions(nodeName,
+			var nodeOptions = new RaftEngineOptions(nodeName,
 				StorageEnvironmentOptions.CreateMemoryOnly(),
 				transport,
 				new DictionaryStateMachine(), 
 				messageTimeout)
 			{
 				AllPeers = peers,
+				AllVotingPeers = peers,
 				Stopwatch = Stopwatch.StartNew()
 			};
-			return node1Options;
+			return nodeOptions;
 		}
 
 		private bool AreEqual(byte[] array1, byte[] array2)

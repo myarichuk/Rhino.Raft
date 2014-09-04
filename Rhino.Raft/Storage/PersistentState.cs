@@ -14,7 +14,7 @@ namespace Rhino.Raft.Storage
 	/// Uses Voron to store the persistent state / log of the raft state machine.
 	/// Structure:
 	/// 
-	/// * $metadata tree - db id, version, current term, voted for
+	/// * $metadata tree - db id, version, current term, voted form, configuration info (like peer lists)
 	/// * logs - the actual entry logs
 	/// * entry-terms - the term for each entry id
 	/// * peers - the data about the peers in the cluster
@@ -24,6 +24,8 @@ namespace Rhino.Raft.Storage
 		private const string CurrentVersion = "1.0";
 		private const string LogsTreeName = "logs";
 		private const string EntryTermsTreeName = "entry-terms";
+		private const string MetadataTreeName = "$metadata";
+
 		public Guid DbId { get; private set; }
 		public string VotedFor { get; private set; }
 		public long CurrentTerm { get; private set; }
@@ -33,6 +35,63 @@ namespace Rhino.Raft.Storage
 		private readonly CancellationToken _cancellationToken;
 
 		public ICommandSerializer CommandSerializer { get; set; }
+
+		public event Action<Configuration> ConfigurationChanged;
+
+		public void SetCurrentConfiguration(Configuration configuration)
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+
+				foreach (var peer in configuration.AllPeers)
+					metadata.MultiAdd("current-config-allpeers", peer);
+
+				foreach (var peer in configuration.AllVotingPeers)
+					metadata.MultiAdd("current-config-allvotingpeers", peer);
+
+				tx.Commit();
+			}
+
+			OnConfigurationChanged(configuration);
+		}
+
+		public Configuration GetCurrentConfiguration()
+		{
+			var allPeers = new List<string>();
+			var allVotingPeers = new List<string>();
+			using (var tx = _env.NewTransaction(TransactionFlags.Read))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+
+				using (var allPeersIterator = metadata.MultiRead("current-config-allpeers"))
+				{
+					if (allPeersIterator.Seek(Slice.BeforeAllKeys))
+					{
+						do
+						{
+							var peer = allPeersIterator.CurrentKey.ToString();
+							allPeers.Add(peer);
+						} while (allPeersIterator.MoveNext());
+					}
+				}
+
+				using (var allVotingPeersIterator = metadata.MultiRead("current-config-allvotingpeers"))
+				{
+					if (allVotingPeersIterator.Seek(Slice.BeforeAllKeys))
+					{
+						do
+						{
+							var peer = allVotingPeersIterator.CurrentKey.ToString();
+							allVotingPeers.Add(peer);
+						} while (allVotingPeersIterator.MoveNext());
+					}
+
+				}
+			}
+
+			return new Configuration(allPeers,allVotingPeers);
+		}
 
 		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
 		{
@@ -48,7 +107,7 @@ namespace Rhino.Raft.Storage
 				_env.CreateTree(tx, LogsTreeName);
 				_env.CreateTree(tx, EntryTermsTreeName);
 
-				var metadata = _env.CreateTree(tx, "$metadata");
+				var metadata = _env.CreateTree(tx, MetadataTreeName);
 				var versionReadResult = metadata.Read("version");
 				if (versionReadResult == null) // new db
 				{
@@ -293,6 +352,11 @@ namespace Rhino.Raft.Storage
 
 				tx.Commit();
 			}
+		}
+		protected virtual void OnConfigurationChanged(Configuration newConfiguration)
+		{
+			var handler = ConfigurationChanged;
+			if (handler != null) handler(newConfiguration);
 		}
 
 	}

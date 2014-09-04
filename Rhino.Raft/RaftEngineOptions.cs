@@ -29,6 +29,8 @@ namespace Rhino.Raft
 
 		public IEnumerable<string> AllPeers { get; set; }
 
+		public IEnumerable<string> AllVotingPeers { get; set; }
+
 		public string Name { get; private set; }
 
 		public StorageEnvironmentOptions Options { get; private set; }

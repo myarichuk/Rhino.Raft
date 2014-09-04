@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 namespace Rhino.Raft
 {
@@ -80,6 +81,11 @@ namespace Rhino.Raft
 		public void Send(string dest, RequestVoteResponse resp)
 		{
 			AddToQueue(dest, resp);
+		}
+
+		public void Send(string dest, TopologyChanges req)
+		{
+			AddToQueue(dest, req);
 		}
 	}
 }
