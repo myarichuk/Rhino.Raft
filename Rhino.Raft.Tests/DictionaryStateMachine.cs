@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -20,16 +21,15 @@ namespace Rhino.Raft.Tests
 			_jsonCommandSerializer = new JsonCommandSerializer();
 		}
 
-		public void Apply(LogEntry entry)
+		public void Apply(LogEntry entry, Command command)
 		{
 			if (LastApplied >= entry.Index)
 				throw new InvalidOperationException("Already applied " + entry.Index);
 
 			LastApplied = entry.Index;
 
-			var command = _jsonCommandSerializer.Deserialize(entry.Data) as DictionaryCommand; 
-			if(command != null) //this means NopCommand -> it shouldn't be in the log
-				command.Apply(Data);
+			var dicCommand = (DictionaryCommand) command; 
+			dicCommand.Apply(Data);
 		}
 	}
 }

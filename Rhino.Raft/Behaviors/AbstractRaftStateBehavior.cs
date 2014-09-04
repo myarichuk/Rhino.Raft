@@ -10,15 +10,12 @@ namespace Rhino.Raft.Behaviors
 	public abstract class AbstractRaftStateBehavior : IDisposable
 	{
 		protected readonly RaftEngine Engine;
-		private readonly object _appendRequestSyncObj = new object();
 
 		public string Name
 		{
 			get { return Engine.Name; }
 		}
 
-
-		public TopologyChanges TopologyChanges { get; set; }
 
 		public int Timeout { get; set; }
 		public abstract RaftEngineState State { get; }
@@ -31,7 +28,6 @@ namespace Rhino.Raft.Behaviors
 			RequestVoteResponse requestVoteResponse;
 			AppendEntriesResponse appendEntriesResponse;
 			AppendEntriesRequest appendEntriesRequest;
-			TopologyChanges topologyChanges;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
 				Handle(envelope.Destination, requestVoteRequest);
@@ -41,31 +37,6 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, appendEntriesRequest);
 			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
 				Handle(envelope.Destination, requestVoteResponse);
-			else if (TryCastMessage(envelope.Message, out topologyChanges))
-				Handle(envelope.Destination, topologyChanges);
-		}
-
-		public virtual void Handle(string destination, TopologyChanges req)
-		{
-			if (req.NewTopology != null && req.OldTopology != null)
-				TopologyChanges = req;
-			else
-			{
-				lock (this)
-				{
-					if(TopologyChanges == null)
-						Debugger.Break();
-					var adjustedNewConfiguration =
-						new Topology(
-							TopologyChanges.NewTopology.AllPeers.Where(
-								peer => !String.Equals(peer, Engine.Name, StringComparison.InvariantCultureIgnoreCase)),
-							TopologyChanges.NewTopology.AllVotingPeers.Where(
-								peer => !String.Equals(peer, Engine.Name, StringComparison.InvariantCultureIgnoreCase)));
-
-					Engine.SetCurrentConfiguration(adjustedNewConfiguration);
-					TopologyChanges = null;
-				}
-			}
 		}
 
 		public virtual void Handle(string destination, RequestVoteResponse resp)
@@ -157,97 +128,94 @@ namespace Rhino.Raft.Behaviors
 	
 		public virtual void Handle(string destination, AppendEntriesRequest req)
 		{
-			lock (_appendRequestSyncObj) //precaution, should never be contested
+			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				if (req.Term < Engine.PersistentState.CurrentTerm)
-				{
-					var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
-						req.Term, Engine.PersistentState.CurrentTerm);
-					Engine.DebugLog.Write(msg);
-					Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
-					{
-						Success = false,
-						CurrentTerm = Engine.PersistentState.CurrentTerm,
-						Message = msg,
-						Source = Engine.Name
-					});
-					return;
-				}
-
-				if (req.Term > Engine.PersistentState.CurrentTerm)
-				{
-					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
-				}
-
-				if (Engine.CurrentLeader == null || req.LeaderId.Equals(Engine.CurrentLeader) == false)
-				{
-					Engine.CurrentLeader = req.LeaderId;
-					Engine.DebugLog.Write("Set current leader to {0}", req.LeaderId);
-				}
-
-				var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
-				if (prevTerm != req.PrevLogTerm)
-				{
-					var msg = string.Format(
-						"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}",
-						req.PrevLogTerm, prevTerm, req.PrevLogIndex);
-					Engine.DebugLog.Write(msg);
-					Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
-					{
-						Success = false,
-						CurrentTerm = Engine.PersistentState.CurrentTerm,
-						Message = msg,
-						LeaderId = req.LeaderId,
-						Source = Engine.Name
-					});
-					return;
-				}
-
-				if (req.Entries.Length > 0)
-				{
-					Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
-						Engine.State);
-					Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
-				}
-
-				string message;
-
-				var isHeartbeat = req.Entries.Length == 0;
-				if (isHeartbeat)
-				{
-					Engine.DebugLog.Write("Heartbeat received, req.LeaderCommit: {0}, Engine.CommitIndex: {1}", req.LeaderCommit,
-						Engine.CommitIndex);
-				}
-				
-				var lastIndex = req.Entries.Length == 0 ? 0 : req.Entries[req.Entries.Length - 1].Index;
-				if (req.LeaderCommit > Engine.CommitIndex)
-				{
-					Engine.DebugLog.Write(
-						"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
-						Engine.CommitIndex, lastIndex);
-					var oldCommitIndex = Engine.CommitIndex + 1;
-					
-					Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
-					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
-					message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
-					Engine.DebugLog.Write(message);
-
-					OnEntriesAppended(req.Entries);
-				}
-				else
-				{
-					message = "Got new entries";
-				}
-
+				var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
+					req.Term, Engine.PersistentState.CurrentTerm);
+				Engine.DebugLog.Write(msg);
 				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
 				{
-					Success = true,
+					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					LastLogIndex = (Engine.PersistentState.LastLogEntry() ?? new LogEntry()).Index,
-					Message = message,
+					Message = msg,
 					Source = Engine.Name
 				});
+				return;
 			}
+
+			if (req.Term > Engine.PersistentState.CurrentTerm)
+			{
+				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+			}
+
+			if (Engine.CurrentLeader == null || req.LeaderId.Equals(Engine.CurrentLeader) == false)
+			{
+				Engine.CurrentLeader = req.LeaderId;
+				Engine.DebugLog.Write("Set current leader to {0}", req.LeaderId);
+			}
+
+			var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
+			if (prevTerm != req.PrevLogTerm)
+			{
+				var msg = string.Format(
+					"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}",
+					req.PrevLogTerm, prevTerm, req.PrevLogIndex);
+				Engine.DebugLog.Write(msg);
+				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+				{
+					Success = false,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					Message = msg,
+					LeaderId = req.LeaderId,
+					Source = Engine.Name
+				});
+				return;
+			}
+
+			if (req.Entries.Length > 0)
+			{
+				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
+					Engine.State);
+				Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
+			}
+
+			string message;
+
+			var isHeartbeat = req.Entries.Length == 0;
+			if (isHeartbeat)
+			{
+				Engine.DebugLog.Write("Heartbeat received, req.LeaderCommit: {0}, Engine.CommitIndex: {1}", req.LeaderCommit,
+					Engine.CommitIndex);
+			}
+
+			var lastIndex = req.Entries.Length == 0 ? 0 : req.Entries[req.Entries.Length - 1].Index;
+			if (req.LeaderCommit > Engine.CommitIndex)
+			{
+				Engine.DebugLog.Write(
+					"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
+					Engine.CommitIndex, lastIndex);
+				var oldCommitIndex = Engine.CommitIndex + 1;
+
+				Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
+				Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
+				message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
+				Engine.DebugLog.Write(message);
+
+				OnEntriesAppended(req.Entries);
+			}
+			else
+			{
+				message = "Got new entries";
+			}
+
+			Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+			{
+				Success = true,
+				CurrentTerm = Engine.PersistentState.CurrentTerm,
+				LastLogIndex = (Engine.PersistentState.LastLogEntry() ?? new LogEntry()).Index,
+				Message = message,
+				Source = Engine.Name
+			});
 		}
 
 		public virtual void Dispose()
@@ -260,20 +228,5 @@ namespace Rhino.Raft.Behaviors
 			if (handler != null) handler(logEntries);
 		}
 
-		public virtual void PublishTopologyChanges(Topology oldConfig, Topology newConfig)
-		{
-			var topologyChange = new TopologyChanges
-			{
-				OldTopology = oldConfig,
-				NewTopology = newConfig
-			};
-
-			TopologyChanges = topologyChange;
-
-			foreach (var peer in TopologyChanges.NewTopology.AllPeers)
-			{
-				Engine.Transport.Send(peer, topologyChange); //declare to the cluster --> starting topology changes
-			}
-		}
 	}
 }

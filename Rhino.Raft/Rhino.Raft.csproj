@@ -52,6 +52,7 @@
     <Compile Include="Behaviors\LeaderStateBehavior.cs" />
     <Compile Include="Commands\Command.cs" />
     <Compile Include="Commands\NopCommand.cs" />
+    <Compile Include="Commands\TopologyChangedCommand.cs" />
     <Compile Include="Default.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
     <Compile Include="InMemoryTransport.cs" />
@@ -68,7 +69,6 @@
     <Compile Include="RaftEngine.cs" />
     <Compile Include="RaftEngineOptions.cs" />
     <Compile Include="Storage\Topology.cs" />
-    <Compile Include="Storage\TopologyChanges.cs" />
     <Compile Include="Storage\PersistentState.cs" />
     <Compile Include="Utils\DebugWriter.cs" />
   </ItemGroup>

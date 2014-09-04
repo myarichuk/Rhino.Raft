@@ -18,7 +18,6 @@ namespace Rhino.Raft.Interfaces
 		void Send(string dest, RequestVoteRequest req);
 		void Send(string dest, AppendEntriesResponse resp);
 		void Send(string dest, RequestVoteResponse resp);
-		void Send(string dest, TopologyChanges req);
 	}
 
 }

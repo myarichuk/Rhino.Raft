@@ -25,9 +25,9 @@ namespace Rhino.Raft
 			CommandCommitTimeout = commandCommitTimeout;
 		}
 
-		public Stopwatch Stopwatch { get; set; }
+		public bool ForceNewTopology { get; set; }
 
-		public IEnumerable<string> AllPeers { get; set; }
+		public Stopwatch Stopwatch { get; set; }
 
 		public IEnumerable<string> AllVotingPeers { get; set; }
 

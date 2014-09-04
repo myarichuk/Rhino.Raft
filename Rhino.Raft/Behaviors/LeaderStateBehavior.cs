@@ -36,7 +36,7 @@ namespace Rhino.Raft.Behaviors
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry() ?? new LogEntry();
 
-			foreach (var peer in Engine.AllPeers)
+			foreach (var peer in Engine.AllVotingPeers)
 			{
 				_nextIndexes[peer] = lastLogEntry.Index + 1;
 				_matchIndexes[peer] = 0;
@@ -62,7 +62,7 @@ namespace Rhino.Raft.Behaviors
 
 		private void SendEntriesToAllPeers()
 		{
-			foreach (var peer in Engine.AllPeers)
+			foreach (var peer in Engine.AllVotingPeers)
 			{
 				_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
 				SendEntriesToPeer(peer);
@@ -124,7 +124,8 @@ namespace Rhino.Raft.Behaviors
 			{
 				// go back in the log, this peer isn't matching us at this location				
 				_nextIndexes[resp.Source] -= 1;
-				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",_nextIndexes[resp.Source] , resp.Source);
+				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",
+					_nextIndexes[resp.Source], resp.Source);
 				return;
 			}
 
@@ -132,72 +133,35 @@ namespace Rhino.Raft.Behaviors
 			_matchIndexes[resp.Source] = resp.LastLogIndex;
 			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
 			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
-
-			if (TopologyChanges == null)
+			
+			// allow to run on both quoroms!
+			
+			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
+			if (maxIndexOnQuorom == -1)
 			{
-				var maxIndexOnQuorom = GetMaxIndexOnQuorom();
-				if (maxIndexOnQuorom == -1)
-				{
-					Engine.DebugLog.Write("Not enough followers committed, not applying commits yet");
-					return;
-				}
-
-				if (maxIndexOnQuorom <= Engine.CommitIndex)
-				{
-					Engine.DebugLog.Write("maxIndexOnQuorom = {0} <= Engine.CommitIndex = {1} --> no need to apply commits",
-						maxIndexOnQuorom, Engine.CommitIndex);
-					return;
-				}
-
-				Engine.DebugLog.Write(
-					"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnQuorom,
-					Engine.CommitIndex);
-				Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnQuorom);
-
-				Command result;
-				while (_pendingCommands.TryPeek(out result) && result.AssignedIndex <= maxIndexOnQuorom)
-				{
-					if (_pendingCommands.TryDequeue(out result) == false)
-						break; // should never happen
-
-					result.Completion.TrySetResult(null);
-				}
+				Engine.DebugLog.Write("Not enough followers committed, not applying commits yet");
+				return;
 			}
-			else
+
+			if (maxIndexOnQuorom <= Engine.CommitIndex)
 			{
-				var maxIndexOnQuorums = GetMaxIndexOnOldAndNewQuorums();
-				if (maxIndexOnQuorums.Item1 == -1 || maxIndexOnQuorums.Item2 == -1)
-				{
-					Engine.DebugLog.Write("Not enough followers committed, not applying commits yet");
-					return;
-				}
+				Engine.DebugLog.Write("maxIndexOnQuorom = {0} <= Engine.CommitIndex = {1} --> no need to apply commits",
+					maxIndexOnQuorom, Engine.CommitIndex);
+				return;
+			}
 
-				if (maxIndexOnQuorums.Item1 <= Engine.CommitIndex && maxIndexOnQuorums.Item2 <= Engine.CommitIndex)
-				{
-					Engine.DebugLog.Write("maxIndexOnQuorom on old Topology = {0}/maxIndexOnQuorom on new Topology {1} <= Engine.CommitIndex = {2} --> no need to apply commits",
-						maxIndexOnQuorums.Item1,maxIndexOnQuorums.Item2, Engine.CommitIndex);
-					return;
-				}
+			Engine.DebugLog.Write(
+				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnQuorom,
+				Engine.CommitIndex);
+			Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnQuorom);
 
-				if (maxIndexOnQuorums.Item1 > Engine.CommitIndex && maxIndexOnQuorums.Item2 > Engine.CommitIndex)
-				{
-					var maxIndexOnQuorom = Math.Max(maxIndexOnQuorums.Item1, maxIndexOnQuorums.Item2);
-					Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnQuorom);
+			Command result;
+			while (_pendingCommands.TryPeek(out result) && result.AssignedIndex <= maxIndexOnQuorom)
+			{
+				if (_pendingCommands.TryDequeue(out result) == false)
+					break; // should never happen
 
-					Command result;
-					while (_pendingCommands.TryPeek(out result) && result.AssignedIndex <= maxIndexOnQuorom)
-					{
-						if (_pendingCommands.TryDequeue(out result) == false)
-							break; // should never happen
-
-						result.Completion.TrySetResult(null);
-					}
-
-					foreach (var peer in TopologyChanges.NewTopology.AllPeers)
-					{
-						Engine.Transport.Send(peer, new TopologyChanges()); //empty TopologyChanges --> end of change state
-					}
-				}
+				result.Completion.TrySetResult(null);
 			}
 		}
 
@@ -205,17 +169,6 @@ namespace Rhino.Raft.Behaviors
 		{
 			var currentConfigDictionary = CountIndexPerPeer(_matchIndexes);
 			return MaxIndexOnQuorom(currentConfigDictionary, Engine.QuorumSize);
-		}
-
-		private Tuple<long, long> GetMaxIndexOnOldAndNewQuorums()
-		{
-			var oldDic = CountIndexPerPeer(_matchIndexes.Where(x => TopologyChanges.OldTopology.AllVotingPeers.Contains(x.Key)));
-			var maxIndexOnOldQuorum = MaxIndexOnQuorom(oldDic, TopologyChanges.OldQuorum);
-
-			var newDic = CountIndexPerPeer(_matchIndexes.Where(x => TopologyChanges.NewTopology.AllVotingPeers.Contains(x.Key)));
-			var maxIndexOnNewQuorum = MaxIndexOnQuorom(newDic, TopologyChanges.NewQuorum);
-
-			return Tuple.Create(maxIndexOnOldQuorum, maxIndexOnNewQuorum);
 		}
 
 		private Dictionary<long, int> CountIndexPerPeer(IEnumerable<KeyValuePair<string, long>> matchIndexes)

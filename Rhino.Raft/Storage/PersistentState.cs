@@ -44,9 +44,6 @@ namespace Rhino.Raft.Storage
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 
-				foreach (var peer in topology.AllPeers)
-					metadata.MultiAdd("current-config-allpeers", peer);
-
 				foreach (var peer in topology.AllVotingPeers)
 					metadata.MultiAdd("current-config-allvotingpeers", peer);
 
@@ -58,23 +55,10 @@ namespace Rhino.Raft.Storage
 
 		public Topology GetCurrentConfiguration()
 		{
-			var allPeers = new List<string>();
 			var allVotingPeers = new List<string>();
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
-
-				using (var allPeersIterator = metadata.MultiRead("current-config-allpeers"))
-				{
-					if (allPeersIterator.Seek(Slice.BeforeAllKeys))
-					{
-						do
-						{
-							var peer = allPeersIterator.CurrentKey.ToString();
-							allPeers.Add(peer);
-						} while (allPeersIterator.MoveNext());
-					}
-				}
 
 				using (var allVotingPeersIterator = metadata.MultiRead("current-config-allvotingpeers"))
 				{
@@ -90,7 +74,7 @@ namespace Rhino.Raft.Storage
 				}
 			}
 
-			return new Topology(allPeers,allVotingPeers);
+			return new Topology(allVotingPeers);
 		}
 
 		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)

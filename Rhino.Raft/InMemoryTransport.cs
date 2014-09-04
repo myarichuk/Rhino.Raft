@@ -83,9 +83,5 @@ namespace Rhino.Raft
 			AddToQueue(dest, resp);
 		}
 
-		public void Send(string dest, TopologyChanges req)
-		{
-			AddToQueue(dest, req);
-		}
 	}
 }
