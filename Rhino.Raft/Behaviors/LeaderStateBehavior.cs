@@ -26,6 +26,9 @@ namespace Rhino.Raft.Behaviors
 		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
 		private readonly Task _heartbeatTask;
 
+		private readonly CancellationTokenSource _disposedCancellationTokenSource = new CancellationTokenSource();
+		private readonly CancellationTokenSource _stopHeartbeatCancellationTokenSource;
+
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
@@ -41,14 +44,16 @@ namespace Rhino.Raft.Behaviors
 
 			AppendCommand(new NopCommand());
 			_heartbeatTask = Task.Run(() => Heartbeat(), Engine.CancellationToken);
+
+			_stopHeartbeatCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(Engine.CancellationToken, _disposedCancellationTokenSource.Token);
 		}
 
 		private void Heartbeat()
 		{
-			while (Engine.State == RaftEngineState.Leader && !Engine.CancellationToken.IsCancellationRequested)
+			while (Engine.State == RaftEngineState.Leader &&
+				!_stopHeartbeatCancellationTokenSource.IsCancellationRequested)
 			{
 				Engine.DebugLog.Write("Leader heartbeat");
-				Engine.CancellationToken.ThrowIfCancellationRequested();
 				SendEntriesToAllPeers();
 
 				Thread.Sleep(Engine.MessageTimeout / 6);
@@ -59,6 +64,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			foreach (var peer in Engine.AllPeers)
 			{
+				_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
 				SendEntriesToPeer(peer);
 			}
 		}
@@ -248,7 +254,15 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Dispose()
 		{
-			_heartbeatTask.Wait(Timeout * 2);
+			_disposedCancellationTokenSource.Cancel();
+			try
+			{
+				_heartbeatTask.Wait(Timeout * 2);
+			}
+			catch (OperationCanceledException)
+			{
+				//expected
+			}
 		}
 	}
 }

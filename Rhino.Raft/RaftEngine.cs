@@ -302,18 +302,14 @@ namespace Rhino.Raft
 		public void AppendCommand(Command command)
 		{
 			if (command == null) throw new ArgumentNullException("command");
+			
+			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
+			if (leaderStateBehavior == null)
+				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
+				                                    (CurrentLeader ?? "(no current node)") + ", node type is " +
+				                                    StateBehavior.GetType().Name);
 
-			//since event loop is on separate thread, and state change will occur on that separate thread,
-			//make sure that state is finished changing before we attempt to append commands
-			lock (_stateChangingSyncObject)
-			{
-				var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
-				if (leaderStateBehavior == null)
-					throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
-														(CurrentLeader ?? "(no current node)") + ", node type is " + StateBehavior.GetType().Name);
-
-				leaderStateBehavior.AppendCommand(command);
-			}
+			leaderStateBehavior.AppendCommand(command);
 		}
 
 		public void ApplyCommits(long from, long to)
