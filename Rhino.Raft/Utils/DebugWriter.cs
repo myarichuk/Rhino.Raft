@@ -20,6 +20,16 @@ namespace Rhino.Raft.Utils
 			_duration = duration;
 		}
 
+		public void Write(string format, object arg1)
+		{
+			Write(format, new []{arg1});
+		}
+
+		public void Write(string format, object arg1, object arg2)
+		{
+			Write(format, new[] { arg1, arg2 });
+		}
+
 		public void Write(string format, params object[] args)
 		{
 			Console.WriteLine("{0} @ {1,7:#,#;;0}: {2}", _name, _duration.ElapsedMilliseconds, string.Format(format, args));
