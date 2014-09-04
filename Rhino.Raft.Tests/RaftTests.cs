@@ -116,7 +116,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			await raftNodes.First().WaitForLeader();
+			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
@@ -150,7 +150,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			await raftNodes.First().WaitForLeader();
+			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
@@ -294,7 +294,7 @@ namespace Rhino.Raft.Tests
 				.ToList();
 
 			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
-			raftNodes.First().WaitForLeader().Wait();
+			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
@@ -320,7 +320,7 @@ namespace Rhino.Raft.Tests
 			transport.ReconnectNode(leader.Name);
 
 			//other leader was selected
-			raftNodes.First().WaitForLeader().Wait();
+			raftNodes.First().WaitForLeader();
 			leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);			
 			Assert.NotNull(leader);
 			
@@ -357,7 +357,7 @@ namespace Rhino.Raft.Tests
 
 			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
 
-			raftNodes.First().WaitForLeader().Wait();
+			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
@@ -413,7 +413,7 @@ namespace Rhino.Raft.Tests
 					followerEvent.Signal();
 			});
 
-			raftNodes.First().WaitForLeader().Wait();
+			raftNodes.First().WaitForLeader();
 
 			var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leaderNode);
@@ -581,7 +581,7 @@ namespace Rhino.Raft.Tests
 
 			// ReSharper disable once PossibleNullReferenceException
 			var first = raftNodes.First();
-			await first.WaitForLeader();
+			first.WaitForLeader();
 			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
 
 			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
@@ -629,7 +629,7 @@ namespace Rhino.Raft.Tests
 
 			// ReSharper disable once PossibleNullReferenceException
 			var first = raftNodes.First();
-			await first.WaitForLeader();
+			first.WaitForLeader();
 			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
 
 			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
@@ -647,7 +647,7 @@ namespace Rhino.Raft.Tests
 
 
 
-			await first.WaitForLeader();
+			first.WaitForLeader();
 			Trace.WriteLine("<!made sure the leader is still selected, proceeding with the test!>");
 			
 			leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
@@ -843,7 +843,7 @@ namespace Rhino.Raft.Tests
 						Assert.Empty(currentConfiguration.AllPeers);
 						Assert.Empty(currentConfiguration.AllVotingPeers);
 
-						persistentState.SetCurrentConfiguration(new Configuration(expectedAllPeers,expectedAllVotingPeers));
+						persistentState.SetCurrentTopology(new Topology(expectedAllPeers,expectedAllVotingPeers));
 					}
 				}
 				using (var options = StorageEnvironmentOptions.ForPath(path))
@@ -875,7 +875,7 @@ namespace Rhino.Raft.Tests
 						.ToList();
 
 			var raftNodes = CreateRaftNetwork(4).ToList();
-			await raftNodes.First().WaitForLeader();
+			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
@@ -922,7 +922,7 @@ namespace Rhino.Raft.Tests
 				.ToList();
 
 			var raftNodes = CreateRaftNetwork(4).ToList();
-			await raftNodes.First().WaitForLeader();
+			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
@@ -947,7 +947,7 @@ namespace Rhino.Raft.Tests
 
 			Thread.Sleep(nonLeaderNode.MessageTimeout + 1);
 
-			await nonLeaderNode.WaitForLeader();
+			nonLeaderNode.WaitForLeader();
 			Thread.Sleep(nonLeaderNode.MessageTimeout + 1);
 			var newLeader = raftNodes.FirstOrDefault(node => node.State == RaftEngineState.Leader && !ReferenceEquals(node,leader));
 			Assert.NotNull(newLeader);

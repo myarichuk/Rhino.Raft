@@ -27,7 +27,7 @@ namespace Rhino.Raft
 		private readonly ManualResetEventSlim _leaderSelectedEvent = new ManualResetEventSlim();
 		private readonly object _stateChangingSyncObject = new object();
 
-		private Configuration _currentConfiguration;
+		private Topology _currentTopology;
 
 		public DebugWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
@@ -35,21 +35,21 @@ namespace Rhino.Raft
 
 		public IEnumerable<string> AllVotingPeers
 		{
-			get { return _currentConfiguration.AllVotingPeers; }
+			get { return _currentTopology.AllVotingPeers; }
 			set
 			{
-				_currentConfiguration = new Configuration(_currentConfiguration.AllPeers,value);
-				PersistentState.SetCurrentConfiguration(_currentConfiguration);
+				_currentTopology = new Topology(_currentTopology.AllPeers, value);
+				PersistentState.SetCurrentTopology(_currentTopology);
 			}
 		}
 
 		public IEnumerable<string> AllPeers
 		{
-			get { return _currentConfiguration.AllPeers; }
+			get { return _currentTopology.AllPeers; }
 			set
 			{
-				_currentConfiguration = new Configuration(value, _currentConfiguration.AllVotingPeers);
-				PersistentState.SetCurrentConfiguration(_currentConfiguration);
+				_currentTopology = new Topology(value, _currentTopology.AllVotingPeers);
+				PersistentState.SetCurrentTopology(_currentTopology);
 			}
 		}
 
@@ -69,7 +69,7 @@ namespace Rhino.Raft
 				if (_currentLeader == value)
 					return;
 
-				DebugLog.Write("Setting CurrentLeader: " + value);
+				DebugLog.Write("Setting CurrentLeader: {0}", value);
 				_currentLeader = value;
 				if (_currentLeader == null)
 					_leaderSelectedEvent.Reset();
@@ -98,20 +98,20 @@ namespace Rhino.Raft
 		{
 			get
 			{
-				return ((AllVotingPeers.Count() + 1)/2) + 1;
+				return ((_currentTopology.AllVotingPeers.Length + 1) / 2) + 1;
 			}
 		}
 
 		private RaftEngineState _state;
 
-		public RaftEngineState State 
+		public RaftEngineState State
 		{
 			get
 			{
-				lock(_stateChangingSyncObject)
+				lock (_stateChangingSyncObject)
 					return _state;
 			}
-			
+
 		}
 
 		public int MaxEntriesPerRequest { get; set; }
@@ -137,7 +137,7 @@ namespace Rhino.Raft
 		/// </summary>
 		public int MessageTimeout { get; set; }
 		public CancellationToken CancellationToken { get { return _cancellationTokenSource.Token; } }
-		
+
 		public event Action<RaftEngineState> StateChanged;
 		public event Action ElectionStarted;
 		public event Action StateTimeout;
@@ -153,7 +153,7 @@ namespace Rhino.Raft
 
 			CommandCommitTimeout = raftEngineOptions.CommandCommitTimeout;
 			MessageTimeout = raftEngineOptions.MessageTimeout;
-			
+
 			_cancellationTokenSource = new CancellationTokenSource();
 
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
@@ -165,13 +165,13 @@ namespace Rhino.Raft
 
 			if (raftEngineOptions.AllPeers != null || raftEngineOptions.AllPeers != null)
 			{
-// ReSharper disable ConstantNullCoalescingCondition
-				_currentConfiguration = new Configuration(raftEngineOptions.AllPeers ?? new String[0], raftEngineOptions.AllVotingPeers ?? new String[0]);
-// ReSharper restore ConstantNullCoalescingCondition
-				PersistentState.SetCurrentConfiguration(_currentConfiguration);
+				// ReSharper disable ConstantNullCoalescingCondition
+				_currentTopology = new Topology(raftEngineOptions.AllPeers ?? new String[0], raftEngineOptions.AllVotingPeers ?? new String[0]);
+				// ReSharper restore ConstantNullCoalescingCondition
+				PersistentState.SetCurrentTopology(_currentTopology);
 			}
 			else
-				_currentConfiguration = PersistentState.GetCurrentConfiguration();
+				_currentTopology = PersistentState.GetCurrentConfiguration();
 
 			//warm up
 			PersistentState.CommandSerializer.Serialize(new NopCommand());
@@ -193,18 +193,18 @@ namespace Rhino.Raft
 
 			var allVotingPeersWithoutThis = oldConfig.AllVotingPeers;
 			var allPeersWithoutThis = oldConfig.AllPeers;
-			var newConfig = new Configuration(allPeersWithoutThis, allVotingPeersWithoutThis);
-			
-			oldConfig = new Configuration(oldConfig.AllPeers.Concat(Name), oldConfig.AllVotingPeers.Concat(Name));
-			
+			var newConfig = new Topology(allPeersWithoutThis, allVotingPeersWithoutThis);
+
+			oldConfig = new Topology(oldConfig.AllPeers.Concat(Name), oldConfig.AllVotingPeers.Concat(Name));
+
 			_stateBehavior.PublishTopologyChanges(oldConfig, newConfig);
 		}
 
-		internal void SetCurrentConfiguration(Configuration configuration)
+		internal void SetCurrentConfiguration(Topology topology)
 		{
-			_currentConfiguration = configuration;
-			PersistentState.SetCurrentConfiguration(_currentConfiguration);
-			DebugLog.Write("SetCurrentConfiguration: {0}", String.Join(",", _currentConfiguration.AllPeers));
+			_currentTopology = topology;
+			PersistentState.SetCurrentTopology(_currentTopology);
+			DebugLog.Write("SetCurrentTopology: {0}", String.Join(",", _currentTopology.AllPeers));
 		}
 
 		protected void EventLoop()
@@ -236,11 +236,11 @@ namespace Rhino.Raft
 			}
 		}
 
-		internal void UpdateCurrentTerm(long term,string leader)
+		internal void UpdateCurrentTerm(long term, string leader)
 		{
 			PersistentState.UpdateTermTo(term);
 			SetState(RaftEngineState.Follower);
-			DebugLog.Write("UpdateCurrentTerm() setting new leader : {0}",leader ?? "no leader currently");
+			DebugLog.Write("UpdateCurrentTerm() setting new leader : {0}", leader ?? "no leader currently");
 			CurrentLeader = leader;
 		}
 
@@ -255,29 +255,32 @@ namespace Rhino.Raft
 			var oldState = StateBehavior;
 
 			lock (_stateChangingSyncObject)
-			using (oldState)
 			{
-				_state = state;
-
-				switch (state)
+				using (oldState)
 				{
-					case RaftEngineState.Follower:
-						StateBehavior = new FollowerStateBehavior(this);
-						break;
-					case RaftEngineState.Candidate:
-						StateBehavior = new CandidateStateBehavior(this);
-						break;
-					case RaftEngineState.Leader:
-						CurrentLeader = Name;
-						StateBehavior = new LeaderStateBehavior(this);
-						OnElectedAsLeader();
-						break;
-				}
+					_state = state;
 
-// ReSharper disable once PossibleNullReferenceException
-				if(oldState != null)
-					StateBehavior.TopologyChanges = oldState.TopologyChanges;
-				OnStateChanged(state);
+					switch (state)
+					{
+						case RaftEngineState.Follower:
+							StateBehavior = new FollowerStateBehavior(this);
+							break;
+						case RaftEngineState.Candidate:
+							StateBehavior = new CandidateStateBehavior(this);
+							break;
+						case RaftEngineState.Leader:
+							CurrentLeader = Name;
+							StateBehavior = new LeaderStateBehavior(this);
+							OnElectedAsLeader();
+							break;
+						default:
+							throw new ArgumentOutOfRangeException(state.ToString());
+					}
+
+					if (oldState != null)
+						StateBehavior.TopologyChanges = oldState.TopologyChanges;
+					OnStateChanged(state);
+				}
 			}
 		}
 
@@ -291,11 +294,9 @@ namespace Rhino.Raft
 			return lastLogEntry.Index <= lastLogIndex;
 		}
 
-		public Task WaitForLeader()
+		public void WaitForLeader()
 		{
-			lock(_stateChangingSyncObject) //change to leader state makes _leaderSelectedEvent to be set, 
-										   //so wait for state to finish changing
-				return Task.Run(() => _leaderSelectedEvent.Wait(CancellationToken), CancellationToken);
+			_leaderSelectedEvent.Wait(CancellationToken);
 		}
 
 		public void AppendCommand(Command command)
@@ -309,7 +310,7 @@ namespace Rhino.Raft
 				var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
 				if (leaderStateBehavior == null)
 					throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
-					                                    (CurrentLeader ?? "(no current node)") + ", node type is " + StateBehavior.GetType().Name);
+														(CurrentLeader ?? "(no current node)") + ", node type is " + StateBehavior.GetType().Name);
 
 				leaderStateBehavior.AppendCommand(command);
 			}
@@ -327,14 +328,14 @@ namespace Rhino.Raft
 				}
 				catch (InvalidOperationException e)
 				{
-					DebugLog.Write("Failed to apply commit. {0}",e);
+					DebugLog.Write("Failed to apply commit. {0}", e);
 					throw;
 				}
 			}
 			var oldCommitIndex = CommitIndex;
 			CommitIndex = to;
 			DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
-			OnCommitIndexChanged(oldCommitIndex,CommitIndex);
+			OnCommitIndexChanged(oldCommitIndex, CommitIndex);
 		}
 
 		internal void AnnounceCandidacy()
@@ -365,7 +366,7 @@ namespace Rhino.Raft
 		public void Dispose()
 		{
 			_cancellationTokenSource.Cancel();
-			_eventLoopTask.Wait(500);			
+			_eventLoopTask.Wait(500);
 
 			PersistentState.Dispose();
 		}
@@ -394,10 +395,10 @@ namespace Rhino.Raft
 			if (handler != null) handler(logEntries);
 		}
 
-		protected virtual void OnCommitIndexChanged(long oldCommitIndex,long newCommitIndex)
+		protected virtual void OnCommitIndexChanged(long oldCommitIndex, long newCommitIndex)
 		{
 			var handler = CommitIndexChanged;
-			if (handler != null) handler(oldCommitIndex,newCommitIndex);
+			if (handler != null) handler(oldCommitIndex, newCommitIndex);
 		}
 
 		protected virtual void OnElectedAsLeader()
