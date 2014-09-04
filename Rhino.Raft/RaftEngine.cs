@@ -102,14 +102,14 @@ namespace Rhino.Raft
 			}
 		}
 
-		private RaftEngineState _state;
-
 		public RaftEngineState State
 		{
 			get
 			{
-				lock (_stateChangingSyncObject)
-					return _state;
+				var behavior = _stateBehavior;
+				if(behavior == null)
+					return RaftEngineState.None;
+				return behavior.State;
 			}
 
 		}
@@ -253,34 +253,28 @@ namespace Rhino.Raft
 				StateBehavior.EntriesAppended -= OnEntriesAppended;
 
 			var oldState = StateBehavior;
-
-			lock (_stateChangingSyncObject)
+			using (oldState)
 			{
-				using (oldState)
+				switch (state)
 				{
-					_state = state;
-
-					switch (state)
-					{
-						case RaftEngineState.Follower:
-							StateBehavior = new FollowerStateBehavior(this);
-							break;
-						case RaftEngineState.Candidate:
-							StateBehavior = new CandidateStateBehavior(this);
-							break;
-						case RaftEngineState.Leader:
-							CurrentLeader = Name;
-							StateBehavior = new LeaderStateBehavior(this);
-							OnElectedAsLeader();
-							break;
-						default:
-							throw new ArgumentOutOfRangeException(state.ToString());
-					}
-
-					if (oldState != null)
-						StateBehavior.TopologyChanges = oldState.TopologyChanges;
-					OnStateChanged(state);
+					case RaftEngineState.Follower:
+						StateBehavior = new FollowerStateBehavior(this);
+						break;
+					case RaftEngineState.Candidate:
+						StateBehavior = new CandidateStateBehavior(this);
+						break;
+					case RaftEngineState.Leader:
+						StateBehavior = new LeaderStateBehavior(this);
+						CurrentLeader = Name;
+						OnElectedAsLeader();
+						break;
+					default:
+						throw new ArgumentOutOfRangeException(state.ToString());
 				}
+
+				if (oldState != null)
+					StateBehavior.TopologyChanges = oldState.TopologyChanges;
+				OnStateChanged(state);
 			}
 		}
 
@@ -302,12 +296,12 @@ namespace Rhino.Raft
 		public void AppendCommand(Command command)
 		{
 			if (command == null) throw new ArgumentNullException("command");
-			
+
 			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
 			if (leaderStateBehavior == null)
 				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
-				                                    (CurrentLeader ?? "(no current node)") + ", node type is " +
-				                                    StateBehavior.GetType().Name);
+													(CurrentLeader ?? "(no current node)") + ", node type is " +
+													StateBehavior.GetType().Name);
 
 			leaderStateBehavior.AppendCommand(command);
 		}

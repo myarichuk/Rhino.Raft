@@ -43,15 +43,15 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			AppendCommand(new NopCommand());
-			_heartbeatTask = Task.Run(() => Heartbeat(), Engine.CancellationToken);
-
 			_stopHeartbeatCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(Engine.CancellationToken, _disposedCancellationTokenSource.Token);
+
+			_heartbeatTask = Task.Run(() => Heartbeat(), _stopHeartbeatCancellationTokenSource.Token);
+
 		}
 
 		private void Heartbeat()
 		{
-			while (Engine.State == RaftEngineState.Leader &&
-				!_stopHeartbeatCancellationTokenSource.IsCancellationRequested)
+			while (_stopHeartbeatCancellationTokenSource.IsCancellationRequested == false)
 			{
 				Engine.DebugLog.Write("Leader heartbeat");
 				SendEntriesToAllPeers();
@@ -99,7 +99,7 @@ namespace Rhino.Raft.Behaviors
 			OnEntriesAppended(entries); //equivalent to followers receiving the entries			
 		}
 
-		protected RaftEngineState State
+		public override RaftEngineState State
 		{
 			get { return RaftEngineState.Leader; }
 		}
@@ -257,11 +257,16 @@ namespace Rhino.Raft.Behaviors
 			_disposedCancellationTokenSource.Cancel();
 			try
 			{
-				_heartbeatTask.Wait(Timeout * 2);
+				_heartbeatTask.Wait(Timeout*2);
 			}
 			catch (OperationCanceledException)
 			{
 				//expected
+			}
+			catch (AggregateException e)
+			{
+				if (e.InnerException is OperationCanceledException == false)
+					throw;
 			}
 		}
 	}

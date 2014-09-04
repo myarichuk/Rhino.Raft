@@ -51,7 +51,12 @@ namespace Rhino.Raft.Behaviors
 			VotesForMyLeadership = 0;
 			Engine.AnnounceCandidacy();
 			VoteForSelf();
-	    }	
+	    }
+
+		public override RaftEngineState State
+		{
+			get { return RaftEngineState.Candidate; }
+		}
 
 		public override void Handle(string source,RequestVoteResponse resp)
 		{

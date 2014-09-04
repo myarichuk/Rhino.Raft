@@ -21,6 +21,7 @@ namespace Rhino.Raft.Behaviors
 		public TopologyChanges TopologyChanges { get; set; }
 
 		public int Timeout { get; set; }
+		public abstract RaftEngineState State { get; }
 
 		public event Action<LogEntry[]> EntriesAppended;
 

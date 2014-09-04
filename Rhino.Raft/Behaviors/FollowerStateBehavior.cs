@@ -17,6 +17,11 @@ namespace Rhino.Raft.Behaviors
 		    Timeout = random.Next(engine.MessageTimeout/2, engine.MessageTimeout);
 	    }
 
+	    public override RaftEngineState State
+	    {
+		    get { return RaftEngineState.Follower; }
+	    }
+
 	    public override void HandleTimeout()
 	    {
 		    Engine.DebugLog.Write("Got timeout in follower mode in term {0}", Engine.PersistentState.CurrentTerm);
