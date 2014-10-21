@@ -147,7 +147,6 @@ namespace Rhino.Raft.Behaviors
 			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
 			
 			// allow to run on both quoroms!			
-
 			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
 			if (maxIndexOnQuorom == -1)
 			{

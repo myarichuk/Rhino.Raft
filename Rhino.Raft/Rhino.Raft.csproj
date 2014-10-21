@@ -61,6 +61,7 @@
     <Compile Include="JsonCommandSerializer.cs" />
     <Compile Include="Messages\AppendEntriesRequest.cs" />
     <Compile Include="Messages\AppendEntriesResponse.cs" />
+    <Compile Include="Messages\InstallSnapshot.cs" />
     <Compile Include="Messages\LogEntry.cs" />
     <Compile Include="Messages\MessageEnvelope.cs" />
     <Compile Include="Messages\RequestVoteRequest.cs" />

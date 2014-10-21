@@ -928,6 +928,24 @@ namespace Rhino.Raft.Tests
 		}
 
 		[Fact]
+		public void Cluster_cannot_have_two_concurrent_node_removals()
+		{
+			var raftNodes = CreateRaftNetwork(4, messageTimeout: 1500).ToList();
+			raftNodes.First().WaitForLeader();
+
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var nonLeader = raftNodes.FirstOrDefault(x => x.State != RaftEngineState.Leader);
+			Assert.NotNull(nonLeader);
+
+			leader.RemoveFromClusterAsync(nonLeader.Name);
+
+			//if another removal from cluster is in progress, 
+			Assert.Throws<InvalidOperationException>(() => leader.RemoveFromClusterAsync(leader.Name));
+		}
+
+		[Fact]
 		public void Leader_removed_from_cluster_will_cause_reelection()
 		{
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(5)
