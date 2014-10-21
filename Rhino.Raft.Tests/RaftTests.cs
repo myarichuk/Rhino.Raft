@@ -829,7 +829,6 @@ namespace Rhino.Raft.Tests
 			var path = "test" + Guid.NewGuid();
 			try
 			{
-				var expectedAllPeers = new List<string> { "Node1", "Node2", "NodeA", "NodeB" };
 				var expectedAllVotingPeers = new List<string> { "Node123", "Node1", "Node2", "NodeG", "NodeB", "NodeABC" };
 
 				using (var options = StorageEnvironmentOptions.ForPath(path))
@@ -840,10 +839,9 @@ namespace Rhino.Raft.Tests
 					})
 					{
 						var currentConfiguration = persistentState.GetCurrentConfiguration();
-						Assert.Empty(currentConfiguration.AllPeers);
 						Assert.Empty(currentConfiguration.AllVotingPeers);
 
-						persistentState.SetCurrentTopology(new Topology(expectedAllPeers,expectedAllVotingPeers));
+						persistentState.SetCurrentTopology(new Topology(expectedAllVotingPeers));
 					}
 				}
 				using (var options = StorageEnvironmentOptions.ForPath(path))
@@ -854,7 +852,6 @@ namespace Rhino.Raft.Tests
 					})
 					{
 						var currentConfiguration = persistentState.GetCurrentConfiguration();
-						expectedAllPeers.Should().Contain(currentConfiguration.AllPeers);
 						expectedAllVotingPeers.Should().Contain(currentConfiguration.AllVotingPeers);
 					}
 				}
@@ -866,7 +863,7 @@ namespace Rhino.Raft.Tests
 		}
 
 		[Fact]
-		public async Task Follower_removed_from_cluster_does_not_affect_leader_and_commits()
+		public void Follower_removed_from_cluster_does_not_affect_leader_and_commits()
 		{
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(5)
 						.All()
@@ -874,46 +871,64 @@ namespace Rhino.Raft.Tests
 						.Build()
 						.ToList();
 
-			var raftNodes = CreateRaftNetwork(4).ToList();
+			var raftNodes = CreateRaftNetwork(4,messageTimeout:1500).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
 			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
-			var commitsAppliedEvent = new ManualResetEventSlim();
+			var someCommitsAppliedEvent = new ManualResetEventSlim();
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
 			{
 				if (newIndex >= 3) //two commands and NOP
-					commitsAppliedEvent.Set();
+					someCommitsAppliedEvent.Set();
 			};
 
 			leader.AppendCommand(commands[0]);
 			leader.AppendCommand(commands[1]);
 
-			Assert.True(commitsAppliedEvent.Wait(2000));
+			Assert.True(someCommitsAppliedEvent.Wait(2000));
 
 			Assert.Equal(3, leader.QuorumSize);
-			Trace.WriteLine("<--- Removing from cluster --->");
+			Trace.WriteLine(string.Format("<--- Removing from cluster {0} --->", nonLeaderNode.Name));
+			leader.RemoveFromClusterAsync(nonLeaderNode.Name).Wait();
 
 			var otherNonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader && !ReferenceEquals(x, nonLeaderNode));
-
-			nonLeaderNode.RemoveFromCluster();			
+			
 			var allCommitsAppliedEvent = new ManualResetEventSlim();
+			var sw = Stopwatch.StartNew();
+			const int indexChangeTimeout = 3000;
 			otherNonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
 			{
-				if (newIndex >= 6) //5 commands and NOP command
+				if (newIndex == 7 || sw.ElapsedMilliseconds >= indexChangeTimeout) //limit waiting to 5 sec
+				{
 					allCommitsAppliedEvent.Set();
+					sw.Stop();
+				}
 			};
-
-			leader.AppendCommand(commands[0]);
-			leader.AppendCommand(commands[1]);
+			
+			Trace.WriteLine(string.Format("<--- Appending remaining commands ---> (leader name = {0})", leader.Name));
 			leader.AppendCommand(commands[2]);
 			leader.AppendCommand(commands[3]);
+			leader.AppendCommand(commands[4]);
+			
+			Assert.True(allCommitsAppliedEvent.Wait(indexChangeTimeout) && sw.ElapsedMilliseconds < indexChangeTimeout);
+			
+			var committedCommands = otherNonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
+																					     .OfType<DictionaryCommand.Set>().ToList();
+			committedCommands.Should().HaveCount(5);
+			for (int i = 0; i < 5; i++)
+			{
+				Assert.Equal(commands[i].Value, committedCommands[i].Value);
+				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
+			}
+
+			otherNonLeaderNode.CommitIndex.Should().Be(leader.CommitIndex,"after all commands have been comitted, on non-leader nodes should be the same commit index as on index node");
 		}
 
 		[Fact]
-		public async Task Leader_removed_from_cluster_will_cause_reelection()
+		public void Leader_removed_from_cluster_will_cause_reelection()
 		{
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(5)
 				.All()
@@ -921,7 +936,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateRaftNetwork(4).ToList();
+			var raftNodes = CreateRaftNetwork(4,messageTimeout:1500).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -943,7 +958,7 @@ namespace Rhino.Raft.Tests
 
 			Assert.Equal(3, leader.QuorumSize);
 			Trace.WriteLine("<--- Removing from cluster --->");
-			leader.RemoveFromCluster();
+			leader.RemoveFromClusterAsync(leader.Name).Wait();
 
 			Thread.Sleep(nonLeaderNode.MessageTimeout + 1);
 
@@ -951,6 +966,7 @@ namespace Rhino.Raft.Tests
 			Thread.Sleep(nonLeaderNode.MessageTimeout + 1);
 			var newLeader = raftNodes.FirstOrDefault(node => node.State == RaftEngineState.Leader && !ReferenceEquals(node,leader));
 			Assert.NotNull(newLeader);
+			Assert.NotEmpty(newLeader.AllVotingPeers);
 
 			newLeader.CommitIndexChanged += (oldIndex, newIndex) =>
 			{
@@ -995,7 +1011,6 @@ namespace Rhino.Raft.Tests
 				new DictionaryStateMachine(), 
 				messageTimeout)
 			{
-				AllPeers = peers,
 				AllVotingPeers = peers,
 				Stopwatch = Stopwatch.StartNew()
 			};

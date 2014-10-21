@@ -8,6 +8,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -53,7 +54,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			while (_stopHeartbeatCancellationTokenSource.IsCancellationRequested == false)
 			{
-				Engine.DebugLog.Write("Leader heartbeat");
+				Engine.DebugLog.Write("Starting sending Leader heartbeats");
 				SendEntriesToAllPeers();
 
 				Thread.Sleep(Engine.MessageTimeout / 6);
@@ -71,16 +72,27 @@ namespace Rhino.Raft.Behaviors
 
 		private void SendEntriesToPeer(string peer)
 		{
-			var nextIndex = _nextIndexes[peer];
+			LogEntry prevLogEntry;
+			LogEntry[] entries;
+			try
+			{
+				var nextIndex = _nextIndexes[peer];
 
-			var entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
-												.Take(Engine.MaxEntriesPerRequest)
-												.ToArray();
+				entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
+					.Take(Engine.MaxEntriesPerRequest)
+					.ToArray();
 
-			var prevLogEntry = entries.Length == 0
-				? Engine.PersistentState.LastLogEntry()
-				: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
+				prevLogEntry = entries.Length == 0
+					? Engine.PersistentState.LastLogEntry()
+					: Engine.PersistentState.GetLogEntry(entries[0].Index - 1);
+			}
+			catch (Exception e)
+			{
+				Engine.DebugLog.Write("Error while fetching entries from persistent state. Reason : {0}",e);
+				throw;
+			}
 
+			Engine.DebugLog.Write("SendEntriesToPeer({0}) --> prevLogEntry.Index == {1}",peer,(prevLogEntry == null) ? "null" : prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
 			prevLogEntry = prevLogEntry ?? new LogEntry();
 
 			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}. Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)));
@@ -110,7 +122,7 @@ namespace Rhino.Raft.Behaviors
 		}
 
 		public override void Handle(string destination, AppendEntriesResponse resp)
-		{
+		{			
 			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.Source);
 
 			// there is a new leader in town, time to step down
@@ -119,7 +131,7 @@ namespace Rhino.Raft.Behaviors
 				Engine.UpdateCurrentTerm(resp.CurrentTerm, resp.LeaderId);
 				return;
 			}
-
+			
 			if (resp.Success == false)
 			{
 				// go back in the log, this peer isn't matching us at this location				
@@ -134,8 +146,8 @@ namespace Rhino.Raft.Behaviors
 			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
 			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
 			
-			// allow to run on both quoroms!
-			
+			// allow to run on both quoroms!			
+
 			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
 			if (maxIndexOnQuorom == -1)
 			{

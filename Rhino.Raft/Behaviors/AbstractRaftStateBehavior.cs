@@ -133,6 +133,7 @@ namespace Rhino.Raft.Behaviors
 				var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
 					req.Term, Engine.PersistentState.CurrentTerm);
 				Engine.DebugLog.Write(msg);
+				
 				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
 				{
 					Success = false,

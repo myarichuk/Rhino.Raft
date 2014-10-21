@@ -27,9 +27,11 @@ namespace Rhino.Raft.Tests
 				throw new InvalidOperationException("Already applied " + entry.Index);
 
 			LastApplied = entry.Index;
+			
+			var dicCommand = command as DictionaryCommand;
 
-			var dicCommand = (DictionaryCommand) command; 
-			dicCommand.Apply(Data);
+			if (dicCommand != null) 
+				dicCommand.Apply(Data);
 		}
 	}
 }

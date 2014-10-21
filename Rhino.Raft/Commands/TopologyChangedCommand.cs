@@ -6,5 +6,6 @@ namespace Rhino.Raft.Commands
 	{
 		public Topology Existing { get; set; }
 		public Topology Requested { get; set; }
+
 	}
 }

@@ -127,7 +127,13 @@ namespace Rhino.Raft
 		/// can be heartbeat timeout or election timeout - depends on the state behavior
 		/// </summary>
 		public int MessageTimeout { get; set; }
+
 		public CancellationToken CancellationToken { get { return _cancellationTokenSource.Token; } }
+
+		public Topology ChangingTopology
+		{
+			get { return _changingTopology; }
+		}
 
 		public event Action<RaftEngineState> StateChanged;
 		public event Action ElectionStarted;
@@ -156,7 +162,7 @@ namespace Rhino.Raft
 
 			_currentTopology = PersistentState.GetCurrentConfiguration();
 
-			if (raftEngineOptions.ForceNewTopology ||
+			if (raftEngineOptions.ForceNewTopology || 
 				(_currentTopology.AllVotingPeers.Length == 0))
 			{
 				_currentTopology = new Topology(raftEngineOptions.AllVotingPeers ?? new String[0]);
@@ -177,7 +183,9 @@ namespace Rhino.Raft
 
 		internal void SetCurrentConfiguration(Topology topology)
 		{
-			_currentTopology = topology;
+			_currentTopology = topology;			
+			Interlocked.CompareExchange(ref _changingTopology, null, _changingTopology);
+			
 			PersistentState.SetCurrentTopology(_currentTopology);
 			DebugLog.Write("SetCurrentTopology: {0}", String.Join(",", _currentTopology.AllVotingPeers));
 		}
@@ -254,21 +262,26 @@ namespace Rhino.Raft
 		public Task RemoveFromClusterAsync(string node)
 		{
 			var allVotingPeers = _currentTopology.AllVotingPeers;
-			if (allVotingPeers.Contains(node) == false)
+			var isLeaderRemovalRequested = String.Equals(Name,node,StringComparison.InvariantCultureIgnoreCase);
+
+			if (allVotingPeers.Contains(node) == false && 
+				!isLeaderRemovalRequested) //leader
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
-			var requested = new Topology(allVotingPeers.Where(x => x != node));
-
-			if (Interlocked.CompareExchange(ref _changingTopology, requested, null) != null)
+			var requested = new Topology(allVotingPeers.Concat(Name).Where(x => x != node));
+			
+			var original = Interlocked.CompareExchange(ref _changingTopology, requested, null);
+			if (!ReferenceEquals(original,null))
 				throw new InvalidOperationException("Cannot change the cluster topology while another topology change is in progress");
+
 			try
 			{
 				var tcc = new TopologyChangedCommand
 				{
 					Completion = new TaskCompletionSource<object>(),
-					Existing = new Topology(allVotingPeers),
+					Existing = new Topology(allVotingPeers.Concat(Name)),
 					Requested = requested,
-					BufferCommand = false
+					BufferCommand = false,
 				};
 
 				AppendCommand(tcc);
@@ -323,9 +336,10 @@ namespace Rhino.Raft
 					var tcc = command as TopologyChangedCommand;
 					if (tcc != null)
 					{
-						SetCurrentConfiguration(tcc.Requested.AllVotingPeers.Contains(Name) == false
-							? new Topology(Enumerable.Empty<string>()) // we are now a standalone cluster
-							: new Topology(tcc.Requested.AllVotingPeers.Where(x => x != Name)));
+						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingPeers), Name);
+						SetCurrentConfiguration(tcc.Requested.AllVotingPeers.Contains(Name) == false ?
+							new Topology(Enumerable.Empty<string>()) : 
+							new Topology(tcc.Requested.AllVotingPeers.Where(node => !node.Equals(Name,StringComparison.InvariantCultureIgnoreCase))));
 					}
 
 					StateMachine.Apply(entry, command);
