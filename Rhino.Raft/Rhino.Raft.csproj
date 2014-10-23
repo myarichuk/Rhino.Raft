@@ -41,8 +41,9 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
-    <Reference Include="Voron">
-      <HintPath>..\..\ravendb3\Raven.Voron\Voron\bin\Debug\Voron.dll</HintPath>
+    <Reference Include="Voron, Version=1.0.0.0, Culture=neutral, PublicKeyToken=37f41c7f99471593, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\ravendb-3.0\Raven.Voron\Voron\bin\Debug\Voron.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -52,7 +53,7 @@
     <Compile Include="Behaviors\LeaderStateBehavior.cs" />
     <Compile Include="Commands\Command.cs" />
     <Compile Include="Commands\NopCommand.cs" />
-    <Compile Include="Commands\TopologyChangedCommand.cs" />
+    <Compile Include="Commands\TopologyChangeCommand.cs" />
     <Compile Include="Default.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
     <Compile Include="InMemoryTransport.cs" />

@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 using Voron;
+using Voron.Trees;
 using Voron.Util.Conversion;
 
 namespace Rhino.Raft.Storage
@@ -44,8 +46,21 @@ namespace Rhino.Raft.Storage
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 
-				foreach (var peer in topology.AllVotingPeers)
-					metadata.MultiAdd("current-config-allvotingpeers", peer);
+				var currentConfiguration = GetCurrentConfiguration();
+
+				foreach (var peer in topology.AllVotingNodes)
+				{
+					if (currentConfiguration.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase) &&
+					    !topology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
+					{
+						metadata.MultiDelete("current-config-allvotingpeers",peer);
+					}
+					else if (!currentConfiguration.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase) &&
+								topology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
+					{
+						metadata.MultiAdd("current-config-allvotingpeers", peer);
+					}
+				}
 
 				tx.Commit();
 			}
@@ -127,6 +142,7 @@ namespace Rhino.Raft.Storage
 			{
 				var logs = tx.ReadTree(LogsTreeName);
 				var terms = tx.ReadTree(EntryTermsTreeName);
+
 				var lastEntry = 0L;
 				var lastKey = logs.LastKeyOrDefault();
 				if (lastKey != null)
@@ -139,6 +155,12 @@ namespace Rhino.Raft.Storage
 				var commandEntry = CommandSerializer.Serialize(command);
 				logs.Add(key, commandEntry);
 				terms.Add(key, BitConverter.GetBytes(CurrentTerm));
+
+				if (command is TopologyChangeCommand)
+				{
+					var metadata = tx.ReadTree(MetadataTreeName);
+					metadata.Add(key, BitConverter.GetBytes(true));
+				}
 
 				tx.Commit();
 
@@ -169,6 +191,7 @@ namespace Rhino.Raft.Storage
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
 				var logs = tx.ReadTree(LogsTreeName);
+				var metadata = tx.ReadTree(MetadataTreeName);
 
 				var lastKey = logs.LastKeyOrDefault();
 				if (lastKey == null)
@@ -179,13 +202,13 @@ namespace Rhino.Raft.Storage
 				var result = terms.Read(lastKey);
 
 				var term = result.Reader.ReadLittleEndianInt64();
-
-				tx.Commit(); 
+				var isTopologyChangeEntry = ReadIsTopologyChanged(metadata, lastKey);
 				
 				return new LogEntry
 				{
 					Term = term,
-					Index = index
+					Index = index,
+					IsTopologyChange = isTopologyChangeEntry
 				};
 			}
 		}
@@ -195,19 +218,21 @@ namespace Rhino.Raft.Storage
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
+				var metadata = tx.ReadTree(MetadataTreeName);
 
-				var result = terms.Read(new Slice(EndianBitConverter.Big.GetBytes(index)));
+				var key = new Slice(EndianBitConverter.Big.GetBytes(index));
+				var result = terms.Read(key);
 				if (result == null)
 					return null;
 
 				var term = result.Reader.ReadLittleEndianInt64();
-
-				tx.Commit();
+				var isTopologyChangeEntry = ReadIsTopologyChanged(metadata, key);
 
 				return new LogEntry
 				{
 					Term = term,
-					Index = index
+					Index = index,
+					IsTopologyChange = isTopologyChangeEntry
 				};
 			}
 		}
@@ -220,7 +245,7 @@ namespace Rhino.Raft.Storage
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				VotedFor = candidateId;
-				var metadata = tx.ReadTree("$metadata");
+				var metadata = tx.ReadTree(MetadataTreeName);
 				metadata.Add("voted-for", Encoding.UTF8.GetBytes(candidateId));
 
 				tx.Commit();
@@ -231,7 +256,7 @@ namespace Rhino.Raft.Storage
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
-				var metadata = tx.ReadTree("$metadata");
+				var metadata = tx.ReadTree(MetadataTreeName);
 				CurrentTerm++;
 				VotedFor = name;
 				metadata.Add("current-term", BitConverter.GetBytes(CurrentTerm));
@@ -247,7 +272,7 @@ namespace Rhino.Raft.Storage
 
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
-				var metadata = tx.ReadTree("$metadata");
+				var metadata = tx.ReadTree(MetadataTreeName);
 
 				metadata.Add("current-term", BitConverter.GetBytes(term));
 				metadata.Add("voted-for", new byte[0]); // clearing who we voted for
@@ -267,6 +292,8 @@ namespace Rhino.Raft.Storage
 			{
 				var logs = tx.ReadTree(LogsTreeName);
 				var terms = tx.ReadTree(EntryTermsTreeName);
+				var metadata = tx.ReadTree(MetadataTreeName);
+
 				using (var it = logs.Iterate())
 				{
 					var key = new Slice(EndianBitConverter.Big.GetBytes(index));
@@ -289,7 +316,8 @@ namespace Rhino.Raft.Storage
 						{
 							Term = term,
 							Data = buffer,
-							Index = entryIndex
+							Index = entryIndex,
+							IsTopologyChange = ReadIsTopologyChanged(metadata, it.CurrentKey)
 						};
 
 						if (it.MoveNext() == false)
@@ -326,7 +354,6 @@ namespace Rhino.Raft.Storage
 					}
 				}
 
-
 				foreach (var entry in entries)
 				{
 					var key = new Slice(EndianBitConverter.Big.GetBytes(entry.Index));
@@ -341,6 +368,17 @@ namespace Rhino.Raft.Storage
 		{
 			var handler = ConfigurationChanged;
 			if (handler != null) handler(newTopology);
+		}
+
+		private static bool ReadIsTopologyChanged(Tree metadata, Slice lastKey)
+		{
+			int used;
+			var readResult = metadata.Read(lastKey);
+			if (readResult == null)
+				return false; //non-existing key, this means definitely not a topology change command
+
+			var bytes = readResult.Reader.ReadBytes(sizeof(bool), out used);
+			return BitConverter.ToBoolean(bytes, 0);
 		}
 
 	}

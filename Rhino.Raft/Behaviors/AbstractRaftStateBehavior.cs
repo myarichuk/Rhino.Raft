@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
 
@@ -111,7 +112,7 @@ namespace Rhino.Raft.Behaviors
 
 			Engine.DebugLog.Write("Recording vote for candidate = {0}",req.CandidateId);
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
-
+			
 			Engine.Transport.Send(req.CandidateId, new RequestVoteResponse
 			{
 				VoteGranted = true,
@@ -177,10 +178,19 @@ namespace Rhino.Raft.Behaviors
 			{
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
-				Engine.PersistentState.AppendToLog(req.Entries, removeAllAfter: req.PrevLogIndex);
+				Engine.PersistentState.AppendToLog(req.Entries, req.PrevLogIndex);
+				if (req.HasTopologyChange)
+				{
+					var lastEntryWithTopologyChange = req.Entries.Last(e => e.IsTopologyChange);
+					var command = Engine.PersistentState.CommandSerializer.Deserialize(lastEntryWithTopologyChange.Data);
+					var topologyChangeCommand = command as TopologyChangeCommand;
+
+					Debug.Assert(topologyChangeCommand != null, "the command here should be TopologyChangeCommand --> otherwise it is a bug");
+					Engine.ChangingTopology = topologyChangeCommand.Requested;
+				}
 			}
 
-			string message;
+			string message = String.Empty;
 
 			var isHeartbeat = req.Entries.Length == 0;
 			if (isHeartbeat)
@@ -190,33 +200,38 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			var lastIndex = req.Entries.Length == 0 ? 0 : req.Entries[req.Entries.Length - 1].Index;
-			if (req.LeaderCommit > Engine.CommitIndex)
+			try
 			{
-				Engine.DebugLog.Write(
-					"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
-					Engine.CommitIndex, lastIndex);
-				var oldCommitIndex = Engine.CommitIndex + 1;
+				if (req.LeaderCommit > Engine.CommitIndex)
+				{
+					Engine.DebugLog.Write(
+						"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
+						Engine.CommitIndex, lastIndex);
+					var oldCommitIndex = Engine.CommitIndex + 1;
 
-				Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
-				Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
-				message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
-				Engine.DebugLog.Write(message);
+					Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
+					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
+					message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
+					Engine.DebugLog.Write(message);
 
-				OnEntriesAppended(req.Entries);
+					OnEntriesAppended(req.Entries);
+				}
+				else
+				{
+					message = "Got new entries";
+				}
 			}
-			else
+			finally
 			{
-				message = "Got new entries";
+				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+				{
+					Success = true,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					LastLogIndex = (Engine.PersistentState.LastLogEntry() ?? new LogEntry()).Index,
+					Message = message,
+					Source = Engine.Name
+				});
 			}
-
-			Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
-			{
-				Success = true,
-				CurrentTerm = Engine.PersistentState.CurrentTerm,
-				LastLogIndex = (Engine.PersistentState.LastLogEntry() ?? new LogEntry()).Index,
-				Message = message,
-				Source = Engine.Name
-			});
 		}
 
 		public virtual void Dispose()

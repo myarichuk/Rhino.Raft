@@ -7,7 +7,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,13 +16,12 @@ using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
 using Rhino.Raft.Utils;
-using Voron.Util;
 
 namespace Rhino.Raft
 {
 	public class RaftEngine : IDisposable
 	{
-		private readonly CancellationTokenSource _cancellationTokenSource;
+		private readonly CancellationTokenSource _eventLoopCancellationTokenSource;
 		private readonly ManualResetEventSlim _leaderSelectedEvent = new ManualResetEventSlim();
 
 		private Topology _currentTopology;
@@ -34,13 +32,11 @@ namespace Rhino.Raft
 		public ITransport Transport { get; set; }
 		public IRaftStateMachine StateMachine { get; set; }
 
-		public IEnumerable<string> AllVotingPeers
+		public IEnumerable<string> AllVotingNodes
 		{
-			get { return _currentTopology.AllVotingPeers; }
-			set
+			get
 			{
-				_currentTopology = new Topology(value);
-				PersistentState.SetCurrentTopology(_currentTopology);
+				return _currentTopology.AllVotingNodes;
 			}
 		}
 
@@ -89,7 +85,7 @@ namespace Rhino.Raft
 		{
 			get
 			{
-				return ((_currentTopology.AllVotingPeers.Length + 1) / 2) + 1;
+				return ((_currentTopology.AllVotingNodes.Count + 1) / 2) + 1;
 			}
 		}
 
@@ -128,14 +124,11 @@ namespace Rhino.Raft
 		/// </summary>
 		public int MessageTimeout { get; set; }
 
-		public CancellationToken CancellationToken { get { return _cancellationTokenSource.Token; } }
-
-		public Topology ChangingTopology
-		{
-			get { return _changingTopology; }
-		}
+		public CancellationToken CancellationToken { get { return _eventLoopCancellationTokenSource.Token; } }
 
 		public event Action<RaftEngineState> StateChanged;
+		public event Action<Command> CommitApplied;
+
 		public event Action ElectionStarted;
 		public event Action StateTimeout;
 		public event Action<LogEntry[]> EntriesAppended;
@@ -151,21 +144,21 @@ namespace Rhino.Raft
 			CommandCommitTimeout = raftEngineOptions.CommandCommitTimeout;
 			MessageTimeout = raftEngineOptions.MessageTimeout;
 
-			_cancellationTokenSource = new CancellationTokenSource();
+			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
 			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
 			Name = raftEngineOptions.Name;
-			PersistentState = new PersistentState(raftEngineOptions.Options, _cancellationTokenSource.Token)
+			PersistentState = new PersistentState(raftEngineOptions.Options, _eventLoopCancellationTokenSource.Token)
 			{
 				CommandSerializer = new JsonCommandSerializer()
 			};
 
 			_currentTopology = PersistentState.GetCurrentConfiguration();
 
-			if (raftEngineOptions.ForceNewTopology || 
-				(_currentTopology.AllVotingPeers.Length == 0))
+			if (raftEngineOptions.ForceNewTopology ||
+				(_currentTopology.AllVotingNodes.Count == 0))
 			{
-				_currentTopology = new Topology(raftEngineOptions.AllVotingPeers ?? new String[0]);
+				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new []{ Name });
 				PersistentState.SetCurrentTopology(_currentTopology);
 			}
 
@@ -175,31 +168,21 @@ namespace Rhino.Raft
 			Transport = raftEngineOptions.Transport;
 			StateMachine = raftEngineOptions.StateMachine;
 
-			SetState(AllVotingPeers.Any() ? RaftEngineState.Follower : RaftEngineState.Leader);
+			SetState(AllVotingNodes.Any(n => !n.Equals(Name,StringComparison.OrdinalIgnoreCase)) ? RaftEngineState.Follower : RaftEngineState.Leader);
 
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
 
-
-		internal void SetCurrentConfiguration(Topology topology)
-		{
-			_currentTopology = topology;			
-			Interlocked.CompareExchange(ref _changingTopology, null, _changingTopology);
-			
-			PersistentState.SetCurrentTopology(_currentTopology);
-			DebugLog.Write("SetCurrentTopology: {0}", String.Join(",", _currentTopology.AllVotingPeers));
-		}
-
 		protected void EventLoop()
 		{
-			while (_cancellationTokenSource.IsCancellationRequested == false)
+			while (_eventLoopCancellationTokenSource.IsCancellationRequested == false)
 			{
 				try
 				{
 					MessageEnvelope message;
 					var behavior = StateBehavior;
-					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout, _cancellationTokenSource.Token, out message);
-					if (_cancellationTokenSource.IsCancellationRequested)
+					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout, _eventLoopCancellationTokenSource.Token, out message);
+					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
 						break;
 
 					if (hasMessage == false)
@@ -251,6 +234,12 @@ namespace Rhino.Raft
 						CurrentLeader = Name;
 						OnElectedAsLeader();
 						break;
+					case RaftEngineState.None:
+						Debug.Assert(StateBehavior != null, "StateBehavior != null");
+						StateBehavior.Dispose();
+
+						_eventLoopCancellationTokenSource.Cancel(); //stop event loop
+						break;
 					default:
 						throw new ArgumentOutOfRangeException(state.ToString());
 				}
@@ -261,25 +250,36 @@ namespace Rhino.Raft
 
 		public Task RemoveFromClusterAsync(string node)
 		{
-			var allVotingPeers = _currentTopology.AllVotingPeers;
-			var isLeaderRemovalRequested = String.Equals(Name,node,StringComparison.InvariantCultureIgnoreCase);
-
-			if (allVotingPeers.Contains(node) == false && 
-				!isLeaderRemovalRequested) //leader
+			if (_currentTopology.AllVotingNodes.Contains(node) == false)
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
-			var requested = new Topology(allVotingPeers.Concat(Name).Where(x => x != node));
-			
-			var original = Interlocked.CompareExchange(ref _changingTopology, requested, null);
-			if (!ReferenceEquals(original,null))
+			var requestedTopology = new Topology(_currentTopology.AllVotingNodes.Where(n => !String.Equals(node,n,StringComparison.InvariantCultureIgnoreCase)));
+			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}",requestedTopology.AllVotingNodes.Aggregate(String.Empty,(total,curr) => total + ", " + curr));
+			return ModifyTopology(requestedTopology);
+		}
+
+		public Task AddToClusterAsync(string node)
+		{
+			if (_currentTopology.AllVotingNodes.Contains(node))
+				throw new InvalidOperationException("Node " + node + " is already in the cluster");
+
+			var requestedTopology = new Topology(_currentTopology.AllVotingNodes.Union(new[] { node }));
+			DebugLog.Write("AddToClusterClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
+			return ModifyTopology(requestedTopology);
+		}
+
+		private Task ModifyTopology(Topology requested)
+		{
+			if (_changingTopology != null)
 				throw new InvalidOperationException("Cannot change the cluster topology while another topology change is in progress");
 
 			try
 			{
-				var tcc = new TopologyChangedCommand
+				_changingTopology = requested;
+				var tcc = new TopologyChangeCommand
 				{
 					Completion = new TaskCompletionSource<object>(),
-					Existing = new Topology(allVotingPeers.Concat(Name)),
+					Existing = new Topology(_currentTopology.AllVotingNodes),
 					Requested = requested,
 					BufferCommand = false,
 				};
@@ -294,6 +294,17 @@ namespace Rhino.Raft
 			}
 		}
 
+		public Topology ChangingTopology
+		{
+			get { return _changingTopology; }
+			set { _changingTopology = value; }
+		}
+
+		public Topology CurrentTopology
+		{
+			get { return _currentTopology; }
+		}
+
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
 		{
 			// Raft paper 5.4.1
@@ -305,7 +316,7 @@ namespace Rhino.Raft
 		}
 
 		public void WaitForLeader()
-		{
+		{			
 			_leaderSelectedEvent.Wait(CancellationToken);
 		}
 
@@ -325,35 +336,66 @@ namespace Rhino.Raft
 		public void ApplyCommits(long from, long to)
 		{
 			Debug.Assert(to >= from);
-
 			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
 				try
 				{
 					var command = PersistentState.CommandSerializer.Deserialize(entry.Data);
-					if(command is NopCommand)
+					if (command is NopCommand)
 						continue;
-					var tcc = command as TopologyChangedCommand;
-					if (tcc != null)
-					{
-						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingPeers), Name);
-						SetCurrentConfiguration(tcc.Requested.AllVotingPeers.Contains(Name) == false ?
-							new Topology(Enumerable.Empty<string>()) : 
-							new Topology(tcc.Requested.AllVotingPeers.Where(node => !node.Equals(Name,StringComparison.InvariantCultureIgnoreCase))));
-					}
 
 					StateMachine.Apply(entry, command);
+				
+					var tcc = command as TopologyChangeCommand;
+					if (tcc != null)
+					{
+						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingNodes), Name);
+						ApplyTopologyChanges(tcc);
+					}
+
+					var oldCommitIndex = CommitIndex;
+					CommitIndex = to;
+					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
+					OnCommitIndexChanged(oldCommitIndex, CommitIndex);
+					OnCommitApplied(command);
 				}
-				catch (InvalidOperationException e)
+				catch (Exception e)
 				{
 					DebugLog.Write("Failed to apply commit. {0}", e);
 					throw;
 				}
 			}
-			var oldCommitIndex = CommitIndex;
-			CommitIndex = to;
-			DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
-			OnCommitIndexChanged(oldCommitIndex, CommitIndex);
+		}
+
+		private void ApplyTopologyChanges(TopologyChangeCommand tcc)
+		{
+			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
+			if (shouldRemainInTopology == false)
+			{
+				DebugLog.Write("@@@ This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
+				_currentTopology = new Topology(Enumerable.Empty<string>());
+				_changingTopology = null;
+				CurrentLeader = null;
+
+				SetState(RaftEngineState.None);
+			}
+			else
+			{
+				
+				_currentTopology = tcc.Requested;
+				_changingTopology = null;
+
+				if (_currentTopology.AllVotingNodes.Contains(CurrentLeader) == false)
+				{
+					CurrentLeader = null;
+				}
+
+				DebugLog.Write("@@@ Finished applying new topology. New AllVotingNodes: {0}",
+					_currentTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
+			}
+
+			PersistentState.SetCurrentTopology(_currentTopology);
+			OnTopologyChanged();
 		}
 
 		internal void AnnounceCandidacy()
@@ -373,7 +415,7 @@ namespace Rhino.Raft
 				Term = PersistentState.CurrentTerm
 			};
 
-			foreach (var votingPeer in AllVotingPeers)
+			foreach (var votingPeer in AllVotingNodes)
 			{
 				Transport.Send(votingPeer, rvr);
 			}
@@ -383,7 +425,7 @@ namespace Rhino.Raft
 
 		public void Dispose()
 		{
-			_cancellationTokenSource.Cancel();
+			_eventLoopCancellationTokenSource.Cancel();
 			_eventLoopTask.Wait(500);
 
 			PersistentState.Dispose();
@@ -425,10 +467,17 @@ namespace Rhino.Raft
 			var handler = ElectedAsLeader;
 			if (handler != null) handler();
 		}
+
 		protected virtual void OnTopologyChanged()
 		{
 			var handler = TopologyChanged;
 			if (handler != null) handler();
+		}
+
+		protected virtual void OnCommitApplied(Command cmd)
+		{
+			var handler = CommitApplied;
+			if (handler != null) handler(cmd);
 		}
 	}
 

@@ -29,7 +29,7 @@ namespace Rhino.Raft
 
 		public Stopwatch Stopwatch { get; set; }
 
-		public IEnumerable<string> AllVotingPeers { get; set; }
+		public IEnumerable<string> AllVotingNodes { get; set; }
 
 		public string Name { get; private set; }
 
