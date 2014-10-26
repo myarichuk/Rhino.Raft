@@ -134,7 +134,7 @@ namespace Rhino.Raft
 		public event Action<LogEntry[]> EntriesAppended;
 		public event Action<long, long> CommitIndexChanged;
 		public event Action ElectedAsLeader;
-		public event Action TopologyChanged;
+		public event Action<TopologyChangeCommand> TopologyChanged;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -253,7 +253,7 @@ namespace Rhino.Raft
 			if (_currentTopology.AllVotingNodes.Contains(node) == false)
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
-			var requestedTopology = new Topology(_currentTopology.AllVotingNodes.Where(n => !String.Equals(node,n,StringComparison.InvariantCultureIgnoreCase)));
+			var requestedTopology = _currentTopology.CloneAndRemove(node);
 			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}",requestedTopology.AllVotingNodes.Aggregate(String.Empty,(total,curr) => total + ", " + curr));
 			return ModifyTopology(requestedTopology);
 		}
@@ -263,7 +263,7 @@ namespace Rhino.Raft
 			if (_currentTopology.AllVotingNodes.Contains(node))
 				throw new InvalidOperationException("Node " + node + " is already in the cluster");
 
-			var requestedTopology = new Topology(_currentTopology.AllVotingNodes.Union(new[] { node }));
+			var requestedTopology = _currentTopology.CloneAndAdd(node);
 			DebugLog.Write("AddToClusterClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
 			return ModifyTopology(requestedTopology);
 		}
@@ -327,7 +327,7 @@ namespace Rhino.Raft
 			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
 			if (leaderStateBehavior == null)
 				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
-													(CurrentLeader ?? "(no current node)") + ", node type is " +
+													(CurrentLeader ?? "(no node leader yet)") + ", node behavior type is " +
 													StateBehavior.GetType().Name);
 
 			leaderStateBehavior.AppendCommand(command);
@@ -368,7 +368,7 @@ namespace Rhino.Raft
 		}
 
 		private void ApplyTopologyChanges(TopologyChangeCommand tcc)
-		{
+		{			
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
@@ -395,7 +395,7 @@ namespace Rhino.Raft
 			}
 
 			PersistentState.SetCurrentTopology(_currentTopology);
-			OnTopologyChanged();
+			OnTopologyChanged(tcc);
 		}
 
 		internal void AnnounceCandidacy()
@@ -468,10 +468,10 @@ namespace Rhino.Raft
 			if (handler != null) handler();
 		}
 
-		protected virtual void OnTopologyChanged()
+		protected virtual void OnTopologyChanged(TopologyChangeCommand cmd)
 		{
 			var handler = TopologyChanged;
-			if (handler != null) handler();
+			if (handler != null) handler(cmd);
 		}
 
 		protected virtual void OnCommitApplied(Command cmd)

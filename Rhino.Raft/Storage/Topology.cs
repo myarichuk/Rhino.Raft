@@ -15,7 +15,18 @@ namespace Rhino.Raft.Storage
 
 		public Topology(IEnumerable<string> allVotingPeers)
 		{
-			AllVotingNodes = (allVotingPeers == null) ? new HashSet<string>(StringComparer.InvariantCultureIgnoreCase) : new HashSet<string>(allVotingPeers, StringComparer.InvariantCultureIgnoreCase);
+			AllVotingNodes = (allVotingPeers == null) ? 
+				new HashSet<string>(StringComparer.InvariantCultureIgnoreCase) : 
+				new HashSet<string>(allVotingPeers, StringComparer.InvariantCultureIgnoreCase);
+		}
+		public Topology CloneAndRemove(params string[] additionalNodes)
+		{
+			return new Topology(AllVotingNodes.Except(additionalNodes, StringComparer.InvariantCultureIgnoreCase));
+		}
+
+		public Topology CloneAndAdd(params string[] additionalNodes)
+		{
+			return new Topology(AllVotingNodes.Union(additionalNodes, StringComparer.InvariantCultureIgnoreCase));
 		}
 	}
 }

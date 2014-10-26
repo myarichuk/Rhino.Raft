@@ -148,7 +148,7 @@ namespace Rhino.Raft.Behaviors
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
 				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
-			}
+			}		
 
 			if (Engine.CurrentLeader == null || req.LeaderId.Equals(Engine.CurrentLeader) == false)
 			{
@@ -184,14 +184,14 @@ namespace Rhino.Raft.Behaviors
 					var lastEntryWithTopologyChange = req.Entries.Last(e => e.IsTopologyChange);
 					var command = Engine.PersistentState.CommandSerializer.Deserialize(lastEntryWithTopologyChange.Data);
 					var topologyChangeCommand = command as TopologyChangeCommand;
-
-					Debug.Assert(topologyChangeCommand != null, "the command here should be TopologyChangeCommand --> otherwise it is a bug");
+					if(topologyChangeCommand == null)
+						throw new ApplicationException("log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand. Instead, it is of type: " + command.GetType());
+					
 					Engine.ChangingTopology = topologyChangeCommand.Requested;
 				}
 			}
 
-			string message = String.Empty;
-
+			var message = String.Empty;
 			var isHeartbeat = req.Entries.Length == 0;
 			if (isHeartbeat)
 			{

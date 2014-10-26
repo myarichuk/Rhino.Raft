@@ -284,6 +284,48 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
+		public LogEntry LastTopologyChangeEntry()
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.Read))
+			{
+				var logs = tx.ReadTree(LogsTreeName);
+				var terms = tx.ReadTree(EntryTermsTreeName);
+				var metadata = tx.ReadTree(MetadataTreeName);
+				using (var it = logs.Iterate())
+				{
+					if (it.Seek(Slice.AfterAllKeys) == false) //empty log --> nothing to return
+						return null;
+
+					while (_cancellationToken.IsCancellationRequested == false)
+					{
+						var isTopologyChanged = ReadIsTopologyChanged(metadata, it.CurrentKey);
+						if (isTopologyChanged)
+						{
+							var entryIndex = it.CurrentKey.CreateReader().ReadBigEndianInt64();
+							var term = terms.Read(it.CurrentKey).Reader.ReadLittleEndianInt64();
+
+							var entryReader = it.CreateReaderForCurrent();
+							var buffer = new byte[entryReader.Length];
+							entryReader.Read(buffer, 0, buffer.Length);
+
+							return new LogEntry
+							{
+								Term = term,
+								Data = buffer,
+								Index = entryIndex,
+								IsTopologyChange = true
+							};
+						}
+
+						if (it.MovePrev() == false)
+							return null;
+					}
+				}
+			}
+
+			return null;
+		}
+
 		public IEnumerable<LogEntry> LogEntriesAfter(long index, long stopAfter = long.MaxValue)
 		{
 			Debug.Assert(index >= 0);

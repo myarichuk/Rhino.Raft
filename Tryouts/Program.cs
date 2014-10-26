@@ -12,8 +12,8 @@ namespace Tryouts
 				Console.WriteLine(i);
 				using (var test = new RaftTests())
 				{
-					for(int j = 2; j < 5; j++)
-						test.Network_partition_for_less_time_than_timeout_can_be_healed_without_elections(j);
+					for(int j = 2; j < 4; j++)
+						test.Node_added_to_cluster_should_update_peers_list(j);
 				}
 				Console.WriteLine("--------------------------------------------------------------------------");
 			}

@@ -61,7 +61,13 @@ namespace Rhino.Raft.Behaviors
 
 		private void SendEntriesToAllPeers()
 		{
-			foreach (var peer in Engine.AllVotingNodes)
+			var changingTopology = Engine.ChangingTopology;
+			var peers = (changingTopology == null) ? 
+				Engine.AllVotingNodes :
+				//if node is removed --> then we will need to send TopologyChangedCommand that will remove it from cluster and stop its messaging loop
+				//if node is added --> then we will need to send TopologyChangedCommand that will effectively add it to cluster
+				Engine.AllVotingNodes.Union(changingTopology.AllVotingNodes,StringComparer.OrdinalIgnoreCase);
+			foreach (var peer in peers)
 			{
 				if(peer.Equals(Engine.Name,StringComparison.OrdinalIgnoreCase))
 					continue;
@@ -77,7 +83,7 @@ namespace Rhino.Raft.Behaviors
 			LogEntry[] entries;
 			try
 			{
-				var nextIndex = _nextIndexes.GetOrAdd(peer,0);
+				var nextIndex = _nextIndexes.GetOrAdd(peer,0); //new peer's index starts at 0
 
 				entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
 					.Take(Engine.MaxEntriesPerRequest)
@@ -110,6 +116,7 @@ namespace Rhino.Raft.Behaviors
 			};
 
 			Engine.Transport.Send(peer, aer);
+
 			OnEntriesAppended(entries); //equivalent to followers receiving the entries			
 		}
 
@@ -178,7 +185,7 @@ namespace Rhino.Raft.Behaviors
 		}
 
 		/// <summary>
-		/// This method works on the metch indexes, assume that we have three nodes
+		/// This method works on the match indexes, assume that we have three nodes
 		/// A, B and C, and they have the following index values:
 		/// 
 		/// { A = 4, B = 3, C = 2 }
