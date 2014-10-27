@@ -1,4 +1,6 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
+using System.Threading.Tasks;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 
@@ -8,8 +10,12 @@ namespace Rhino.Raft.Interfaces
 	{
 		long LastApplied { get; }
 		void Apply(LogEntry entry, Command command);
-		
-		//void SendSnapshot(Stream stream);
-		//Task SendSanpshotAsync(Stream stream);
+
+		Task CreateSnapshotAsync();
+
+		Stream ReadSnapshot(int snapshotCutoffIndexId);
+
+		Task WriteSnapshotAsync(Stream stream);
+
 	}
 }

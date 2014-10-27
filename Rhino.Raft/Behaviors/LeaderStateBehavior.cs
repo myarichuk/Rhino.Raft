@@ -27,7 +27,9 @@ namespace Rhino.Raft.Behaviors
 		private readonly Task _heartbeatTask;
 
 		private readonly CancellationTokenSource _disposedCancellationTokenSource = new CancellationTokenSource();
-		private readonly CancellationTokenSource _stopHeartbeatCancellationTokenSource;		
+		private readonly CancellationTokenSource _stopHeartbeatCancellationTokenSource;
+
+		public event Action HeartbeatSent;
 
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
@@ -54,7 +56,8 @@ namespace Rhino.Raft.Behaviors
 			{
 				Engine.DebugLog.Write("Starting sending Leader heartbeats");
 				SendEntriesToAllPeers();
-
+				
+				OnHeartbeatSent();
 				Thread.Sleep(Engine.MessageTimeout / 6);
 			}
 		}
@@ -259,6 +262,12 @@ namespace Rhino.Raft.Behaviors
 				if (e.InnerException is OperationCanceledException == false)
 					throw;
 			}
+		}
+
+		protected virtual void OnHeartbeatSent()
+		{
+			var handler = HeartbeatSent;
+			if (handler != null) handler();
 		}
 	}
 }

@@ -346,18 +346,19 @@ namespace Rhino.Raft
 
 					StateMachine.Apply(entry, command);
 				
+					var oldCommitIndex = CommitIndex;
+					CommitIndex = to;
+					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
+
 					var tcc = command as TopologyChangeCommand;
 					if (tcc != null)
 					{
 						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingNodes), Name);
 						ApplyTopologyChanges(tcc);
-					}
-
-					var oldCommitIndex = CommitIndex;
-					CommitIndex = to;
-					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
+					} 
+					
 					OnCommitIndexChanged(oldCommitIndex, CommitIndex);
-					OnCommitApplied(command);
+					OnCommitApplied(command);				
 				}
 				catch (Exception e)
 				{
@@ -371,7 +372,23 @@ namespace Rhino.Raft
 		{			
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
-			{
+			{				
+				
+				var leaderBehavior = StateBehavior as LeaderStateBehavior;
+
+				//if true, then we are taking down a leader --> we need to wait for a heartbeat before taking it down
+				//waiting for the heartbeat is needed in order to prevent racing condition and make other nodes to apply commits 
+				//for topology changed commands
+				if (leaderBehavior != null) 
+				{
+					DebugLog.Write("Leader is being removed from topology, waiting for the last heartbeat before taking leader offline");
+					var heartbeatEvent = new ManualResetEventSlim();
+					leaderBehavior.HeartbeatSent += heartbeatEvent.Set;
+
+					heartbeatEvent.Wait(CancellationToken);
+				}
+
+
 				DebugLog.Write("@@@ This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
 				_currentTopology = new Topology(Enumerable.Empty<string>());
 				_changingTopology = null;

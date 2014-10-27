@@ -901,7 +901,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		[InlineData(4)]
 		[InlineData(5)]
-		public void Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
+		public async Task Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
 			var topologyChangeComittedEvent = new CountdownEvent(nodeCount - 1);
 
@@ -918,7 +918,7 @@ namespace Rhino.Raft.Tests
 
 			raftNodes.Remove(leader);
 			raftNodes.ForEach(node => node.TopologyChanged += cmd => topologyChangeComittedEvent.Signal());
-			leader.RemoveFromClusterAsync(leader.Name);
+			await leader.RemoveFromClusterAsync(leader.Name);
 
 			Assert.True(topologyChangeComittedEvent.Wait(nodeCount * 2500));
 
