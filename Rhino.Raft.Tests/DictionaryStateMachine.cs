@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Rhino.Raft.Commands;
@@ -15,41 +14,46 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly JsonSerializer _serializer = new JsonSerializer();
 
-		public long LastApplied { get; private set; }
+		public long LastAppliedIndex { get; private set; }
 
 		public long LastSnapshotIndex { get; private set; }
 
-		public Dictionary<string, int> Data = new Dictionary<string, int>();
+		public readonly Dictionary<string, int> Data = new Dictionary<string, int>();
 
-		public Dictionary<int,byte[]> Snapshots = new Dictionary<int, byte[]>(); 
+		public readonly List<SnapshotInfo> Snapshots = new List<SnapshotInfo>(); 
 
-		public void Apply(LogEntry entry, Command command)
+		public void Apply(LogEntry entry, Command cmd)
 		{
-			if (LastApplied >= entry.Index)
+			if (LastAppliedIndex >= entry.Index)
 				throw new InvalidOperationException("Already applied " + entry.Index);
 			
-			LastApplied = entry.Index;
+			LastAppliedIndex = entry.Index;
 			
-			var dicCommand = command as DictionaryCommand;
-
+			var dicCommand = cmd as DictionaryCommand;
+			
 			if (dicCommand != null) 
 				dicCommand.Apply(Data);
 		}
 
 		public async Task CreateSnapshotAsync()
 		{			
-			var currentData = Data.Where(kvp => kvp.Value <= LastApplied)
+			var currentData = Data.Where(kvp => kvp.Value <= LastAppliedIndex)
 								  .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 			var currentLastApplied = currentData.Max(x => x.Value);
 			LastSnapshotIndex = currentLastApplied;
 
 			var snapshotData = await Serialize(currentData);
-			Snapshots.Add(currentLastApplied,snapshotData);
+			Snapshots.Add(new SnapshotInfo(LastSnapshotIndex,snapshotData));
 		}
 
-		public Stream ReadSnapshot(int snapshotCutoffIndexId)
+		public Stream ReadSnapshot(int snapshotIndexId)
 		{
-			throw new NotImplementedException();
+			var relevantSnapshotInfo = Snapshots.OrderBy(s => s.Timestamp)
+												.LastOrDefault(s => s.LastIndex <= snapshotIndexId);
+			if (relevantSnapshotInfo == null)
+				return Stream.Null;
+
+			return new MemoryStream(relevantSnapshotInfo.StateMachineStateRaw);
 		}
 
 		public Task WriteSnapshotAsync(Stream stream)

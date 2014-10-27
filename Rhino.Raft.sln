@@ -11,6 +11,15 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tryouts", "Tryouts\Tryouts.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voron", "..\ravendb-3.0\Raven.Voron\Voron\Voron.csproj", "{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{279C1A0A-49E4-4EB2-96DB-AC1E9C20DB0E}"
+	ProjectSection(SolutionItems) = preProject
+		.nuget\NuGet.Config = .nuget\NuGet.Config
+		.nuget\NuGet.exe = .nuget\NuGet.exe
+		.nuget\NuGet.targets = .nuget\NuGet.targets
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voron.Tests", "..\ravendb-3.0\Raven.Voron\Voron.Tests\Voron.Tests.csproj", "{3C2CD044-CF12-48D1-9C43-64A9058C165E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +42,10 @@ Global
 		{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C2CD044-CF12-48D1-9C43-64A9058C165E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C2CD044-CF12-48D1-9C43-64A9058C165E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C2CD044-CF12-48D1-9C43-64A9058C165E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C2CD044-CF12-48D1-9C43-64A9058C165E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -901,7 +901,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		[InlineData(4)]
 		[InlineData(5)]
-		public async Task Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
+		public void Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
 			var topologyChangeComittedEvent = new CountdownEvent(nodeCount - 1);
 
@@ -918,7 +918,7 @@ namespace Rhino.Raft.Tests
 
 			raftNodes.Remove(leader);
 			raftNodes.ForEach(node => node.TopologyChanged += cmd => topologyChangeComittedEvent.Signal());
-			await leader.RemoveFromClusterAsync(leader.Name);
+			leader.RemoveFromClusterAsync(leader.Name).Wait();
 
 			Assert.True(topologyChangeComittedEvent.Wait(nodeCount * 2500));
 
@@ -1091,7 +1091,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		[InlineData(4)]
 		[InlineData(5)]
-		public async Task Node_removed_from_cluster_should_update_peers_list(int nodeCount)
+		public void Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
 			var inMemoryTransport = new InMemoryTransport();
 			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
@@ -1107,12 +1107,17 @@ namespace Rhino.Raft.Tests
 
 			raftNodes.ForEach(node => node.TopologyChanged += cmd => topologyChangeTracker.Signal());
 			
-			await leader.RemoveFromClusterAsync(nodeToRemove.Name);
-			topologyChangeTracker.Wait(nodeCount * 1500);
+			leader.RemoveFromClusterAsync(nodeToRemove.Name).Wait();
+			Assert.True(topologyChangeTracker.Wait(5000));
 
 			var nodePeerLists = raftNodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)					 	
 										 .Select(n => n.AllVotingNodes)
 										 .ToList();
+
+			if (nodePeerLists.Any(x => x.Count() != nodesThatShouldRemain.Count))
+			{
+				
+			}
 
 			nodePeerLists.ForEach(peerList => peerList.ShouldBeEquivalentTo(nodesThatShouldRemain));
 		}

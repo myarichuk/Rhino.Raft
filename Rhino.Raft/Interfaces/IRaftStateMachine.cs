@@ -8,12 +8,12 @@ namespace Rhino.Raft.Interfaces
 {
 	public interface IRaftStateMachine
 	{
-		long LastApplied { get; }
-		void Apply(LogEntry entry, Command command);
+		long LastAppliedIndex { get; }
+		void Apply(LogEntry entry, Command cmd);
 
 		Task CreateSnapshotAsync();
 
-		Stream ReadSnapshot(int snapshotCutoffIndexId);
+		Stream ReadSnapshot(int snapshotIndexId);
 
 		Task WriteSnapshotAsync(Stream stream);
 

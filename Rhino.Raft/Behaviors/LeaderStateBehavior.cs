@@ -36,7 +36,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			Timeout = engine.MessageTimeout;
 
-			var lastLogEntry = Engine.PersistentState.LastLogEntry() ?? new LogEntry();
+			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
 			foreach (var peer in Engine.AllVotingNodes)
 			{
@@ -62,7 +62,7 @@ namespace Rhino.Raft.Behaviors
 			}
 		}
 
-		private void SendEntriesToAllPeers()
+		internal void SendEntriesToAllPeers()
 		{
 			var changingTopology = Engine.ChangingTopology;
 			var peers = (changingTopology == null) ? 
@@ -115,7 +115,6 @@ namespace Rhino.Raft.Behaviors
 				PrevLogIndex = prevLogEntry.Index,
 				PrevLogTerm = prevLogEntry.Term,
 				Term = Engine.PersistentState.CurrentTerm,
-				HasTopologyChange = entries.Any(e => e.IsTopologyChange)
 			};
 
 			Engine.Transport.Send(peer, aer);

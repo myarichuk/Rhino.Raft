@@ -7,7 +7,6 @@ namespace Rhino.Raft.Messages
 		public long PrevLogIndex { get; set; }
 		public long PrevLogTerm { get; set; }
 		public LogEntry[] Entries { get; set; }
-		public bool HasTopologyChange { get; set; }
 		public long LeaderCommit { get; set; }
 
 	}

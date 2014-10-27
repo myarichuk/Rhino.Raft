@@ -40,23 +40,44 @@ namespace Rhino.Raft.Storage
 
 		public event Action<Topology> ConfigurationChanged;
 
-		public void SetCurrentTopology(Topology topology)
+		public void SetCurrentTopology(Topology currentTopology,Topology changingTopology = null)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 
+				if (changingTopology == null)
+				{
+					using (var iter = metadata.MultiRead("changing-config-allvotingpeers"))
+					{
+						if (iter.Seek(Slice.BeforeAllKeys))
+						{
+							do
+							{
+								metadata.MultiDelete("changing-config-allvotingpeers", iter.CurrentKey);
+							} while (iter.MoveNext());
+						}
+					}
+				}
+				else
+				{
+					foreach (var peer in changingTopology.AllVotingNodes)
+					{
+						metadata.MultiAdd("changing-config-allvotingpeers",peer);
+					}
+				}
+
 				var currentConfiguration = GetCurrentConfiguration();
 
-				foreach (var peer in topology.AllVotingNodes)
+				foreach (var peer in currentTopology.AllVotingNodes)
 				{
 					if (currentConfiguration.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase) &&
-					    !topology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
+					    !currentTopology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
 					{
 						metadata.MultiDelete("current-config-allvotingpeers",peer);
 					}
 					else if (!currentConfiguration.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase) &&
-								topology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
+								currentTopology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
 					{
 						metadata.MultiAdd("current-config-allvotingpeers", peer);
 					}
@@ -65,7 +86,7 @@ namespace Rhino.Raft.Storage
 				tx.Commit();
 			}
 
-			OnConfigurationChanged(topology);
+			OnConfigurationChanged(currentTopology);
 		}
 
 		public Topology GetCurrentConfiguration()
@@ -90,6 +111,31 @@ namespace Rhino.Raft.Storage
 			}
 
 			return new Topology(allVotingPeers);
+		}
+
+		//"changing-config-allvotingpeers"
+		public Topology GetChangingConfiguration()
+		{
+			var allVotingPeers = new List<string>();
+			using (var tx = _env.NewTransaction(TransactionFlags.Read))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+
+				using (var allVotingPeersIterator = metadata.MultiRead("changing-config-allvotingpeers"))
+				{
+					if (allVotingPeersIterator.Seek(Slice.BeforeAllKeys))
+					{
+						do
+						{
+							var peer = allVotingPeersIterator.CurrentKey.ToString();
+							allVotingPeers.Add(peer);
+						} while (allVotingPeersIterator.MoveNext());
+					}
+
+				}
+			}
+
+			return allVotingPeers.Any() ? new Topology(allVotingPeers) : null;
 		}
 
 		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
@@ -195,7 +241,7 @@ namespace Rhino.Raft.Storage
 
 				var lastKey = logs.LastKeyOrDefault();
 				if (lastKey == null)
-					return null;
+					return new LogEntry();
 
 				var index = lastKey.CreateReader().ReadBigEndianInt64();
 

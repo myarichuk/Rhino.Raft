@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using Rhino.Raft.Commands;
@@ -179,27 +179,29 @@ namespace Rhino.Raft.Behaviors
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
 				Engine.PersistentState.AppendToLog(req.Entries, req.PrevLogIndex);
-				if (req.HasTopologyChange)
+				var topologyChange = req.Entries.LastOrDefault(x=>x.IsTopologyChange);
+				
+				// we consider the latest topology change to be in effect as soon as we see it, even before the 
+				// it is committed, see raft spec section 6:
+				//		a server always uses the latest conﬁguration in its log, 
+				//		regardless of whether the entry is committed
+				if (topologyChange != null) 
 				{
-					var lastEntryWithTopologyChange = req.Entries.Last(e => e.IsTopologyChange);
-					var command = Engine.PersistentState.CommandSerializer.Deserialize(lastEntryWithTopologyChange.Data);
+					var command = Engine.PersistentState.CommandSerializer.Deserialize(topologyChange.Data);
 					var topologyChangeCommand = command as TopologyChangeCommand;
 					if(topologyChangeCommand == null)
 						throw new ApplicationException("log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand. Instead, it is of type: " + command.GetType());
 					
 					Engine.ChangingTopology = topologyChangeCommand.Requested;
+					Engine.PersistentState.SetCurrentTopology(Engine.CurrentTopology, Engine.ChangingTopology);
 				}
 			}
 
-			var message = String.Empty;
-			var isHeartbeat = req.Entries.Length == 0;
-			if (isHeartbeat)
-			{
-				Engine.DebugLog.Write("Heartbeat received, req.LeaderCommit: {0}, Engine.CommitIndex: {1}", req.LeaderCommit,
-					Engine.CommitIndex);
-			}
+			string message = String.Empty;
 
-			var lastIndex = req.Entries.Length == 0 ? 0 : req.Entries[req.Entries.Length - 1].Index;
+			var lastIndex = req.Entries.Length == 0 ?
+				Engine.PersistentState.LastLogEntry().Index : 
+				req.Entries[req.Entries.Length - 1].Index;
 			try
 			{
 				if (req.LeaderCommit > Engine.CommitIndex)
@@ -209,7 +211,7 @@ namespace Rhino.Raft.Behaviors
 						Engine.CommitIndex, lastIndex);
 					var oldCommitIndex = Engine.CommitIndex + 1;
 
-					Engine.CommitIndex = isHeartbeat ? req.LeaderCommit : Math.Min(req.LeaderCommit, lastIndex);
+					Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
 					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 					message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
 					Engine.DebugLog.Write(message);
@@ -221,13 +223,25 @@ namespace Rhino.Raft.Behaviors
 					message = "Got new entries";
 				}
 			}
+			catch (Exception e)
+			{
+				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+				{
+					Success = false,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
+					Message = "Failed to apply new entries. Reason: " + e.Message,
+					Source = Engine.Name
+				});
+				
+			}
 			finally
 			{
 				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
 				{
 					Success = true,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					LastLogIndex = (Engine.PersistentState.LastLogEntry() ?? new LogEntry()).Index,
+					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = message,
 					Source = Engine.Name
 				});

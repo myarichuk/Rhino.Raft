@@ -154,6 +154,7 @@ namespace Rhino.Raft
 			};
 
 			_currentTopology = PersistentState.GetCurrentConfiguration();
+			_changingTopology = PersistentState.GetChangingConfiguration();
 
 			if (raftEngineOptions.ForceNewTopology ||
 				(_currentTopology.AllVotingNodes.Count == 0))
@@ -235,10 +236,7 @@ namespace Rhino.Raft
 						OnElectedAsLeader();
 						break;
 					case RaftEngineState.None:
-						Debug.Assert(StateBehavior != null, "StateBehavior != null");
-						StateBehavior.Dispose();
-
-						_eventLoopCancellationTokenSource.Cancel(); //stop event loop
+						_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
 						break;
 					default:
 						throw new ArgumentOutOfRangeException(state.ToString());
@@ -308,7 +306,7 @@ namespace Rhino.Raft
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
 		{
 			// Raft paper 5.4.1
-			var lastLogEntry = PersistentState.LastLogEntry() ?? new LogEntry();
+			var lastLogEntry = PersistentState.LastLogEntry();
 
 			if (lastLogEntry.Term < lastLogTerm)
 				return true;
@@ -372,27 +370,15 @@ namespace Rhino.Raft
 		{			
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
-			{				
-				
+			{
 				var leaderBehavior = StateBehavior as LeaderStateBehavior;
-
-				//if true, then we are taking down a leader --> we need to wait for a heartbeat before taking it down
-				//waiting for the heartbeat is needed in order to prevent racing condition and make other nodes to apply commits 
-				//for topology changed commands
-				if (leaderBehavior != null) 
-				{
-					DebugLog.Write("Leader is being removed from topology, waiting for the last heartbeat before taking leader offline");
-					var heartbeatEvent = new ManualResetEventSlim();
-					leaderBehavior.HeartbeatSent += heartbeatEvent.Set;
-
-					heartbeatEvent.Wait(CancellationToken);
-				}
-
+				if (leaderBehavior != null)
+					leaderBehavior.SendEntriesToAllPeers();
 
 				DebugLog.Write("@@@ This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
 				_currentTopology = new Topology(Enumerable.Empty<string>());
 				_changingTopology = null;
-				CurrentLeader = null;
+				CurrentLeader = null;				
 
 				SetState(RaftEngineState.None);
 			}
@@ -407,8 +393,7 @@ namespace Rhino.Raft
 					CurrentLeader = null;
 				}
 
-				DebugLog.Write("@@@ Finished applying new topology. New AllVotingNodes: {0}",
-					_currentTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
+				DebugLog.Write("@@@ Finished applying new topology. New AllVotingNodes: {0}", string.Join(",", _currentTopology.AllVotingNodes));
 			}
 
 			PersistentState.SetCurrentTopology(_currentTopology);
@@ -423,7 +408,7 @@ namespace Rhino.Raft
 
 			DebugLog.Write("Calling an election in term {0}", PersistentState.CurrentTerm);
 
-			var lastLogEntry = PersistentState.LastLogEntry() ?? new LogEntry();
+			var lastLogEntry = PersistentState.LastLogEntry();
 			var rvr = new RequestVoteRequest
 			{
 				CandidateId = Name,
