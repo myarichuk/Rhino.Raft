@@ -120,7 +120,7 @@ namespace Rhino.Raft.Storage
 															" but the library expects version " + CurrentVersion);
 
 					int used;
-					var bytes = metadata.Read("db-id").Reader.ReadBytes(16, out used);
+					var bytes = metadata.Read("db-id").Reader.ReadBytes(16, out used).Take(16).ToArray();
 					DbId = new Guid(bytes);
 
 					CurrentTerm = metadata.Read("current-term").Reader.ReadLittleEndianInt64();

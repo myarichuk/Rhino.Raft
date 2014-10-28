@@ -1125,12 +1125,45 @@ namespace Rhino.Raft.Tests
 		{
 			const int nodeCount = 2;
 			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
-			raftNodes.First().WaitForLeader();
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
 
-			
+			var testDataFolder = Path.Combine(Directory.GetCurrentDirectory(),"test");
+			if(Directory.Exists(testDataFolder))
+				Directory.Delete(testDataFolder,true);
+
+			var tempFolder = Guid.NewGuid().ToString();
+			var nodeApath = Path.Combine(Directory.GetCurrentDirectory(),"test", tempFolder, "A");			
+			var nodeBpath = Path.Combine(Directory.GetCurrentDirectory(),"test", tempFolder, "B");
+
+			var topologyChangedOnAdditionalNode = new ManualResetEventSlim();
+
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("new_node", inMemoryTransport, 1500)))
+			{
+				additionalNode.TopologyChanged += cmd => topologyChangedOnAdditionalNode.Set();
+				using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, 1500, StorageEnvironmentOptions.ForPath(nodeApath), "nodeA", "nodeB")))
+				using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, 1500, StorageEnvironmentOptions.ForPath(nodeBpath), "nodeA", "nodeB")))
+				{
+					nodeA.WaitForLeader();
+					var leader = nodeA.State == RaftEngineState.Leader ? nodeA : nodeB;
+					var nonLeader = nodeA.State != RaftEngineState.Leader ? nodeA : nodeB;
+
+					nonLeader.EntriesAppended += entries =>
+					{
+						if (entries.Any(x => x.IsTopologyChange))
+							inMemoryTransport.DisconnectNodeSending(nonLeader.Name);
+					};
+
+					leader.AddToClusterAsync(additionalNode.Name).Wait();
+				}
+
+				using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, 1500, StorageEnvironmentOptions.ForPath(nodeBpath), "nodeA", "nodeB")))
+				using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, 1500, StorageEnvironmentOptions.ForPath(nodeApath), "nodeA", "nodeB")))
+				{
+					Assert.True(topologyChangedOnAdditionalNode.Wait(5000));
+
+					nodeA.AllVotingNodes.Should().Contain(additionalNode.Name);
+					nodeB.AllVotingNodes.Should().Contain(additionalNode.Name);
+				}
+			}
 		}
 
 
