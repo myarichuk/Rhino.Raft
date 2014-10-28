@@ -1,6 +1,6 @@
 namespace Rhino.Raft.Messages
 {
-	public class AppendEntriesRequest
+	public class AppendEntriesRequest : BaseMessage
 	{
 		public long Term { get; set; }
 		public string LeaderId { get; set; }
@@ -8,6 +8,5 @@ namespace Rhino.Raft.Messages
 		public long PrevLogTerm { get; set; }
 		public LogEntry[] Entries { get; set; }
 		public long LeaderCommit { get; set; }
-
 	}
 }

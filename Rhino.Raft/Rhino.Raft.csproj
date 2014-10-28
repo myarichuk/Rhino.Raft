@@ -60,6 +60,7 @@
     <Compile Include="JsonCommandSerializer.cs" />
     <Compile Include="Messages\AppendEntriesRequest.cs" />
     <Compile Include="Messages\AppendEntriesResponse.cs" />
+    <Compile Include="Messages\BaseMessage.cs" />
     <Compile Include="Messages\InstallSnapshot.cs" />
     <Compile Include="Messages\LogEntry.cs" />
     <Compile Include="Messages\MessageEnvelope.cs" />
@@ -72,6 +73,7 @@
     <Compile Include="Storage\Topology.cs" />
     <Compile Include="Storage\PersistentState.cs" />
     <Compile Include="Utils\DebugWriter.cs" />
+    <Compile Include="Utils\VoronExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -4,11 +4,13 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using Newtonsoft.Json.Linq;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 using Voron;
 using Voron.Trees;
 using Voron.Util.Conversion;
+using Rhino.Raft.Utils;
 
 namespace Rhino.Raft.Storage
 {
@@ -40,48 +42,19 @@ namespace Rhino.Raft.Storage
 
 		public event Action<Topology> ConfigurationChanged;
 
-		public void SetCurrentTopology(Topology currentTopology,Topology changingTopology = null)
+		public void SetCurrentTopology(Topology currentTopology,Topology changingTopology)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 
-				if (changingTopology == null)
+				metadata.Delete("changing-config-allvotingpeers");
+				if(changingTopology != null)
 				{
-					using (var iter = metadata.MultiRead("changing-config-allvotingpeers"))
-					{
-						if (iter.Seek(Slice.BeforeAllKeys))
-						{
-							do
-							{
-								metadata.MultiDelete("changing-config-allvotingpeers", iter.CurrentKey);
-							} while (iter.MoveNext());
-						}
-					}
-				}
-				else
-				{
-					foreach (var peer in changingTopology.AllVotingNodes)
-					{
-						metadata.MultiAdd("changing-config-allvotingpeers",peer);
-					}
+					metadata.Add("changing-config-allvotingpeers",changingTopology.AllVotingNodes);
 				}
 
-				var currentConfiguration = GetCurrentConfiguration();
-
-				foreach (var peer in currentTopology.AllVotingNodes)
-				{
-					if (currentConfiguration.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase) &&
-					    !currentTopology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
-					{
-						metadata.MultiDelete("current-config-allvotingpeers",peer);
-					}
-					else if (!currentConfiguration.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase) &&
-								currentTopology.AllVotingNodes.Contains(peer, StringComparer.InvariantCultureIgnoreCase))
-					{
-						metadata.MultiAdd("current-config-allvotingpeers", peer);
-					}
-				}
+				metadata.Add("current-config-allvotingpeers", currentTopology.AllVotingNodes);
 
 				tx.Commit();
 			}
@@ -91,52 +64,29 @@ namespace Rhino.Raft.Storage
 
 		public Topology GetCurrentConfiguration()
 		{
-			var allVotingPeers = new List<string>();
-			using (var tx = _env.NewTransaction(TransactionFlags.Read))
-			{
-				var metadata = tx.ReadTree(MetadataTreeName);
-
-				using (var allVotingPeersIterator = metadata.MultiRead("current-config-allvotingpeers"))
-				{
-					if (allVotingPeersIterator.Seek(Slice.BeforeAllKeys))
-					{
-						do
-						{
-							var peer = allVotingPeersIterator.CurrentKey.ToString();
-							allVotingPeers.Add(peer);
-						} while (allVotingPeersIterator.MoveNext());
-					}
-
-				}
-			}
-
-			return new Topology(allVotingPeers);
+			return new Topology(ReadStringArray("current-config-allvotingpeers"));
 		}
 
-		//"changing-config-allvotingpeers"
 		public Topology GetChangingConfiguration()
 		{
-			var allVotingPeers = new List<string>();
+			var peers = ReadStringArray("changing-config-allvotingpeers");
+			return peers.Any() ? new Topology(peers) : null;
+		}
+
+		private string[] ReadStringArray(string key)
+		{
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
+				var allVotingPeers = metadata.Read<IEnumerable<JToken>>(key);
+				var peers = allVotingPeers == null ? 
+					new string[0] : 
+					allVotingPeers.Select(x => x.ToString()).ToArray();
 
-				using (var allVotingPeersIterator = metadata.MultiRead("changing-config-allvotingpeers"))
-				{
-					if (allVotingPeersIterator.Seek(Slice.BeforeAllKeys))
-					{
-						do
-						{
-							var peer = allVotingPeersIterator.CurrentKey.ToString();
-							allVotingPeers.Add(peer);
-						} while (allVotingPeersIterator.MoveNext());
-					}
-
-				}
+				return peers;
 			}
-
-			return allVotingPeers.Any() ? new Topology(allVotingPeers) : null;
 		}
+
 
 		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
 		{

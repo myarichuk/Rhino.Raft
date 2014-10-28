@@ -767,7 +767,8 @@ namespace Rhino.Raft.Tests
 					LeaderId = "fakeNode1",
 					PrevLogIndex = 0,
 					PrevLogTerm = 1,
-					Term = 2
+					Term = 2,
+					From = "fakeNode1"
 				});
 
 				Assert.True(stateChangeEvent.Wait(50),"acknolwedgement of a new leader should happen at most within 50ms (state change to leader)"); //wait for acknolwedgement of a new leader
@@ -821,6 +822,8 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
+
+
 		[Fact]
 		public void AllPeers_and_AllVotingPeers_can_be_persistantly_saved_and_loaded()
 		{
@@ -841,7 +844,7 @@ namespace Rhino.Raft.Tests
 						var currentConfiguration = persistentState.GetCurrentConfiguration();
 						Assert.Empty(currentConfiguration.AllVotingNodes);
 
-						persistentState.SetCurrentTopology(new Topology(expectedAllVotingPeers));
+						persistentState.SetCurrentTopology(new Topology(expectedAllVotingPeers),null);
 					}
 				}
 				using (var options = StorageEnvironmentOptions.ForPath(path))
@@ -1114,13 +1117,22 @@ namespace Rhino.Raft.Tests
 										 .Select(n => n.AllVotingNodes)
 										 .ToList();
 
-			if (nodePeerLists.Any(x => x.Count() != nodesThatShouldRemain.Count))
-			{
-				
-			}
-
 			nodePeerLists.ForEach(peerList => peerList.ShouldBeEquivalentTo(nodesThatShouldRemain));
 		}
+
+		[Fact]
+		public void Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change()
+		{
+			const int nodeCount = 2;
+			var inMemoryTransport = new InMemoryTransport();
+			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
+			raftNodes.First().WaitForLeader();
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			
+		}
+
 
 		//TODO: test further --> might have a race condition related
 		//might happen if additionalNode will have large timeout (much larger than the rest of nodes
@@ -1230,81 +1242,6 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-//		[Fact]
-//		public void Leader_removed_from_cluster_will_cause_reelection_and_keep_log_entry_order()
-//		{
-//			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(5)
-//				.All()
-//				.With(x => x.Completion = null)
-//				.Build()
-//				.ToList();
-//
-//			var raftNodes = CreateRaftNetwork(4,messageTimeout:1000).ToList();
-//			raftNodes.First().WaitForLeader();
-//
-//			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-//			Assert.NotNull(leader);
-//
-//			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
-//			var commitsAppliedEvent = new ManualResetEventSlim();
-//			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
-//			{
-//				if (newIndex >= 3) //two commands and NOP
-//					commitsAppliedEvent.Set();
-//			};
-//			
-//			leader.AppendCommand(commands[0]);
-//			leader.AppendCommand(commands[1]);
-//
-//			Assert.True(commitsAppliedEvent.Wait(2000));
-//			commitsAppliedEvent.Reset();
-//
-//			Assert.Equal(3, leader.QuorumSize);
-//			Trace.WriteLine("<--- Removing from cluster --->");
-//			leader.RemoveFromClusterAsync(leader.Name).Wait();	
-//
-//			nonLeaderNode.WaitForLeader();
-//			
-//			var newLeader = raftNodes.FirstOrDefault(node => node.State == RaftEngineState.Leader);
-//			newLeader.Should().NotBeSameAs(leader);
-//			Assert.NotNull(newLeader);
-//			Assert.NotEmpty(newLeader.AllVotingNodes);
-//
-//			newLeader.CommitIndexChanged += (oldIndex, newIndex) =>
-//			{
-//				// topology changed command, 2 x nop command (two leaders changes), and one command
-//				if (newIndex >= 5)
-//					commitsAppliedEvent.Set();
-//			};
-//
-//			newLeader.AppendCommand(commands[2]);
-//			Assert.True(commitsAppliedEvent.Wait(2000));
-//
-//			//because one node was removed from cluster, quorum size was changed
-//			newLeader.QuorumSize.Should().Be(2);
-//			var allCommitsAppliedEvent = new ManualResetEventSlim();
-//			newLeader.CommitIndexChanged += (oldIndex, newIndex) =>
-//			{
-//				if (newIndex >= 7) //5 commands and two NOP (two leader elections)
-//					allCommitsAppliedEvent.Set();
-//			};
-//
-//			newLeader.AppendCommand(commands[3]);
-//			newLeader.AppendCommand(commands[4]);
-//
-//			Assert.True(allCommitsAppliedEvent.Wait(3000));
-//
-//			var committedCommands = newLeader.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
-//																				.OfType<DictionaryCommand.Set>().ToList();
-//
-//			committedCommands.Should().HaveCount(5);
-//			for (int i = 0; i < 5; i++)
-//			{
-//				Assert.Equal(commands[i].Value, committedCommands[i].Value);
-//				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
-//			}
-//		}
-
 		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
 		{
 			var nodeOptions = new RaftEngineOptions(nodeName,
@@ -1318,6 +1255,21 @@ namespace Rhino.Raft.Tests
 			};
 			return nodeOptions;
 		}
+
+		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
+		{
+			var nodeOptions = new RaftEngineOptions(nodeName,
+				storageOptions,
+				transport,
+				new DictionaryStateMachine(),
+				messageTimeout)
+			{
+				AllVotingNodes = peers,
+				Stopwatch = Stopwatch.StartNew()
+			};
+			return nodeOptions;
+		}
+
 
 		private bool AreEqual(byte[] array1, byte[] array2)
 		{

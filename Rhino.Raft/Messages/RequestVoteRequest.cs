@@ -1,6 +1,6 @@
 ﻿namespace Rhino.Raft.Messages
 {
-	public class RequestVoteRequest
+	public class RequestVoteRequest : BaseMessage
 	{
 		public long Term { get; set; }
 		public string CandidateId { get; set; }

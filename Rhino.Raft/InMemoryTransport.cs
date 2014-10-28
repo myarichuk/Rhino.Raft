@@ -14,6 +14,8 @@ namespace Rhino.Raft
 
 		private readonly HashSet<string> _disconnectedNodes = new HashSet<string>();
 
+		private readonly HashSet<string> _disconnectedNodesFromSending = new HashSet<string>();
+
 		public ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>> MessageQueue
 		{
 			get { return _messageQueue; }
@@ -39,6 +41,16 @@ namespace Rhino.Raft
 			} );
 		}
 
+		public void DisconnectNodeSending(string node)
+		{
+			_disconnectedNodesFromSending.Add(node);
+		}
+
+		public void ReconnectNodeSending(string node)
+		{
+			_disconnectedNodesFromSending.RemoveWhere(n => n.Equals(node, StringComparison.InvariantCultureIgnoreCase));
+		}
+
 		public void DisconnectNode(string node)
 		{
 			_disconnectedNodes.Add(node);
@@ -55,31 +67,35 @@ namespace Rhino.Raft
 			if (_disconnectedNodes.Contains(dest))
 				return false;
 
-			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
+			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());			
 			return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
 		public void Send(string dest, AppendEntriesRequest req)
 		{
-			if (_disconnectedNodes.Contains(req.LeaderId))
+			if (_disconnectedNodes.Contains(req.LeaderId) || _disconnectedNodesFromSending.Contains(req.From))
 				return;
 			AddToQueue(dest, req);
 		}
 
 		public void Send(string dest, RequestVoteRequest req)
 		{
-			if (_disconnectedNodes.Contains(req.CandidateId))
+			if (_disconnectedNodes.Contains(req.CandidateId) || _disconnectedNodesFromSending.Contains(req.From))
 				return;
 			AddToQueue(dest, req);
 		}
 
 		public void Send(string dest, AppendEntriesResponse resp)
 		{
+			if (_disconnectedNodesFromSending.Contains(resp.From))
+				return;
 			AddToQueue(dest, resp);
 		}
 
 		public void Send(string dest, RequestVoteResponse resp)
 		{
+			if (_disconnectedNodesFromSending.Contains(resp.From))
+				return;
 			AddToQueue(dest, resp);
 		}
 

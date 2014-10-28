@@ -160,7 +160,7 @@ namespace Rhino.Raft
 				(_currentTopology.AllVotingNodes.Count == 0))
 			{
 				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new []{ Name });
-				PersistentState.SetCurrentTopology(_currentTopology);
+				PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
 			}
 
 			//warm up to make sure that the serializer don't take too long and force election timeout
@@ -396,7 +396,7 @@ namespace Rhino.Raft
 				DebugLog.Write("@@@ Finished applying new topology. New AllVotingNodes: {0}", string.Join(",", _currentTopology.AllVotingNodes));
 			}
 
-			PersistentState.SetCurrentTopology(_currentTopology);
+			PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
 			OnTopologyChanged(tcc);
 		}
 
@@ -414,7 +414,8 @@ namespace Rhino.Raft
 				CandidateId = Name,
 				LastLogIndex = lastLogEntry.Index,
 				LastLogTerm = lastLogEntry.Term,
-				Term = PersistentState.CurrentTerm
+				Term = PersistentState.CurrentTerm,
+				From = Name
 			};
 
 			foreach (var votingPeer in AllVotingNodes)

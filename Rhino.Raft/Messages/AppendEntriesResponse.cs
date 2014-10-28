@@ -1,6 +1,6 @@
 ﻿namespace Rhino.Raft.Messages
 {
-	public class AppendEntriesResponse
+	public class AppendEntriesResponse : BaseMessage
 	{
 		public long CurrentTerm { get; set; }
 

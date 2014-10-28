@@ -71,7 +71,8 @@ namespace Rhino.Raft.Behaviors
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
-					Message = msg
+					Message = msg,
+					From = Engine.Name
 				});
 				return;
 			}
@@ -92,7 +93,8 @@ namespace Rhino.Raft.Behaviors
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
-					Message = msg
+					Message = msg,
+					From = Engine.Name
 				});
 				return;
 			}
@@ -105,7 +107,8 @@ namespace Rhino.Raft.Behaviors
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
-					Message = msg
+					Message = msg,
+					From = Engine.Name
 				});
 				return;
 			}
@@ -117,7 +120,8 @@ namespace Rhino.Raft.Behaviors
 			{
 				VoteGranted = true,
 				Term = Engine.PersistentState.CurrentTerm,
-				Message = "Vote granted"
+				Message = "Vote granted",
+				From = Engine.Name
 			});
 		}
 
@@ -252,6 +256,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			
 		}
+
 		protected virtual void OnEntriesAppended(LogEntry[] logEntries)
 		{
 			var handler = EntriesAppended;

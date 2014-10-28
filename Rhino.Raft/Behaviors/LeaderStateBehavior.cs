@@ -115,6 +115,7 @@ namespace Rhino.Raft.Behaviors
 				PrevLogIndex = prevLogEntry.Index,
 				PrevLogTerm = prevLogEntry.Term,
 				Term = Engine.PersistentState.CurrentTerm,
+				From = Engine.Name
 			};
 
 			Engine.Transport.Send(peer, aer);
