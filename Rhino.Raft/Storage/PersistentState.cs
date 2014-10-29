@@ -37,6 +37,7 @@ namespace Rhino.Raft.Storage
 		private readonly StorageEnvironment _env;
 
 		private readonly CancellationToken _cancellationToken;
+		private bool _isDisposed = false;
 
 		public ICommandSerializer CommandSerializer { get; set; }
 
@@ -44,6 +45,8 @@ namespace Rhino.Raft.Storage
 
 		public void SetCurrentTopology(Topology currentTopology,Topology changingTopology)
 		{
+			if (_isDisposed)
+				return;
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
@@ -64,11 +67,17 @@ namespace Rhino.Raft.Storage
 
 		public Topology GetCurrentConfiguration()
 		{
+			if (_isDisposed)
+				return new Topology(new String[0]);
+
 			return new Topology(ReadStringArray("current-config-allvotingpeers"));
 		}
 
 		public Topology GetChangingConfiguration()
 		{
+			if (_isDisposed)
+				return null;
+
 			var peers = ReadStringArray("changing-config-allvotingpeers");
 			return peers.Any() ? new Topology(peers) : null;
 		}
@@ -133,7 +142,10 @@ namespace Rhino.Raft.Storage
 		}
 
 		public long AppendToLeaderLog(Command command)
-		{			
+		{
+			if (_isDisposed)
+				return -1;
+
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
@@ -167,6 +179,9 @@ namespace Rhino.Raft.Storage
 
 		public long? TermFor(long logIndex)
 		{
+			if (_isDisposed)
+				return null;
+
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
@@ -183,6 +198,9 @@ namespace Rhino.Raft.Storage
 
 		public LogEntry LastLogEntry()
 		{
+			if (_isDisposed)
+				return null;
+
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
@@ -211,6 +229,9 @@ namespace Rhino.Raft.Storage
 
 		public LogEntry GetLogEntry(long index)
 		{
+			if (_isDisposed)
+				return null;
+
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
@@ -235,6 +256,9 @@ namespace Rhino.Raft.Storage
 
 		public void RecordVoteFor(string candidateId)
 		{
+			if (_isDisposed)
+				return;
+
 			if (string.IsNullOrEmpty(candidateId)) 
 				throw new ArgumentNullException("candidateId");
 
@@ -250,6 +274,9 @@ namespace Rhino.Raft.Storage
 
 		public void IncrementTermAndVoteFor(string name)
 		{
+			if (_isDisposed)
+				return;
+			
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
@@ -263,6 +290,9 @@ namespace Rhino.Raft.Storage
 
 		public void UpdateTermTo(long term)
 		{
+			if (_isDisposed)
+				return;
+			
 			if (term < CurrentTerm)
 				throw new ArgumentException("Cannot update the term to a term that isn't greater than the current term");
 
@@ -282,6 +312,9 @@ namespace Rhino.Raft.Storage
 
 		public LogEntry LastTopologyChangeEntry()
 		{
+			if (_isDisposed)
+				return null;
+			
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
@@ -326,6 +359,9 @@ namespace Rhino.Raft.Storage
 		{
 			Debug.Assert(index >= 0);
 
+			if (_isDisposed)
+				yield return null;
+
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
@@ -369,12 +405,18 @@ namespace Rhino.Raft.Storage
 
 		public void Dispose()
 		{
-			if (_env != null)
+			if (_env != null && _isDisposed == false)
+			{
 				_env.Dispose();
+				_isDisposed = true;
+			}
 		}
 
 		public void AppendToLog(IEnumerable<LogEntry> entries, long removeAllAfter)
 		{
+			if (_isDisposed)
+				return;
+
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);

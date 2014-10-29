@@ -1192,9 +1192,10 @@ namespace Rhino.Raft.Tests
 				using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath), "nodeA", "nodeB")))
 				using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath), "nodeA", "nodeB")))
 				{
-					var topologyChangesFinished = new CountdownEvent(2);
+					var topologyChangesFinished = new CountdownEvent(2);					
 					nodeA.TopologyChangeFinished += cmd => topologyChangesFinished.Signal();
 					nodeB.TopologyChangeFinished += cmd => topologyChangesFinished.Signal();
+					nodeA.WaitForLeader();
 
 					Console.WriteLine("<---nodeA, nodeB are up, waiting for topology change on additional nodes");
 					Assert.True(topologyChangedOnAdditionalNode.Wait(15000));
@@ -1220,7 +1221,7 @@ namespace Rhino.Raft.Tests
 			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
 			var topologyChangeTracker = new CountdownEvent(nodeCount + 1);
 			raftNodes.First().WaitForLeader();
-			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", inMemoryTransport, raftNodes.First().MessageTimeout * 4)))
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", inMemoryTransport, raftNodes.First().MessageTimeout)))
 			{
 				var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 				Assert.NotNull(leader);
@@ -1237,81 +1238,6 @@ namespace Rhino.Raft.Tests
 					string.Format("node with name: {0} should contain in its AllVotingNodes the newly added node's name", node.Name)));
 
 				additionalNode.AllVotingNodes.Should().Contain(raftNodes.Select(node => node.Name));
-			}
-		}
-
-		[Theory]
-		[InlineData(2)]
-		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
-		public void Leader_removed_from_cluster_will_not_disrupt_log_entry_order(int nodeCount)
-		{
-			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(4)
-				.All()
-				.With(x => x.Completion = null)
-				.Build()
-				.ToList();
-
-			var raftNodes = CreateRaftNetwork(nodeCount).ToList();
-			raftNodes.First().WaitForLeader();
-
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			var nonLeader = raftNodes.FirstOrDefault(x => x.State != RaftEngineState.Leader);
-			Assert.NotNull(leader);
-			Assert.NotNull(nonLeader);
-
-			var firstTwoCommandsCommitted = new CountdownEvent(2);
-			leader.CommitApplied += cmd =>
-			{
-				if (cmd is DictionaryCommand.Set)
-					firstTwoCommandsCommitted.Signal();
-			};
-
-			leader.AppendCommand(commands[0]);
-			leader.AppendCommand(commands[1]);
-
-			Assert.True(firstTwoCommandsCommitted.Wait(2000));
-
-			//now remove the leader and wait for the new leader
-			var topologyAppliedEvent = new ManualResetEventSlim();
-			nonLeader.TopologyChangeFinished += cmd => topologyAppliedEvent.Set();
-
-			leader.RemoveFromClusterAsync(leader.Name).Wait();
-
-			//wait for twice the default node timeout -> shouldn't take more time than that
-			//Assert.True(topologyAppliedEvent.Wait(5000));
-			topologyAppliedEvent.Wait(5000);
-			nonLeader.WaitForLeader();
-			var newLeader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader && !ReferenceEquals(x, leader));
-
-			newLeader.Should()
-				.NotBeNull("After removing leader, there should be re-election and new, _other_ leader should be selected");
-
-			var theRestOfCommandsApplied = new CountdownEvent(2);
-
-			// ReSharper disable once PossibleNullReferenceException
-			newLeader.CommitApplied += cmd =>
-			{
-				if (cmd is DictionaryCommand.Set)
-					theRestOfCommandsApplied.Signal();
-			};
-
-			newLeader.AppendCommand(commands[2]);
-			newLeader.AppendCommand(commands[3]);
-
-			theRestOfCommandsApplied.Wait(4000);
-
-			var committedCommands =
-				newLeader.PersistentState.LogEntriesAfter(0)
-					.Select(x => nonLeader.PersistentState.CommandSerializer.Deserialize(x.Data))
-					.OfType<DictionaryCommand.Set>().ToList();
-
-			committedCommands.Should().HaveCount(4);
-			for (int i = 0; i < 4; i++)
-			{
-				Assert.Equal(commands[i].Value, committedCommands[i].Value);
-				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
 			}
 		}
 

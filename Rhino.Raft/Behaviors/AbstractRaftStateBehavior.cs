@@ -52,7 +52,7 @@ namespace Rhino.Raft.Behaviors
 
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
-			Engine = engine;			
+			Engine = engine;
 		}
 
 		public void Handle(string destination, RequestVoteRequest req)
@@ -71,6 +71,9 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			Engine.DebugLog.Write("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
+			if (Engine.CancellationToken.IsCancellationRequested)
+				return;
+
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				var msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
@@ -85,6 +88,9 @@ namespace Rhino.Raft.Behaviors
 				});
 				return;
 			}
+
+			if (Engine.CancellationToken.IsCancellationRequested)
+				return;
 
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{

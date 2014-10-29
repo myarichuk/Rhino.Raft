@@ -61,12 +61,13 @@ namespace Rhino.Raft
 				if (_currentLeader == value)
 					return;
 
-				DebugLog.Write("Setting CurrentLeader: {0}", value);
-				_currentLeader = value;
-				if (_currentLeader == null)
+				if(value == null)
 					_leaderSelectedEvent.Reset();
 				else
 					_leaderSelectedEvent.Set();
+
+				DebugLog.Write("Setting CurrentLeader: {0}", value);
+				_currentLeader = value;
 			}
 		}
 
@@ -220,7 +221,10 @@ namespace Rhino.Raft
 				StateBehavior.TopologyChangeStarted -= OnTopologyChangeStarted;
 			}
 
-			var oldState = StateBehavior;
+			if(State == RaftEngineState.Leader)
+				_leaderSelectedEvent.Reset();
+
+			var oldState = StateBehavior;						
 			using (oldState)
 			{
 				switch (state)
@@ -232,9 +236,10 @@ namespace Rhino.Raft
 						StateBehavior = new CandidateStateBehavior(this);
 						break;
 					case RaftEngineState.Leader:
-						StateBehavior = new LeaderStateBehavior(this);
+						StateBehavior = new LeaderStateBehavior(this);						
 						CurrentLeader = Name;
 						OnElectedAsLeader();
+						_leaderSelectedEvent.Set();
 						break;
 					case RaftEngineState.None:
 						_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
@@ -404,7 +409,7 @@ namespace Rhino.Raft
 			}
 
 			PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
-			OnTopologyChanged(tcc);
+			OnTopologyChanged(tcc);			
 		}
 
 		internal void AnnounceCandidacy()
@@ -448,6 +453,7 @@ namespace Rhino.Raft
 			_eventLoopTask.Wait(500);
 
 			PersistentState.Dispose();
+
 		}
 
 		protected virtual void OnCandidacyAnnounced()
@@ -482,7 +488,6 @@ namespace Rhino.Raft
 
 		protected virtual void OnElectedAsLeader()
 		{
-			_leaderSelectedEvent.Set();
 			var handler = ElectedAsLeader;
 			if (handler != null) handler();
 		}
