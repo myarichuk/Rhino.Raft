@@ -12,12 +12,6 @@ namespace Rhino.Raft.Behaviors
 	{
 		protected readonly RaftEngine Engine;
 
-		public string Name
-		{
-			get { return Engine.Name; }
-		}
-
-
 		public int Timeout { get; set; }
 		public abstract RaftEngineState State { get; }
 
@@ -44,7 +38,7 @@ namespace Rhino.Raft.Behaviors
 
 		public virtual void Handle(string destination, RequestVoteResponse resp)
 		{
-
+			//do nothing, irrelevant here
 		}
 
 		protected static bool TryCastMessage<T>(object abstractMessage, out T typedMessage)
@@ -208,8 +202,10 @@ namespace Rhino.Raft.Behaviors
 				{
 					var command = Engine.PersistentState.CommandSerializer.Deserialize(topologyChange.Data);
 					var topologyChangeCommand = command as TopologyChangeCommand;
-					if(topologyChangeCommand == null)
-						throw new ApplicationException("log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand. Instead, it is of type: " + command.GetType());
+					if(topologyChangeCommand == null) //precaution,should never be true
+													  //if this is true --> it is a serious issue and should be fixed immediately!
+						throw new ApplicationException(@"Log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand.
+															Instead, it is of type: " + command.GetType() +". It is probably a bug!");
 
 					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
 					Engine.ChangingTopology = topologyChangeCommand.Requested;
@@ -251,8 +247,9 @@ namespace Rhino.Raft.Behaviors
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
-					Message = "Failed to apply new entries. Reason: " + e.Message,
-					Source = Engine.Name
+					Message = "Failed to apply new entries. Reason: " + e,
+					Source = Engine.Name,
+					From = Engine.Name
 				});
 				
 			}
@@ -264,7 +261,8 @@ namespace Rhino.Raft.Behaviors
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = message,
-					Source = Engine.Name
+					Source = Engine.Name,
+					From = Engine.Name
 				});
 			}
 		}

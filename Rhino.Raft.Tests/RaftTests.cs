@@ -564,8 +564,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		public void Leader_AppendCommand_for_first_time_should_distribute_commands_between_nodes(int nodeCount)
 		{
 			const int CommandCount = 5; 
@@ -588,8 +586,8 @@ namespace Rhino.Raft.Tests
 			first.WaitForLeader();
 			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
 
-			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
-
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
 			
 			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
@@ -611,8 +609,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		[InlineData(10)]
 		public void Leader_AppendCommand_several_times_should_distribute_commands_between_nodes(int nodeCount)
 		{
@@ -647,10 +643,6 @@ namespace Rhino.Raft.Tests
 			};
 
 			commands.Take(CommandCount).ToList().ForEach(leader.AppendCommand);
-
-
-
-
 			first.WaitForLeader();
 			Trace.WriteLine("<!made sure the leader is still selected, proceeding with the test!>");
 			
@@ -775,16 +767,17 @@ namespace Rhino.Raft.Tests
 				stateChangeEvent.Wait(); //wait for elections to start
 
 				stateChangeEvent.Reset();
-				for (int i = 0; i < 3; i++)
+				for (int i = 1; i <= 3; i++)
 				{
 					transport.Send("realNode", new RequestVoteResponse
 					{
 						Term = 1,
-						VoteGranted = true
+						VoteGranted = true,
+						From = "fakeNode" + i
 					});
 				}
 
-				stateChangeEvent.Wait(50); //now the node should be a leader, no checks here because this is tested for in another test
+				stateChangeEvent.Wait(150); //now the node should be a leader, no checks here because this is tested for in another test
 
 				stateChangeEvent.Reset();
 				transport.Send("realNode",new AppendEntriesRequest
@@ -1090,7 +1083,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		[InlineData(4)]
 		[InlineData(5)]
-		public async Task Node_added_to_cluster_will_not_cause_new_election(int nodeCount)
+		public void Node_added_to_cluster_will_not_cause_new_election(int nodeCount)
 		{
 			var electionStartedEvent = new ManualResetEventSlim();
 			var inMemoryTransport = new InMemoryTransport();
@@ -1110,7 +1103,7 @@ namespace Rhino.Raft.Tests
 						node.ElectionStarted += electionStartedEvent.Set;
 				});
 
-				await leader.AddToClusterAsync(additionalNode.Name);
+				leader.AddToClusterAsync(additionalNode.Name).Wait();
 
 				Assert.False(electionStartedEvent.Wait(3000));
 			}
@@ -1184,23 +1177,28 @@ namespace Rhino.Raft.Tests
 					nonLeader.TopologyChangeStarted += () =>
 					{
 						topologyChangeStarted.Set();
-						Trace.WriteLine("<---disconnected from sending : " + nonLeaderName);
+						Console.WriteLine("<---disconnected from sending : " + nonLeaderName);
 						inMemoryTransport.DisconnectNodeSending(nonLeaderName);
 					};
 
-					Trace.WriteLine("<---adding new node here");
+					Console.WriteLine("<---adding new node here");
 					leader.AddToClusterAsync(additionalNode.Name);
 					Assert.True(topologyChangeStarted.Wait(2000));
 				}
-				Trace.WriteLine("<---nodeA, nodeB are down");
+				Console.WriteLine("<---nodeA, nodeB are down");
 
 				inMemoryTransport.ReconnectNodeSending(nonLeaderName);
 
 				using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath), "nodeA", "nodeB")))
 				using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath), "nodeA", "nodeB")))
 				{
-					Trace.WriteLine("<---nodeA, nodeB are up, waiting for topology change on additional nodes");
+					var topologyChangesFinished = new CountdownEvent(2);
+					nodeA.TopologyChangeFinished += cmd => topologyChangesFinished.Signal();
+					nodeB.TopologyChangeFinished += cmd => topologyChangesFinished.Signal();
+
+					Console.WriteLine("<---nodeA, nodeB are up, waiting for topology change on additional nodes");
 					Assert.True(topologyChangedOnAdditionalNode.Wait(15000));
+					Assert.True(topologyChangesFinished.Wait(15000));
 
 					nodeA.AllVotingNodes.Should().Contain(additionalNode.Name);
 					nodeB.AllVotingNodes.Should().Contain(additionalNode.Name);
@@ -1247,7 +1245,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		[InlineData(4)]
 		[InlineData(5)]
-		public async Task Leader_removed_from_cluster_will_not_disrupt_log_entry_order(int nodeCount)
+		public void Leader_removed_from_cluster_will_not_disrupt_log_entry_order(int nodeCount)
 		{
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(4)
 				.All()
@@ -1279,7 +1277,7 @@ namespace Rhino.Raft.Tests
 			var topologyAppliedEvent = new ManualResetEventSlim();
 			nonLeader.TopologyChangeFinished += cmd => topologyAppliedEvent.Set();
 
-			await leader.RemoveFromClusterAsync(leader.Name);
+			leader.RemoveFromClusterAsync(leader.Name).Wait();
 
 			//wait for twice the default node timeout -> shouldn't take more time than that
 			//Assert.True(topologyAppliedEvent.Wait(5000));

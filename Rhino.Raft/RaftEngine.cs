@@ -431,7 +431,10 @@ namespace Rhino.Raft
 			{
 				allVotingNodes = allVotingNodes.Union(changingTopology.AllVotingNodes);
 			}
-			foreach (var votingPeer in allVotingNodes)
+
+			//dont't send to yourself the message
+			foreach (var votingPeer in allVotingNodes.Where(node => 
+											!node.Equals(Name,StringComparison.InvariantCultureIgnoreCase)))
 			{
 				Transport.Send(votingPeer, rvr);
 			}

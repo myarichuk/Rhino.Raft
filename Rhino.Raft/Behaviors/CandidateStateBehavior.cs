@@ -17,7 +17,7 @@ namespace Rhino.Raft.Behaviors
 {
 	public class CandidateStateBehavior : AbstractRaftStateBehavior
     {
-		private HashSet<string> _votesForMyLeadership = new HashSet<string>();
+		private readonly HashSet<string> _votesForMyLeadership = new HashSet<string>();
 		private readonly Random _random;
 
 		public CandidateStateBehavior(RaftEngine engine) : base(engine)
@@ -35,7 +35,8 @@ namespace Rhino.Raft.Behaviors
 				{
 					Term = Engine.PersistentState.CurrentTerm,
 					VoteGranted = true,
-					Message = String.Format("{0} -> Voting for myself", Engine.Name)
+					Message = String.Format("{0} -> Voting for myself", Engine.Name),
+					From = Engine.Name
 				});
 		}
 
@@ -64,12 +65,13 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			if (!resp.VoteGranted)
+			if (resp.VoteGranted == false ||
+				Engine.ContainedInAllVotingNodes(resp.From) == false) //precaution
 			{
 				return;
 			}
 
-			Engine.DebugLog.Write("Adding to my votes: {0}",resp.From);
+			Engine.DebugLog.Write("Adding to my votes: {0} (current votes: {1})", resp.From, string.Join(", ", _votesForMyLeadership));
 			_votesForMyLeadership.Add(resp.From);
 
 			if (Engine.CurrentTopology.HasQuorum(_votesForMyLeadership) == false)
