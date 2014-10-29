@@ -8,14 +8,12 @@ namespace Tryouts
 		{
 			for (int i = 0; i < 1000; i++)
 			{
-				Console.WriteLine("--------------------------------------------------------------------------");
+				Console.Clear();
 				Console.WriteLine(i);
 				using (var test = new RaftTests())
 				{
-					for(int j = 2; j < 4; j++)
-						test.Node_added_to_cluster_should_update_peers_list(j);
+					test.Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change();
 				}
-				Console.WriteLine("--------------------------------------------------------------------------");
 			}
 		}
 	}

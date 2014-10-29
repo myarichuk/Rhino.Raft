@@ -40,6 +40,11 @@ namespace Rhino.Raft
 			}
 		}
 
+		public bool ContainedInAllVotingNodes(string node)
+		{
+			return _currentTopology.AllVotingNodes.Contains(node);
+		}
+
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
 
@@ -78,14 +83,6 @@ namespace Rhino.Raft
 			set
 			{
 				Interlocked.Exchange(ref _commitIndex, value);
-			}
-		}
-
-		public int QuorumSize
-		{
-			get
-			{
-				return ((_currentTopology.AllVotingNodes.Count + 1) / 2) + 1;
 			}
 		}
 
@@ -134,7 +131,8 @@ namespace Rhino.Raft
 		public event Action<LogEntry[]> EntriesAppended;
 		public event Action<long, long> CommitIndexChanged;
 		public event Action ElectedAsLeader;
-		public event Action<TopologyChangeCommand> TopologyChanged;
+		public event Action<TopologyChangeCommand> TopologyChangeFinished;
+		public event Action TopologyChangeStarted;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -217,7 +215,10 @@ namespace Rhino.Raft
 				return;
 
 			if (StateBehavior != null)
+			{
 				StateBehavior.EntriesAppended -= OnEntriesAppended;
+				StateBehavior.TopologyChangeStarted -= OnTopologyChangeStarted;
+			}
 
 			var oldState = StateBehavior;
 			using (oldState)
@@ -242,6 +243,9 @@ namespace Rhino.Raft
 						throw new ArgumentOutOfRangeException(state.ToString());
 				}
 
+				Debug.Assert(StateBehavior != null, "StateBehavior != null");
+				StateBehavior.TopologyChangeStarted += OnTopologyChangeStarted;
+				
 				OnStateChanged(state);
 			}
 		}
@@ -281,8 +285,11 @@ namespace Rhino.Raft
 					Requested = requested,
 					BufferCommand = false,
 				};
-
+				
 				AppendCommand(tcc);
+				PersistentState.SetCurrentTopology(_currentTopology, _changingTopology);
+				DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
+				OnTopologyChangeStarted(tcc);
 				return tcc.Completion.Task;
 			}
 			catch (Exception)
@@ -418,11 +425,17 @@ namespace Rhino.Raft
 				From = Name
 			};
 
-			foreach (var votingPeer in AllVotingNodes)
+			var allVotingNodes = AllVotingNodes;
+			var changingTopology = ChangingTopology;
+			if (changingTopology != null)
+			{
+				allVotingNodes = allVotingNodes.Union(changingTopology.AllVotingNodes);
+			}
+			foreach (var votingPeer in allVotingNodes)
 			{
 				Transport.Send(votingPeer, rvr);
 			}
-
+			
 			OnCandidacyAnnounced();
 		}
 
@@ -473,7 +486,7 @@ namespace Rhino.Raft
 
 		protected virtual void OnTopologyChanged(TopologyChangeCommand cmd)
 		{
-			var handler = TopologyChanged;
+			var handler = TopologyChangeFinished;
 			if (handler != null) handler(cmd);
 		}
 
@@ -481,6 +494,12 @@ namespace Rhino.Raft
 		{
 			var handler = CommitApplied;
 			if (handler != null) handler(cmd);
+		}
+
+		protected virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
+		{
+			var handler = TopologyChangeStarted;
+			if (handler != null) handler();
 		}
 	}
 

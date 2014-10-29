@@ -5,8 +5,10 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
@@ -15,13 +17,8 @@ namespace Rhino.Raft.Behaviors
 {
 	public class CandidateStateBehavior : AbstractRaftStateBehavior
     {
-		private int _votesForMyLeadership;
+		private HashSet<string> _votesForMyLeadership = new HashSet<string>();
 		private readonly Random _random;
-		public int VotesForMyLeadership
-		{
-			get { return _votesForMyLeadership; }
-			set { _votesForMyLeadership = value; }
-		}
 
 		public CandidateStateBehavior(RaftEngine engine) : base(engine)
 		{
@@ -48,7 +45,7 @@ namespace Rhino.Raft.Behaviors
 				  Timeout);
 
 			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout); 
-			VotesForMyLeadership = 0;
+			_votesForMyLeadership.Clear();
 			Engine.AnnounceCandidacy();
 			VoteForSelf();
 	    }
@@ -72,10 +69,19 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			Interlocked.Increment(ref _votesForMyLeadership);
-			if (_votesForMyLeadership < Engine.QuorumSize)
+			Engine.DebugLog.Write("Adding to my votes: {0}",resp.From);
+			_votesForMyLeadership.Add(resp.From);
+
+			if (Engine.CurrentTopology.HasQuorum(_votesForMyLeadership) == false)
 			{
-				Engine.DebugLog.Write("Not enough votes for leadership, vote count = {0}",_votesForMyLeadership);
+				Engine.DebugLog.Write("Not enough votes for leadership, votes = {0}", _votesForMyLeadership.Any() ? string.Join(", ", _votesForMyLeadership) : "empty");
+				return;
+			}
+			
+			var changingTopology = Engine.ChangingTopology;
+			if (changingTopology != null && changingTopology.HasQuorum(_votesForMyLeadership) == false)
+			{
+				Engine.DebugLog.Write("Not enough votes for leadership (changing topology), votes = {0}", string.Join(", ", _votesForMyLeadership));
 				return;
 			}
 

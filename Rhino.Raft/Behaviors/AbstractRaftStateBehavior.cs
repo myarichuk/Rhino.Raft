@@ -23,6 +23,8 @@ namespace Rhino.Raft.Behaviors
 
 		public event Action<LogEntry[]> EntriesAppended;
 
+		public event Action<TopologyChangeCommand> TopologyChangeStarted;
+
 		public virtual void HandleMessage(MessageEnvelope envelope)
 		{
 			RequestVoteRequest requestVoteRequest;
@@ -61,6 +63,19 @@ namespace Rhino.Raft.Behaviors
 
 		public void Handle(string destination, RequestVoteRequest req)
 		{
+			if (Engine.ContainedInAllVotingNodes(req.From) == false)
+			{
+				Engine.DebugLog.Write("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.CandidateId);
+				Engine.Transport.Send(destination, new RequestVoteResponse
+				{
+					VoteGranted = false,
+					Term = Engine.PersistentState.CurrentTerm,
+					Message = "You are not a memeber in my cluster, and cannot be a leader",
+					From = Engine.Name
+				});
+				return;
+			}
+
 			Engine.DebugLog.Write("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
@@ -195,9 +210,11 @@ namespace Rhino.Raft.Behaviors
 					var topologyChangeCommand = command as TopologyChangeCommand;
 					if(topologyChangeCommand == null)
 						throw new ApplicationException("log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand. Instead, it is of type: " + command.GetType());
-					
+
+					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
 					Engine.ChangingTopology = topologyChangeCommand.Requested;
 					Engine.PersistentState.SetCurrentTopology(Engine.CurrentTopology, Engine.ChangingTopology);
+					OnTopologyChangeStarted(topologyChangeCommand);
 				}
 			}
 
@@ -256,6 +273,13 @@ namespace Rhino.Raft.Behaviors
 		{
 			
 		}
+
+		protected virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
+		{
+			var handler = TopologyChangeStarted;
+			if (handler != null) handler(tcc);
+		}
+
 
 		protected virtual void OnEntriesAppended(LogEntry[] logEntries)
 		{

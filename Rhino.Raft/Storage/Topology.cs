@@ -28,5 +28,11 @@ namespace Rhino.Raft.Storage
 		{
 			return new Topology(AllVotingNodes.Union(additionalNodes, StringComparer.InvariantCultureIgnoreCase));
 		}
+
+		public bool HasQuorum(HashSet<string> votes)
+		{
+			var sum = AllVotingNodes.Count(votes.Contains);
+			return sum >= QuoromSize;
+		}
 	}
 }
