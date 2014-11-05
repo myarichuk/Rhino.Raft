@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,7 @@ using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
 using Rhino.Raft.Utils;
+using Voron.Impl;
 
 namespace Rhino.Raft
 {
@@ -44,6 +46,8 @@ namespace Rhino.Raft
 		{
 			return _currentTopology.AllVotingNodes.Contains(node);
 		}
+
+		public int MaxLogLengthBeforeCompaction { get; set; }
 
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
@@ -107,6 +111,11 @@ namespace Rhino.Raft
 		private AbstractRaftStateBehavior _stateBehavior;
 		private string _currentLeader;
 
+		private const int SnapshotRunning = 1;
+		private const int SnapshotNotRunning = 0;
+
+		private int _isSnapshotCreationRunning = SnapshotNotRunning;
+
 		private AbstractRaftStateBehavior StateBehavior
 		{
 			get { return _stateBehavior; }
@@ -134,6 +143,8 @@ namespace Rhino.Raft
 		public event Action ElectedAsLeader;
 		public event Action<TopologyChangeCommand> TopologyChangeFinished;
 		public event Action TopologyChangeStarted;
+		public event Action SnapshotCreationStarted;
+		public event Action SnapshotCreationEnded;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -161,6 +172,8 @@ namespace Rhino.Raft
 				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new []{ Name });
 				PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
 			}
+
+			MaxLogLengthBeforeCompaction = raftEngineOptions.MaxLogLengthBeforeCompaction;
 
 			//warm up to make sure that the serializer don't take too long and force election timeout
 			PersistentState.CommandSerializer.Serialize(new NopCommand());
@@ -346,6 +359,7 @@ namespace Rhino.Raft
 		public void ApplyCommits(long from, long to)
 		{
 			Debug.Assert(to >= from);
+			var commitApplyFinished = new ManualResetEventSlim();
 			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
 				try
@@ -355,7 +369,37 @@ namespace Rhino.Raft
 						continue;
 
 					StateMachine.Apply(entry, command);
-				
+
+					if (StateMachine.EntryCount >= MaxLogLengthBeforeCompaction && 
+						Interlocked.CompareExchange(ref _isSnapshotCreationRunning,SnapshotRunning,SnapshotNotRunning) == SnapshotNotRunning)
+					{
+						var currentEntry = entry;
+
+						//TODO:
+						//1) add lock for disposal so if dispose is running and this task is running, dispose will wait for finishing of this task
+						//2) solve the issue of deleting from PersistantState of entries that are in the snapshot --> so the test will pass
+						Task.Run(() =>
+						{
+							OnSnapshotCreationStarted();
+							StateMachine.CreateSnapshot();
+
+							using (var stream = new MemoryStream())
+							{
+								StateMachine.WriteSnapshot(stream);
+								PersistentState.SetLastSnapshot(stream);
+							}
+
+							OnSnapshotCreationEnded();
+							Interlocked.Exchange(ref _isSnapshotCreationRunning, SnapshotNotRunning);
+							return currentEntry.Index;
+						}, CancellationToken)
+						.ContinueWith(task =>
+						{
+							commitApplyFinished.Wait(CancellationToken);
+							PersistentState.AppendToLog(new LogEntry[0], task.Result);
+						}, CancellationToken);
+					}
+
 					var oldCommitIndex = CommitIndex;
 					CommitIndex = to;
 					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
@@ -376,6 +420,8 @@ namespace Rhino.Raft
 					throw;
 				}
 			}
+
+			commitApplyFinished.Set();
 		}
 
 		private void ApplyTopologyChanges(TopologyChangeCommand tcc)
@@ -415,7 +461,7 @@ namespace Rhino.Raft
 		internal void AnnounceCandidacy()
 		{
 			PersistentState.IncrementTermAndVoteFor(Name);
-
+			
 			SetState(RaftEngineState.Candidate);
 
 			DebugLog.Write("Calling an election in term {0}", PersistentState.CurrentTerm);
@@ -507,6 +553,18 @@ namespace Rhino.Raft
 		protected virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
 		{
 			var handler = TopologyChangeStarted;
+			if (handler != null) handler();
+		}
+
+		protected virtual void OnSnapshotCreationStarted()
+		{
+			var handler = SnapshotCreationStarted;
+			if (handler != null) handler();
+		}
+
+		protected virtual void OnSnapshotCreationEnded()
+		{
+			var handler = SnapshotCreationEnded;
 			if (handler != null) handler();
 		}
 	}

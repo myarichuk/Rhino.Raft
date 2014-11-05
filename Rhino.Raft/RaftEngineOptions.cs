@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Rhino.Raft.Interfaces;
 using Voron;
+using Voron.Impl;
 
 namespace Rhino.Raft
 {
@@ -23,7 +24,10 @@ namespace Rhino.Raft
 			MessageTimeout = messageTimeout;
 			Stopwatch = new Stopwatch();
 			CommandCommitTimeout = commandCommitTimeout;
+			MaxLogLengthBeforeCompaction = Constants.DefaultMaxLogLengthBeforeCompaction;
 		}
+
+		public int MaxLogLengthBeforeCompaction { get; set; }
 
 		public bool ForceNewTopology { get; set; }
 

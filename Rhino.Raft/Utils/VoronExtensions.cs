@@ -1,5 +1,7 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Voron;
+using Voron.Impl.Journal;
 using Voron.Trees;
 
 namespace Rhino.Raft.Utils
@@ -19,8 +21,8 @@ namespace Rhino.Raft.Utils
 			if (readResult == null || readResult.Version == 0)
 				return null;
 
-			var deserializeObject = JsonConvert.DeserializeObject(readResult.Reader.ToStringValue());
-			return deserializeObject as T;
+			var deserializeObject = (JToken)JsonConvert.DeserializeObject(readResult.Reader.ToStringValue());
+			return deserializeObject.ToObject<T>();
 		}
 	}
 }

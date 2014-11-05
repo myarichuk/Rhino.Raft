@@ -19,6 +19,12 @@ namespace Rhino.Raft.Storage
 				new HashSet<string>(StringComparer.InvariantCultureIgnoreCase) : 
 				new HashSet<string>(allVotingPeers, StringComparer.InvariantCultureIgnoreCase);
 		}
+
+		public Topology Clone()
+		{
+			return new Topology(AllVotingNodes);
+		}
+
 		public Topology CloneAndRemove(params string[] additionalNodes)
 		{
 			return new Topology(AllVotingNodes.Except(additionalNodes, StringComparer.InvariantCultureIgnoreCase));

@@ -1,26 +1,28 @@
-﻿using System;
+﻿using System; 
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 namespace Rhino.Raft.Tests
 {
 	public class DictionaryStateMachine : IRaftStateMachine
 	{
 		private readonly JsonSerializer _serializer = new JsonSerializer();
-
 		public long LastAppliedIndex { get; private set; }
 
-		public long LastSnapshotIndex { get; private set; }
+		public int EntryCount
+		{
+			get { return Data.Count; }
+		}
 
-		public readonly Dictionary<string, int> Data = new Dictionary<string, int>();
+		private Dictionary<string, int> _snapshot;
 
-		public readonly List<SnapshotInfo> Snapshots = new List<SnapshotInfo>(); 
+		public Dictionary<string, int> Data = new Dictionary<string, int>();
 
 		public void Apply(LogEntry entry, Command cmd)
 		{
@@ -35,43 +37,25 @@ namespace Rhino.Raft.Tests
 				dicCommand.Apply(Data);
 		}
 
-		public async Task CreateSnapshotAsync()
-		{			
-			var currentData = Data.Where(kvp => kvp.Value <= LastAppliedIndex)
-								  .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-			var currentLastApplied = currentData.Max(x => x.Value);
-			LastSnapshotIndex = currentLastApplied;
-
-			var snapshotData = await Serialize(currentData);
-			Snapshots.Add(new SnapshotInfo(LastSnapshotIndex,snapshotData));
+		public void CreateSnapshot()
+		{
+			_snapshot = new Dictionary<string, int>(Data);
 		}
 
-		public Stream ReadSnapshot(int snapshotIndexId)
+		public void WriteSnapshot(Stream stream)
 		{
-			var relevantSnapshotInfo = Snapshots.OrderBy(s => s.Timestamp)
-												.LastOrDefault(s => s.LastIndex <= snapshotIndexId);
-			if (relevantSnapshotInfo == null)
-				return Stream.Null;
+			if(_snapshot == null)
+				throw new InvalidOperationException("There is no snapshot available");
 
-			return new MemoryStream(relevantSnapshotInfo.StateMachineStateRaw);
+			var streamWriter = new StreamWriter(stream);
+			_serializer.Serialize(streamWriter, _snapshot);
+			streamWriter.Flush();
 		}
 
-		public Task WriteSnapshotAsync(Stream stream)
+		public void ApplySnapshot(Stream stream)
 		{
-			throw new NotImplementedException();
-		}
-
-		public async Task<byte[]> Serialize(Dictionary<string, int> data)
-		{
-			using (var memoryStream = new MemoryStream())
-			{
-				using (var streamWriter = new StreamWriter(memoryStream))
-				{
-					_serializer.Serialize(streamWriter, data);
-					await streamWriter.FlushAsync();
-				}
-				return memoryStream.ToArray();
-			}
+			Data = _serializer.Deserialize<Dictionary<string, int>>(new JsonTextReader(new StreamReader(stream)));
+			_snapshot = new Dictionary<string, int>(Data);
 		}
 	}
 }

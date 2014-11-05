@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.Dynamic;
 using System.IO;
@@ -12,6 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FizzWare.NBuilder;
 using FluentAssertions;
+using FluentAssertions.Events;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
@@ -62,11 +64,13 @@ namespace Rhino.Raft.Tests
 					switch (candidateChangeEvent.CurrentCount)
 					{
 						case 1:
+// ReSharper disable AccessToDisposedClosure
 							Assert.Equal(RaftEngineState.Candidate, raftNode1.State);
 							break;
 						case 0:
 							Assert.Equal(RaftEngineState.Leader, raftNode1.State);
-							Assert.Equal(RaftEngineState.Follower, raftNode2.State); 
+							Assert.Equal(RaftEngineState.Follower, raftNode2.State);
+// ReSharper restore AccessToDisposedClosure
 							break;
 					}
 				};
@@ -78,16 +82,13 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		[InlineData(10)]
 		public void On_many_node_network_can_be_only_one_leader(int nodeCount)
 		{
 			var leaderEvent = new ManualResetEventSlim();
 
-			List<RaftEngine> raftNodes = null;
 			var sp = Stopwatch.StartNew();
-			raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
+			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
 			{
 				options.Stopwatch = sp;
 				return options;
@@ -283,8 +284,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		public void Network_partition_for_more_time_than_timeout_can_be_healed(int nodeCount)
 		{
 			var transport = new InMemoryTransport();
@@ -724,6 +723,7 @@ namespace Rhino.Raft.Tests
 			{
 				var candidacyAnnoucementEvent = new ManualResetEventSlim();
 				var stateTimeoutEvent = new ManualResetEventSlim();
+				var electionStartedEvent = new ManualResetEventSlim();
 
 				node.ElectionStarted += candidacyAnnoucementEvent.Set;
 				
@@ -735,10 +735,10 @@ namespace Rhino.Raft.Tests
 				}
 				
 				node.StateTimeout += stateTimeoutEvent.Set;
-
-
+				node.ElectionStarted += electionStartedEvent.Set;
 				Assert.True(stateTimeoutEvent.Wait(node.MessageTimeout + 15));
-				
+				Assert.True(electionStartedEvent.Wait(node.MessageTimeout + 15));
+
 				for (int i = 1; i <= 3; i++)
 				{
 					var requestVoteMessage = transport.MessageQueue["fakeNode" + i].Where(x => x.Message is RequestVoteRequest)
@@ -888,8 +888,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		public void Follower_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
 			var raftNodes = CreateRaftNetwork(nodeCount).ToList();
@@ -1081,8 +1079,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		public void Node_added_to_cluster_will_not_cause_new_election(int nodeCount)
 		{
 			var electionStartedEvent = new ManualResetEventSlim();
@@ -1112,8 +1108,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		[InlineData(5)]
 		public void Non_leader_Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
 			var inMemoryTransport = new InMemoryTransport();
@@ -1142,6 +1136,8 @@ namespace Rhino.Raft.Tests
 			nodePeerLists.ForEach(peerList => peerList.ShouldBeEquivalentTo(nodesThatShouldRemain));
 		}
 
+
+		//TODO: this unit test exposes a race condition if run enough times consequentially. Get to the bottom of this!
 		[Fact]
 		public void Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change()
 		{
@@ -1184,22 +1180,23 @@ namespace Rhino.Raft.Tests
 					Console.WriteLine("<---adding new node here");
 					leader.AddToClusterAsync(additionalNode.Name);
 					Assert.True(topologyChangeStarted.Wait(2000));
-				}
+				}				
 				Console.WriteLine("<---nodeA, nodeB are down");
 
 				inMemoryTransport.ReconnectNodeSending(nonLeaderName);
 
+				var topologyChangesFinished = new CountdownEvent(2);
 				using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath), "nodeA", "nodeB")))
 				using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath), "nodeA", "nodeB")))
 				{
-					var topologyChangesFinished = new CountdownEvent(2);					
 					nodeA.TopologyChangeFinished += cmd => topologyChangesFinished.Signal();
 					nodeB.TopologyChangeFinished += cmd => topologyChangesFinished.Signal();
 					nodeA.WaitForLeader();
+					nodeB.WaitForLeader();
 
 					Console.WriteLine("<---nodeA, nodeB are up, waiting for topology change on additional nodes");
-					Assert.True(topologyChangedOnAdditionalNode.Wait(15000));
 					Assert.True(topologyChangesFinished.Wait(15000));
+					Assert.True(topologyChangedOnAdditionalNode.Wait(15000));
 
 					nodeA.AllVotingNodes.Should().Contain(additionalNode.Name);
 					nodeB.AllVotingNodes.Should().Contain(additionalNode.Name);
@@ -1214,7 +1211,6 @@ namespace Rhino.Raft.Tests
 		[InlineData(2)]
 		[InlineData(3)]
 		[InlineData(4)]
-		[InlineData(5)]
 		public void Node_added_to_cluster_should_update_peers_list(int nodeCount)
 		{
 			var inMemoryTransport = new InMemoryTransport();
@@ -1241,6 +1237,154 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
+		//this test is about verifying that there is no race condition in running snapshot
+		[Fact]
+		public void Snapshot_after_enough_command_applies_snapshot_is_applied_only_once()
+		{
+			var snapshotCreationEndedEvent = new ManualResetEventSlim();
+			const int commandsCount = 5;
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(commandsCount)
+				.All()
+				.With(x => x.Completion = null)
+				.Build()
+				.ToList();
+			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
+
+			var raftNodes = CreateRaftNetwork(3).ToList();
+			raftNodes.First().WaitForLeader();
+
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			leader.MonitorEvents();
+			leader.SnapshotCreationEnded += snapshotCreationEndedEvent.Set;
+			leader.CommitIndexChanged += (old, @new) => appliedAllCommandsEvent.Signal();
+
+			leader.MaxLogLengthBeforeCompaction = commandsCount - 3;
+			commands.ForEach(leader.AppendCommand);
+
+			Assert.True(appliedAllCommandsEvent.Wait(3000));
+			Assert.True(snapshotCreationEndedEvent.Wait(3000));
+
+			//should only raise the event once
+			leader.ShouldRaise("SnapshotCreationEnded");
+			leader.GetRecorderForEvent("SnapshotCreationEnded")
+				  .Should().HaveCount(1);
+		}
+//
+//		[Fact]
+//		public void Snaphot_node_shutdown_and_then_snapshot_then_node_turnOn_snapshots_are_restored()
+//		{
+//			const int commandsCount = 10;
+//			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
+//			var snapshotCreationEndedEvent = new ManualResetEventSlim();
+//			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(commandsCount)
+//				.All()
+//				.With(x => x.Completion = null)
+//				.Build()
+//				.ToList();
+//
+//			const int timeout = 2500;
+//			var inMemoryTransport = new InMemoryTransport();
+//
+//			var testDataFolder = Path.Combine(Directory.GetCurrentDirectory(),"test");
+//			if(Directory.Exists(testDataFolder))
+//				Directory.Delete(testDataFolder,true);
+//
+//			var tempFolder = Guid.NewGuid().ToString();
+//			var nodeApath = Path.Combine(Directory.GetCurrentDirectory(),"test", tempFolder, "A");
+//			var nodeBpath = Path.Combine(Directory.GetCurrentDirectory(), "test", tempFolder, "B");
+//			var nodeCpath = Path.Combine(Directory.GetCurrentDirectory(), "test", tempFolder, "C");
+//
+//			SnapshotInfo snapshot = null;
+//			using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath),
+//						"nodeA", "nodeB", "nodeC")))
+//			using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
+//						"nodeA", "nodeB", "nodeC")))
+//			using (var nodeC = new RaftEngine(CreateNodeOptions("nodeC", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeCpath),
+//						"nodeA", "nodeB", "nodeC")))
+//			{
+//				nodeA.WaitForLeader();
+//				var leader = (nodeA.State == RaftEngineState.Leader) ? nodeA
+//								: (nodeB.State == RaftEngineState.Leader) ? nodeB : nodeC;
+//				leader.State.Should().Be(RaftEngineState.Leader); //precaution
+//
+//				leader.SnapshotCreationEnded += createdSnapshot =>
+//				{
+//					snapshot = createdSnapshot;
+//					snapshotCreationEndedEvent.Set();
+//				};
+//				leader.CommitIndexChanged += (old, @new) => appliedAllCommandsEvent.Signal();
+//				leader.MaxLogLengthBeforeCompaction = commandsCount / 2;
+//
+//				commands.ForEach(leader.AppendCommand);
+//
+//				Assert.True(appliedAllCommandsEvent.Wait(3000));
+//				Assert.True(snapshotCreationEndedEvent.Wait(3000));
+//
+//				var lastSnapshot = leader.PersistentState.GetLastSnapshot();
+//				lastSnapshot.ShouldBeEquivalentTo(snapshot);
+//				leader.StateMachine.EntryCount.Should().Be(commandsCount - (int)snapshot.LastIndex);
+//			}
+//
+//			using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath),
+//						"nodeA", "nodeB", "nodeC")))
+//			using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
+//						"nodeA", "nodeB", "nodeC")))
+//			using (var nodeC = new RaftEngine(CreateNodeOptions("nodeC", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeCpath),
+//						"nodeA", "nodeB", "nodeC")))
+//			{
+//				nodeA.WaitForLeader();
+//				var leader = (nodeA.State == RaftEngineState.Leader) ? nodeA
+//								: (nodeB.State == RaftEngineState.Leader) ? nodeB : nodeC;
+//				leader.State.Should().Be(RaftEngineState.Leader);
+//			}
+//		}
+//
+		[Fact]
+		public void Snaphot_after_enough_command_applies_snapshot_is_created()
+		{
+			var snapshotCreationEndedEvent = new ManualResetEventSlim();
+			const int commandsCount = 9;
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(commandsCount)
+						.All()
+						.With(x => x.Completion = null)
+						.Build()
+						.ToList();
+
+			var raftNodes = CreateRaftNetwork(3).ToList();
+			raftNodes.ForEach(entry => entry.MaxEntriesPerRequest = 1);
+			raftNodes.First().WaitForLeader();
+
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
+			leader.SnapshotCreationEnded += snapshotCreationEndedEvent.Set;
+
+			leader.CommitApplied += cmd =>
+			{
+				if (cmd is DictionaryCommand.Set)
+				{
+					Trace.WriteLine("Commit applied --> DictionaryCommand.Set");
+					appliedAllCommandsEvent.Signal();
+				}
+			};
+
+			leader.MaxLogLengthBeforeCompaction = commandsCount - 4;
+			Trace.WriteLine("<--- Started appending commands..");
+			commands.ForEach(leader.AppendCommand);
+			Trace.WriteLine("<--- Ended appending commands..");
+
+			var millisecondsTimeout = Debugger.IsAttached ? 600000 : 4000;
+			Assert.True(snapshotCreationEndedEvent.Wait(millisecondsTimeout));
+			Assert.True(appliedAllCommandsEvent.Wait(millisecondsTimeout), "Not all commands were applied, there are still " + appliedAllCommandsEvent.CurrentCount + " commands left");
+
+			var entriesAfterSnapshotCreation = leader.PersistentState.LogEntriesAfter(0).ToList();
+			entriesAfterSnapshotCreation.Should().HaveCount(commandsCount - leader.MaxLogLengthBeforeCompaction);
+			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.MaxLogLengthBeforeCompaction);
+		}
+	
 		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
 		{
 			var nodeOptions = new RaftEngineOptions(nodeName,

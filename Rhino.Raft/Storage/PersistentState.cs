@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -87,10 +89,10 @@ namespace Rhino.Raft.Storage
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
-				var allVotingPeers = metadata.Read<IEnumerable<JToken>>(key);
+				var allVotingPeers = metadata.Read<string[]>(key);
 				var peers = allVotingPeers == null ? 
 					new string[0] : 
-					allVotingPeers.Select(x => x.ToString()).ToArray();
+					allVotingPeers.Select(x => x.ToString(CultureInfo.InvariantCulture)).ToArray();
 
 				return peers;
 			}
@@ -293,9 +295,6 @@ namespace Rhino.Raft.Storage
 			if (_isDisposed)
 				return;
 			
-			if (term < CurrentTerm)
-				throw new ArgumentException("Cannot update the term to a term that isn't greater than the current term");
-
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
@@ -461,5 +460,25 @@ namespace Rhino.Raft.Storage
 			return BitConverter.ToBoolean(bytes, 0);
 		}
 
+		public Stream GetLastSnapshot()
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.Read))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+				var lastSnapshot = metadata.Read("last-snapshot");
+				return lastSnapshot.Reader.AsStream();
+			}
+		}
+
+		public void SetLastSnapshot(Stream snapshot)
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+				
+				metadata.Add("last-snapshot",snapshot);
+				tx.Commit();
+			}
+		}
 	}
 }

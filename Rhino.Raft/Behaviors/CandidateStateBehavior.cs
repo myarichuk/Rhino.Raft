@@ -6,11 +6,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Data;
-using System.Diagnostics;
 using System.Linq;
-using System.Threading;
-using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -65,14 +61,20 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			if (resp.VoteGranted == false ||
-				Engine.ContainedInAllVotingNodes(resp.From) == false) //precaution
+			if (resp.VoteGranted == false)
 			{
+				Engine.DebugLog.Write("Vote rejected from {0}", resp.From);
 				return;
 			}
 
-			Engine.DebugLog.Write("Adding to my votes: {0} (current votes: {1})", resp.From, string.Join(", ", _votesForMyLeadership));
+			if(Engine.ContainedInAllVotingNodes(resp.From) == false) //precaution
+			{
+				Engine.DebugLog.Write("Vote acepted from {0}, which isn't in our topology", resp.From);
+				return;
+			}
+
 			_votesForMyLeadership.Add(resp.From);
+			Engine.DebugLog.Write("Adding to my votes: {0} (current votes: {1})", resp.From, string.Join(", ", _votesForMyLeadership));
 
 			if (Engine.CurrentTopology.HasQuorum(_votesForMyLeadership) == false)
 			{

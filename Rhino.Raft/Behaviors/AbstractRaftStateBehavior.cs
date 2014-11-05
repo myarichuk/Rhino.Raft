@@ -19,6 +19,13 @@ namespace Rhino.Raft.Behaviors
 
 		public event Action<TopologyChangeCommand> TopologyChangeStarted;
 
+		public DateTime _lastHeartbeatTime;
+
+		protected AbstractRaftStateBehavior()
+		{
+			_lastHeartbeatTime = DateTime.MinValue;
+		}
+
 		public virtual void HandleMessage(MessageEnvelope envelope)
 		{
 			RequestVoteRequest requestVoteRequest;
@@ -57,6 +64,24 @@ namespace Rhino.Raft.Behaviors
 
 		public void Handle(string destination, RequestVoteRequest req)
 		{
+			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
+			// Raft paper section 6 (cluster membership changes)
+			var currentRequestTime = DateTime.UtcNow;
+			var timeSpan = (currentRequestTime - _lastHeartbeatTime);
+			Timeout = (int) timeSpan.TotalMilliseconds + 1;
+			if (timeSpan.TotalMilliseconds < Timeout && Engine.CurrentLeader != null)
+			{
+				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
+				Engine.Transport.Send(destination, new RequestVoteResponse
+				{
+					VoteGranted = false,
+					Term = Engine.PersistentState.CurrentTerm,
+					Message = "I currently have a leader and I am receiving heartbeats within election timeout.",
+					From = Engine.Name
+				});
+				return;
+			}
+
 			if (Engine.ContainedInAllVotingNodes(req.From) == false)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.CandidateId);
@@ -71,9 +96,7 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			Engine.DebugLog.Write("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
-			if (Engine.CancellationToken.IsCancellationRequested)
-				return;
-
+			
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				var msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
@@ -88,9 +111,6 @@ namespace Rhino.Raft.Behaviors
 				});
 				return;
 			}
-
-			if (Engine.CancellationToken.IsCancellationRequested)
-				return;
 
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
@@ -138,6 +158,7 @@ namespace Rhino.Raft.Behaviors
 				Message = "Vote granted",
 				From = Engine.Name
 			});
+			Timeout = Engine.MessageTimeout;
 		}
 
 		public virtual void Handle(string destination, AppendEntriesResponse resp)
@@ -150,18 +171,25 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				var msg = string.Format("Rejecting append entries because msg term {0} is lower than current term {1}",
-					req.Term, Engine.PersistentState.CurrentTerm);
-				Engine.DebugLog.Write(msg);
-				
-				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+				var lastLogEntry = Engine.PersistentState.LastLogEntry();
+				if (req.Term < lastLogEntry.Term)
 				{
-					Success = false,
-					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					Message = msg,
-					Source = Engine.Name
-				});
-				return;
+					var msg = string.Format("Rejecting append entries because msg term {0} is lower than last log entry ({1}) term: {2}",
+						req.Term, lastLogEntry.Index, lastLogEntry.Term);
+
+					Engine.DebugLog.Write(msg);
+
+					Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
+					{
+						Success = false,
+						CurrentTerm = Engine.PersistentState.CurrentTerm,
+						LeaderId = Engine.CurrentLeader,
+						Message = msg,
+						Source = Engine.Name
+					});
+					return;	
+				}
+				Engine.PersistentState.UpdateTermTo(lastLogEntry.Term);
 			}
 
 			if (req.Term > Engine.PersistentState.CurrentTerm)
@@ -193,6 +221,7 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
+			_lastHeartbeatTime = DateTime.UtcNow;
 			if (req.Entries.Length > 0)
 			{
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
@@ -220,8 +249,7 @@ namespace Rhino.Raft.Behaviors
 				}
 			}
 
-			string message = String.Empty;
-
+			var message = String.Empty;
 			var lastIndex = req.Entries.Length == 0 ?
 				Engine.PersistentState.LastLogEntry().Index : 
 				req.Entries[req.Entries.Length - 1].Index;
@@ -269,7 +297,7 @@ namespace Rhino.Raft.Behaviors
 					Message = message,
 					Source = Engine.Name,
 					From = Engine.Name
-				});
+				});				
 			}
 		}
 
