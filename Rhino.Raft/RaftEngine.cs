@@ -404,7 +404,7 @@ namespace Rhino.Raft
 				try
 				{
 					StateMachine.CreateSnapshot();
-					PersistentState.TruncateLogUntil(to,
+					PersistentState.MarkSnapshotFor(to,
 						MaxLogLengthBeforeCompaction - (MaxLogLengthBeforeCompaction / 8));
 
 					OnSnapshotCreationEnded();

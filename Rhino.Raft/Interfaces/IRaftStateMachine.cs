@@ -1,4 +1,6 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
@@ -14,10 +16,17 @@ namespace Rhino.Raft.Interfaces
 
 		void Apply(LogEntry entry, Command cmd);
 
-		void CreateSnapshot();
+		void CreateSnapshot(long index, long term);
 
+		ISnapshotWriter GetSnapshotWriter();
+
+		void ApplySnapshot(long term, long index, Stream stream);
+	}
+
+	public interface ISnapshotWriter : IDisposable
+	{
+		long Index { get; 	}
+		long Term { get; }
 		void WriteSnapshot(Stream stream);
-
-		void ApplySnapshot(Stream stream);
 	}
 }

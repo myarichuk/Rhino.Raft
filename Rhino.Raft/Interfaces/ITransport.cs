@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using Rhino.Raft.Messages;
@@ -14,6 +15,8 @@ namespace Rhino.Raft.Interfaces
 	{
 		bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope);
 
+		void Stream(string dest, InstallSnapshot snapshot, Action<Stream> stream);
+		
 		void Send(string dest, AppendEntriesRequest req);
 		void Send(string dest, RequestVoteRequest req);
 		void Send(string dest, AppendEntriesResponse resp);

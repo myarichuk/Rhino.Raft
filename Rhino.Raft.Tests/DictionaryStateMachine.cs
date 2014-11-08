@@ -20,9 +20,33 @@ namespace Rhino.Raft.Tests
 			get { return Data.Count; }
 		}
 
-		private Dictionary<string, int> _snapshot;
+		private class SnapshotWriter : ISnapshotWriter
+		{
+			private readonly Dictionary<string, int> _snapshot;
+			private readonly DictionaryStateMachine _parent;
+
+			public SnapshotWriter(DictionaryStateMachine parent, Dictionary<string, int> snapshot)
+			{
+				_parent = parent;
+				_snapshot = snapshot;
+			}
+
+			public void Dispose()
+			{
+			}
+
+			public long Index { get; set; }
+			public long Term { get; set; }
+			public void WriteSnapshot(Stream stream)
+			{
+				var streamWriter = new StreamWriter(stream);
+				_parent._serializer.Serialize(streamWriter, _snapshot);
+				streamWriter.Flush();
+			}
+		}
 
 		public Dictionary<string, int> Data = new Dictionary<string, int>();
+		private SnapshotWriter _snapshot;
 
 		public void Apply(LogEntry entry, Command cmd)
 		{
@@ -37,25 +61,28 @@ namespace Rhino.Raft.Tests
 				dicCommand.Apply(Data);
 		}
 
-		public void CreateSnapshot()
+		public void CreateSnapshot(long index, long term)
 		{
-			_snapshot = new Dictionary<string, int>(Data);
+			_snapshot = new SnapshotWriter(this, new Dictionary<string, int>(Data))
+			{
+				Term = term,
+				Index = index
+			};
 		}
 
-		public void WriteSnapshot(Stream stream)
+		public ISnapshotWriter GetSnapshotWriter()
 		{
-			if(_snapshot == null)
-				throw new InvalidOperationException("There is no snapshot available");
-
-			var streamWriter = new StreamWriter(stream);
-			_serializer.Serialize(streamWriter, _snapshot);
-			streamWriter.Flush();
+			return _snapshot;
 		}
 
-		public void ApplySnapshot(Stream stream)
+		public void ApplySnapshot(long term, long index, Stream stream)
 		{
 			Data = _serializer.Deserialize<Dictionary<string, int>>(new JsonTextReader(new StreamReader(stream)));
-			_snapshot = new Dictionary<string, int>(Data);
+			_snapshot = new SnapshotWriter(this, new Dictionary<string, int>(Data))
+			{
+				Term = term,
+				Index = index
+			};
 		}
 	}
 }

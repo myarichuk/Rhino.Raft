@@ -9,6 +9,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,7 @@ namespace Rhino.Raft.Behaviors
 	{
 		private readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>();
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>();
+		private readonly ConcurrentDictionary<string, Task> _snapshotSending = new ConcurrentDictionary<string, Task>();
 
 		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
 		private readonly Task _heartbeatTask;
@@ -87,6 +89,40 @@ namespace Rhino.Raft.Behaviors
 			try
 			{
 				var nextIndex = _nextIndexes.GetOrAdd(peer,0); //new peer's index starts at 0
+
+				var snapshot = Engine.PersistentState.GetLastSnapshot();
+
+				if (snapshot != null && 
+					nextIndex <= snapshot.Index &&
+					_snapshotSending.ContainsKey(peer) == false)
+				{
+					// problem, we can't just send the log entries, we have to send
+					// the full snapshot to this destination, this can take a very long 
+					// time for large data sets. Because of that, we are doing that in a 
+					// background thread, and while we are doing that, we aren't going to be
+					// doing any communication with this peer. Note that while the peer
+					// is accepting the snapshot, it isn't counting the heartbeat timer, or 
+					// can move to become a candidate.
+					// During normal operations, we will never be using this, since we leave a buffer
+					// in place (by default roughly 4K entries) to make sure that small disconnects will
+					// not cause us to be forced to send a snapshot over the wire.
+					var task = new Task(() =>
+					{
+						using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
+						{
+							Engine.Transport.Stream(peer, new InstallSnapshot
+							{
+								Term = Engine.PersistentState.CurrentTerm,
+								LastIncludedIndex = snapshotWriter.Index,
+								LastIncludedTerm = snapshotWriter.Term
+							}, snapshotWriter.WriteSnapshot);
+						}
+					});
+					if(_snapshotSending.TryAdd(peer, task))
+						task.Start();
+
+					return;
+				}
 
 				entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
 					.Take(Engine.MaxEntriesPerRequest)

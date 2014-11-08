@@ -411,16 +411,32 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		public void TruncateLogUntil(long marker, int maxNumberOfItemsToRemove)
+		public LogEntry GetLastSnapshot()
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.Read))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+				return  metadata.Read<LogEntry>("last-snapshot");
+			}
+		}
+
+		public void MarkSnapshotFor(long lastCommittedIndex, int maxNumberOfItemsToRemove)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
 				var terms = tx.ReadTree(EntryTermsTreeName);
+				var metadata = tx.ReadTree(MetadataTreeName);
+				var termForLastCommittedIndex = terms.Read(new Slice(EndianBitConverter.Big.GetBytes(lastCommittedIndex)));
+				metadata.Add("last-snapshot", new LogEntry
+				{
+					Index = lastCommittedIndex,
+					Term = termForLastCommittedIndex.Reader.ReadLittleEndianInt64()
+				});
 
 				using (var it = logs.Iterate())
 				{
-					it.MaxKey = new Slice(EndianBitConverter.Big.GetBytes(marker + 1));
+					it.MaxKey = new Slice(EndianBitConverter.Big.GetBytes(lastCommittedIndex + 1));
 					if (it.Seek(Slice.BeforeAllKeys) == false)
 						return;
 					do
