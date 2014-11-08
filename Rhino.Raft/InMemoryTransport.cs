@@ -67,8 +67,11 @@ namespace Rhino.Raft
 			if (_disconnectedNodes.Contains(dest))
 				return false;
 
-			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());			
-			return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
+		    if (timeout < 0)
+		        timeout = 0;
+
+			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
+            return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
 		public void Send(string dest, AppendEntriesRequest req)

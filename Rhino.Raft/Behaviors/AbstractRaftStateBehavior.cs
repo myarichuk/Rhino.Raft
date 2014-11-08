@@ -11,7 +11,7 @@ namespace Rhino.Raft.Behaviors
 	public abstract class AbstractRaftStateBehavior : IDisposable
 	{
 		protected readonly RaftEngine Engine;
-
+        public int TimeoutReduction { get; set; }
 		public int Timeout { get; set; }
 		public abstract RaftEngineState State { get; }
 
@@ -19,14 +19,14 @@ namespace Rhino.Raft.Behaviors
 
 		public event Action<TopologyChangeCommand> TopologyChangeStarted;
 
-		public DateTime _lastHeartbeatTime;
+		public DateTime LastHeartbeatTime;
 
 		protected AbstractRaftStateBehavior()
 		{
-			_lastHeartbeatTime = DateTime.MinValue;
+			LastHeartbeatTime = DateTime.UtcNow;
 		}
 
-		public virtual void HandleMessage(MessageEnvelope envelope)
+		public void HandleMessage(MessageEnvelope envelope)
 		{
 			RequestVoteRequest requestVoteRequest;
 			RequestVoteResponse requestVoteResponse;
@@ -67,9 +67,12 @@ namespace Rhino.Raft.Behaviors
 			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
 			// Raft paper section 6 (cluster membership changes)
 			var currentRequestTime = DateTime.UtcNow;
-			var timeSpan = (currentRequestTime - _lastHeartbeatTime);
-			Timeout = (int) timeSpan.TotalMilliseconds + 1;
-			if (timeSpan.TotalMilliseconds < Timeout && Engine.CurrentLeader != null)
+			var timeSpanBetweenLastHeartbeatAndCurrentRequest = (currentRequestTime - LastHeartbeatTime);
+
+            var timeSinceLastHeartbeat = (int)timeSpanBetweenLastHeartbeatAndCurrentRequest.TotalMilliseconds;
+            TimeoutReduction += timeSinceLastHeartbeat;
+
+		    if (timeSinceLastHeartbeat < (Engine.MessageTimeout/2) && Engine.CurrentLeader != null)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
 				Engine.Transport.Send(destination, new RequestVoteResponse
@@ -158,7 +161,8 @@ namespace Rhino.Raft.Behaviors
 				Message = "Vote granted",
 				From = Engine.Name
 			});
-			Timeout = Engine.MessageTimeout;
+            // reset the timeout
+		    TimeoutReduction = 0;
 		}
 
 		public virtual void Handle(string destination, AppendEntriesResponse resp)
@@ -191,6 +195,8 @@ namespace Rhino.Raft.Behaviors
 				}
 				Engine.PersistentState.UpdateTermTo(lastLogEntry.Term);
 			}
+		    
+            TimeoutReduction = 0;
 
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
@@ -221,7 +227,7 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			_lastHeartbeatTime = DateTime.UtcNow;
+			LastHeartbeatTime = DateTime.UtcNow;
 			if (req.Entries.Length > 0)
 			{
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,

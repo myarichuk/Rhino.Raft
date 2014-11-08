@@ -13,11 +13,11 @@ namespace Rhino.Raft.Behaviors
     {
 	    public FollowerStateBehavior(RaftEngine engine) : base(engine)
 	    {
-		    var random = new Random((int) (Engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
-		    Timeout = random.Next(engine.MessageTimeout/2, engine.MessageTimeout);
+	        Timeout = new Random().Next(engine.MessageTimeout/2, engine.MessageTimeout);
 	    }
 
-	    public override RaftEngineState State
+
+        public override RaftEngineState State
 	    {
 		    get { return RaftEngineState.Follower; }
 	    }

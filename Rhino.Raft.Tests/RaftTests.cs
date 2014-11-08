@@ -918,10 +918,10 @@ namespace Rhino.Raft.Tests
 		}
 
 		[Theory]
-		[InlineData(2)]
-		[InlineData(3)]
+		//[InlineData(2)]
+		//[InlineData(3)]
 		[InlineData(4)]
-		[InlineData(5)]
+//		[InlineData(5)]
 		public void Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
 			var topologyChangeComittedEvent = new CountdownEvent(nodeCount - 1);
@@ -940,12 +940,13 @@ namespace Rhino.Raft.Tests
 			raftNodes.Remove(leader);
 			raftNodes.ForEach(node => node.TopologyChangeFinished += cmd => topologyChangeComittedEvent.Signal());
 			leader.RemoveFromClusterAsync(leader.Name).Wait();
-
-			Assert.True(topologyChangeComittedEvent.Wait(nodeCount * 2500));
+            
+			Assert.True(topologyChangeComittedEvent.Wait(nodeCount * 1000));
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
 			Trace.WriteLine("<-- expectedNodeNameList:" + expectedNodeNameList.Aggregate(String.Empty, (all, curr) => all + ", " + curr));
 			raftNodes.ForEach(node => node.AllVotingNodes.Should().BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
+            leader.Dispose();
 		}
 
 		[Fact]

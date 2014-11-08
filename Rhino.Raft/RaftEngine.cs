@@ -194,7 +194,7 @@ namespace Rhino.Raft
 				{
 					MessageEnvelope message;
 					var behavior = StateBehavior;
-					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout, _eventLoopCancellationTokenSource.Token, out message);
+					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout - behavior.TimeoutReduction, _eventLoopCancellationTokenSource.Token, out message);
 					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
 						break;
 
