@@ -24,7 +24,7 @@ namespace Rhino.Raft
 			MessageTimeout = messageTimeout;
 			Stopwatch = new Stopwatch();
 			CommandCommitTimeout = commandCommitTimeout;
-		    MaxLogLengthBeforeCompaction = 64;
+			MaxLogLengthBeforeCompaction = 32 * 1024;
 		}
 
 		public int MaxLogLengthBeforeCompaction { get; set; }
