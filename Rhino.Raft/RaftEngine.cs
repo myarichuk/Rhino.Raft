@@ -403,7 +403,7 @@ namespace Rhino.Raft
 				OnSnapshotCreationStarted();
 				try
 				{
-					StateMachine.CreateSnapshot();
+					StateMachine.CreateSnapshot(to + 1,PersistentState.CurrentTerm);
 					PersistentState.MarkSnapshotFor(to,
 						MaxLogLengthBeforeCompaction - (MaxLogLengthBeforeCompaction / 8));
 

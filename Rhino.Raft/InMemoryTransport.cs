@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
@@ -74,7 +75,14 @@ namespace Rhino.Raft
             return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
-		public void Send(string dest, AppendEntriesRequest req)
+	    public void Stream(string dest, InstallSnapshot snapshot, Action<Stream> stream)
+	    {
+			if (_disconnectedNodes.Contains(req.LeaderId) || _disconnectedNodesFromSending.Contains(req.From))
+				return;
+	        throw new NotImplementedException();
+	    }
+
+	    public void Send(string dest, AppendEntriesRequest req)
 		{
 			if (_disconnectedNodes.Contains(req.LeaderId) || _disconnectedNodesFromSending.Contains(req.From))
 				return;

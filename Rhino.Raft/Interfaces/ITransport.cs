@@ -15,7 +15,7 @@ namespace Rhino.Raft.Interfaces
 	{
 		bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope);
 
-		void Stream(string dest, InstallSnapshot snapshot, Action<Stream> stream);
+		void Stream(string dest, InstallSnapshotRequest snapshotRequest, Action<Stream> stream);
 		
 		void Send(string dest, AppendEntriesRequest req);
 		void Send(string dest, RequestVoteRequest req);

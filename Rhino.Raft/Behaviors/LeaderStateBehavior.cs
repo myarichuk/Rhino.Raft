@@ -114,11 +114,12 @@ namespace Rhino.Raft.Behaviors
 								snapshotWriter.Term,
 								snapshotWriter.Index);
 
-							Engine.Transport.Stream(peer, new InstallSnapshot
+							Engine.Transport.Stream(peer, new InstallSnapshotRequest
 							{
 								Term = Engine.PersistentState.CurrentTerm,
 								LastIncludedIndex = snapshotWriter.Index,
-								LastIncludedTerm = snapshotWriter.Term
+								LastIncludedTerm = snapshotWriter.Term,
+                                From = Engine.Name
 							}, snapshotWriter.WriteSnapshot);
 						}
 					});
