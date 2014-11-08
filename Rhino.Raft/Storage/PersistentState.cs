@@ -45,7 +45,7 @@ namespace Rhino.Raft.Storage
 
 		public event Action<Topology> ConfigurationChanged;
 
-		public void SetCurrentTopology(Topology currentTopology,Topology changingTopology)
+		public void SetCurrentTopology(Topology currentTopology, Topology changingTopology)
 		{
 			if (_isDisposed)
 				return;
@@ -54,9 +54,9 @@ namespace Rhino.Raft.Storage
 				var metadata = tx.ReadTree(MetadataTreeName);
 
 				metadata.Delete("changing-config-allvotingpeers");
-				if(changingTopology != null)
+				if (changingTopology != null)
 				{
-					metadata.Add("changing-config-allvotingpeers",changingTopology.AllVotingNodes);
+					metadata.Add("changing-config-allvotingpeers", changingTopology.AllVotingNodes);
 				}
 
 				metadata.Add("current-config-allvotingpeers", currentTopology.AllVotingNodes);
@@ -90,8 +90,8 @@ namespace Rhino.Raft.Storage
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 				var allVotingPeers = metadata.Read<string[]>(key);
-				var peers = allVotingPeers == null ? 
-					new string[0] : 
+				var peers = allVotingPeers == null ?
+					new string[0] :
 					allVotingPeers.Select(x => x.ToString(CultureInfo.InvariantCulture)).ToArray();
 
 				return peers;
@@ -99,7 +99,7 @@ namespace Rhino.Raft.Storage
 		}
 
 
-		public PersistentState(StorageEnvironmentOptions options,  CancellationToken cancellationToken)
+		public PersistentState(StorageEnvironmentOptions options, CancellationToken cancellationToken)
 		{
 			_cancellationToken = cancellationToken;
 			_env = new StorageEnvironment(options);
@@ -219,7 +219,7 @@ namespace Rhino.Raft.Storage
 
 				var term = result.Reader.ReadLittleEndianInt64();
 				var isTopologyChangeEntry = ReadIsTopologyChanged(metadata, lastKey);
-				
+
 				return new LogEntry
 				{
 					Term = term,
@@ -261,7 +261,7 @@ namespace Rhino.Raft.Storage
 			if (_isDisposed)
 				return;
 
-			if (string.IsNullOrEmpty(candidateId)) 
+			if (string.IsNullOrEmpty(candidateId))
 				throw new ArgumentNullException("candidateId");
 
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
@@ -278,14 +278,14 @@ namespace Rhino.Raft.Storage
 		{
 			if (_isDisposed)
 				return;
-			
+
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 				CurrentTerm++;
 				VotedFor = name;
 				metadata.Add("current-term", BitConverter.GetBytes(CurrentTerm));
-				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name)); 
+				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name));
 				tx.Commit();
 			}
 		}
@@ -294,7 +294,7 @@ namespace Rhino.Raft.Storage
 		{
 			if (_isDisposed)
 				return;
-			
+
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
@@ -313,7 +313,7 @@ namespace Rhino.Raft.Storage
 		{
 			if (_isDisposed)
 				return null;
-			
+
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
@@ -376,7 +376,7 @@ namespace Rhino.Raft.Storage
 					while (_cancellationToken.IsCancellationRequested == false)
 					{
 						var entryIndex = it.CurrentKey.CreateReader().ReadBigEndianInt64();
-						if(entryIndex > stopAfter)
+						if (entryIndex > stopAfter)
 							yield break;
 
 						var term = terms.Read(it.CurrentKey).Reader.ReadLittleEndianInt64();
@@ -384,7 +384,7 @@ namespace Rhino.Raft.Storage
 						var entryReader = it.CreateReaderForCurrent();
 						var buffer = new byte[entryReader.Length];
 						entryReader.Read(buffer, 0, buffer.Length);
-						
+
 						yield return new LogEntry
 						{
 							Term = term,
@@ -397,7 +397,7 @@ namespace Rhino.Raft.Storage
 							yield break;
 					}
 				}
-				
+
 				tx.Commit();
 			}
 		}
@@ -408,6 +408,28 @@ namespace Rhino.Raft.Storage
 			{
 				_env.Dispose();
 				_isDisposed = true;
+			}
+		}
+
+		public void TruncateLogUntil(long marker, int maxNumberOfItemsToRemove)
+		{
+			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
+			{
+				var logs = tx.ReadTree(LogsTreeName);
+				var terms = tx.ReadTree(EntryTermsTreeName);
+
+				using (var it = logs.Iterate())
+				{
+					it.MaxKey = new Slice(EndianBitConverter.Big.GetBytes(marker + 1));
+					if (it.Seek(Slice.BeforeAllKeys) == false)
+						return;
+					do
+					{
+						terms.Delete(it.CurrentKey);
+						maxNumberOfItemsToRemove--;
+					} while (it.DeleteCurrentAndMoveNext() && maxNumberOfItemsToRemove >= 0);
+				}
+				tx.Commit();
 			}
 		}
 
@@ -423,13 +445,13 @@ namespace Rhino.Raft.Storage
 
 				using (var it = logs.Iterate())
 				{
-					if (it.Seek(new Slice(EndianBitConverter.Big.GetBytes(removeAllAfter))) && 
+					if (it.Seek(new Slice(EndianBitConverter.Big.GetBytes(removeAllAfter))) &&
 						it.MoveNext())
 					{
-						while (it.DeleteCurrentAndMoveNext())
+						do
 						{
-							// delete everything from here on forward	
-						}
+							terms.Delete(it.CurrentKey);
+						} while (it.DeleteCurrentAndMoveNext());
 					}
 				}
 
@@ -460,24 +482,19 @@ namespace Rhino.Raft.Storage
 			return BitConverter.ToBoolean(bytes, 0);
 		}
 
-		public Stream GetLastSnapshot()
+		public long GetCommitedEntriesCount(long lastCommittedEntry)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
-				var metadata = tx.ReadTree(MetadataTreeName);
-				var lastSnapshot = metadata.Read("last-snapshot");
-				return lastSnapshot.Reader.AsStream();
-			}
-		}
+				var logs = tx.ReadTree(LogsTreeName);
 
-		public void SetLastSnapshot(Stream snapshot)
-		{
-			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
-			{
-				var metadata = tx.ReadTree(MetadataTreeName);
-				
-				metadata.Add("last-snapshot",snapshot);
-				tx.Commit();
+				using (var it = logs.Iterate())
+				{
+					var lastEntryIndex = it.Seek(Slice.AfterAllKeys) == false ?
+						0 : 
+						it.CurrentKey.CreateReader().ReadBigEndianInt64();
+					return logs.State.EntriesCount - Math.Max(0, (lastEntryIndex - lastCommittedEntry));
+				}
 			}
 		}
 	}

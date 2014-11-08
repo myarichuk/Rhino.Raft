@@ -1138,7 +1138,6 @@ namespace Rhino.Raft.Tests
 		}
 
 
-		//TODO: this unit test exposes a race condition if run enough times consequentially. Get to the bottom of this!
 		[Fact]
 		public void Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change()
 		{
@@ -1197,7 +1196,17 @@ namespace Rhino.Raft.Tests
 
 					Console.WriteLine("<---nodeA, nodeB are up, waiting for topology change on additional nodes");
 					Assert.True(topologyChangesFinished.Wait(15000));
-					Assert.True(topologyChangedOnAdditionalNode.Wait(15000));
+					var condition = topologyChangedOnAdditionalNode.Wait(15000);
+					if (condition == false)
+					{
+						bool a = false;
+						while (a == false)
+						{
+							a = DateTime.Now.Ticks == 1;
+							Thread.Sleep(100);
+						}
+					}
+					Assert.True(condition);
 
 					nodeA.AllVotingNodes.Should().Contain(additionalNode.Name);
 					nodeB.AllVotingNodes.Should().Contain(additionalNode.Name);
@@ -1272,76 +1281,7 @@ namespace Rhino.Raft.Tests
 			leader.GetRecorderForEvent("SnapshotCreationEnded")
 				  .Should().HaveCount(1);
 		}
-//
-//		[Fact]
-//		public void Snaphot_node_shutdown_and_then_snapshot_then_node_turnOn_snapshots_are_restored()
-//		{
-//			const int commandsCount = 10;
-//			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
-//			var snapshotCreationEndedEvent = new ManualResetEventSlim();
-//			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(commandsCount)
-//				.All()
-//				.With(x => x.Completion = null)
-//				.Build()
-//				.ToList();
-//
-//			const int timeout = 2500;
-//			var inMemoryTransport = new InMemoryTransport();
-//
-//			var testDataFolder = Path.Combine(Directory.GetCurrentDirectory(),"test");
-//			if(Directory.Exists(testDataFolder))
-//				Directory.Delete(testDataFolder,true);
-//
-//			var tempFolder = Guid.NewGuid().ToString();
-//			var nodeApath = Path.Combine(Directory.GetCurrentDirectory(),"test", tempFolder, "A");
-//			var nodeBpath = Path.Combine(Directory.GetCurrentDirectory(), "test", tempFolder, "B");
-//			var nodeCpath = Path.Combine(Directory.GetCurrentDirectory(), "test", tempFolder, "C");
-//
-//			SnapshotInfo snapshot = null;
-//			using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath),
-//						"nodeA", "nodeB", "nodeC")))
-//			using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
-//						"nodeA", "nodeB", "nodeC")))
-//			using (var nodeC = new RaftEngine(CreateNodeOptions("nodeC", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeCpath),
-//						"nodeA", "nodeB", "nodeC")))
-//			{
-//				nodeA.WaitForLeader();
-//				var leader = (nodeA.State == RaftEngineState.Leader) ? nodeA
-//								: (nodeB.State == RaftEngineState.Leader) ? nodeB : nodeC;
-//				leader.State.Should().Be(RaftEngineState.Leader); //precaution
-//
-//				leader.SnapshotCreationEnded += createdSnapshot =>
-//				{
-//					snapshot = createdSnapshot;
-//					snapshotCreationEndedEvent.Set();
-//				};
-//				leader.CommitIndexChanged += (old, @new) => appliedAllCommandsEvent.Signal();
-//				leader.MaxLogLengthBeforeCompaction = commandsCount / 2;
-//
-//				commands.ForEach(leader.AppendCommand);
-//
-//				Assert.True(appliedAllCommandsEvent.Wait(3000));
-//				Assert.True(snapshotCreationEndedEvent.Wait(3000));
-//
-//				var lastSnapshot = leader.PersistentState.GetLastSnapshot();
-//				lastSnapshot.ShouldBeEquivalentTo(snapshot);
-//				leader.StateMachine.EntryCount.Should().Be(commandsCount - (int)snapshot.LastIndex);
-//			}
-//
-//			using (var nodeA = new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath),
-//						"nodeA", "nodeB", "nodeC")))
-//			using (var nodeB = new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
-//						"nodeA", "nodeB", "nodeC")))
-//			using (var nodeC = new RaftEngine(CreateNodeOptions("nodeC", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeCpath),
-//						"nodeA", "nodeB", "nodeC")))
-//			{
-//				nodeA.WaitForLeader();
-//				var leader = (nodeA.State == RaftEngineState.Leader) ? nodeA
-//								: (nodeB.State == RaftEngineState.Leader) ? nodeB : nodeC;
-//				leader.State.Should().Be(RaftEngineState.Leader);
-//			}
-//		}
-//
+		
 		[Fact]
 		public void Snaphot_after_enough_command_applies_snapshot_is_created()
 		{
@@ -1382,7 +1322,7 @@ namespace Rhino.Raft.Tests
 			Assert.True(appliedAllCommandsEvent.Wait(millisecondsTimeout), "Not all commands were applied, there are still " + appliedAllCommandsEvent.CurrentCount + " commands left");
 
 			var entriesAfterSnapshotCreation = leader.PersistentState.LogEntriesAfter(0).ToList();
-			entriesAfterSnapshotCreation.Should().HaveCount(commandsCount - leader.MaxLogLengthBeforeCompaction);
+			entriesAfterSnapshotCreation.Should().HaveCount((commandsCount + 1 /*nop command */ ) - leader.MaxLogLengthBeforeCompaction);
 			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.MaxLogLengthBeforeCompaction);
 		}
 	

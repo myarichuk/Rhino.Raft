@@ -65,7 +65,7 @@ namespace Rhino.Raft
 				if (_currentLeader == value)
 					return;
 
-				if(value == null)
+				if (value == null)
 					_leaderSelectedEvent.Reset();
 				else
 					_leaderSelectedEvent.Set();
@@ -111,10 +111,7 @@ namespace Rhino.Raft
 		private AbstractRaftStateBehavior _stateBehavior;
 		private string _currentLeader;
 
-		private const int SnapshotRunning = 1;
-		private const int SnapshotNotRunning = 0;
-
-		private int _isSnapshotCreationRunning = SnapshotNotRunning;
+		private Task _snapshottingTask = null;
 
 		private AbstractRaftStateBehavior StateBehavior
 		{
@@ -145,6 +142,7 @@ namespace Rhino.Raft
 		public event Action TopologyChangeStarted;
 		public event Action SnapshotCreationStarted;
 		public event Action SnapshotCreationEnded;
+		public event Action<Exception> SnapshotCreationError;
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
@@ -169,7 +167,7 @@ namespace Rhino.Raft
 			if (raftEngineOptions.ForceNewTopology ||
 				(_currentTopology.AllVotingNodes.Count == 0))
 			{
-				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new []{ Name });
+				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new[] { Name });
 				PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
 			}
 
@@ -181,7 +179,7 @@ namespace Rhino.Raft
 			Transport = raftEngineOptions.Transport;
 			StateMachine = raftEngineOptions.StateMachine;
 
-			SetState(AllVotingNodes.Any(n => !n.Equals(Name,StringComparison.OrdinalIgnoreCase)) ? RaftEngineState.Follower : RaftEngineState.Leader);
+			SetState(AllVotingNodes.Any(n => !n.Equals(Name, StringComparison.OrdinalIgnoreCase)) ? RaftEngineState.Follower : RaftEngineState.Leader);
 
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
@@ -206,6 +204,7 @@ namespace Rhino.Raft
 						continue;
 					}
 					DebugLog.Write("State {0} message {1}", State, message.Message);
+					behavior.TimeoutReduction = 0;
 					behavior.HandleMessage(message);
 				}
 				catch (OperationCanceledException)
@@ -234,10 +233,10 @@ namespace Rhino.Raft
 				StateBehavior.TopologyChangeStarted -= OnTopologyChangeStarted;
 			}
 
-			if(State == RaftEngineState.Leader)
+			if (State == RaftEngineState.Leader)
 				_leaderSelectedEvent.Reset();
 
-			var oldState = StateBehavior;						
+			var oldState = StateBehavior;
 			using (oldState)
 			{
 				switch (state)
@@ -249,7 +248,7 @@ namespace Rhino.Raft
 						StateBehavior = new CandidateStateBehavior(this);
 						break;
 					case RaftEngineState.Leader:
-						StateBehavior = new LeaderStateBehavior(this);						
+						StateBehavior = new LeaderStateBehavior(this);
 						CurrentLeader = Name;
 						OnElectedAsLeader();
 						_leaderSelectedEvent.Set();
@@ -263,7 +262,7 @@ namespace Rhino.Raft
 
 				Debug.Assert(StateBehavior != null, "StateBehavior != null");
 				StateBehavior.TopologyChangeStarted += OnTopologyChangeStarted;
-				
+
 				OnStateChanged(state);
 			}
 		}
@@ -274,7 +273,7 @@ namespace Rhino.Raft
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
 			var requestedTopology = _currentTopology.CloneAndRemove(node);
-			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}",requestedTopology.AllVotingNodes.Aggregate(String.Empty,(total,curr) => total + ", " + curr));
+			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
 			return ModifyTopology(requestedTopology);
 		}
 
@@ -303,7 +302,7 @@ namespace Rhino.Raft
 					Requested = requested,
 					BufferCommand = false,
 				};
-				
+
 				AppendCommand(tcc);
 				PersistentState.SetCurrentTopology(_currentTopology, _changingTopology);
 				DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
@@ -339,7 +338,7 @@ namespace Rhino.Raft
 		}
 
 		public void WaitForLeader()
-		{			
+		{
 			_leaderSelectedEvent.Wait(CancellationToken);
 		}
 
@@ -359,7 +358,6 @@ namespace Rhino.Raft
 		public void ApplyCommits(long from, long to)
 		{
 			Debug.Assert(to >= from);
-			var commitApplyFinished = new ManualResetEventSlim();
 			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
 				try
@@ -370,36 +368,6 @@ namespace Rhino.Raft
 
 					StateMachine.Apply(entry, command);
 
-					if (StateMachine.EntryCount >= MaxLogLengthBeforeCompaction && 
-						Interlocked.CompareExchange(ref _isSnapshotCreationRunning,SnapshotRunning,SnapshotNotRunning) == SnapshotNotRunning)
-					{
-						var currentEntry = entry;
-
-						//TODO:
-						//1) add lock for disposal so if dispose is running and this task is running, dispose will wait for finishing of this task
-						//2) solve the issue of deleting from PersistantState of entries that are in the snapshot --> so the test will pass
-						Task.Run(() =>
-						{
-							OnSnapshotCreationStarted();
-							StateMachine.CreateSnapshot();
-
-							using (var stream = new MemoryStream())
-							{
-								StateMachine.WriteSnapshot(stream);
-								PersistentState.SetLastSnapshot(stream);
-							}
-
-							OnSnapshotCreationEnded();
-							Interlocked.Exchange(ref _isSnapshotCreationRunning, SnapshotNotRunning);
-							return currentEntry.Index;
-						}, CancellationToken)
-						.ContinueWith(task =>
-						{
-							commitApplyFinished.Wait(CancellationToken);
-							PersistentState.AppendToLog(new LogEntry[0], task.Result);
-						}, CancellationToken);
-					}
-
 					var oldCommitIndex = CommitIndex;
 					CommitIndex = to;
 					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
@@ -409,10 +377,10 @@ namespace Rhino.Raft
 					{
 						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingNodes), Name);
 						ApplyTopologyChanges(tcc);
-					} 
-					
+					}
+
 					OnCommitIndexChanged(oldCommitIndex, CommitIndex);
-					OnCommitApplied(command);				
+					OnCommitApplied(command);
 				}
 				catch (Exception e)
 				{
@@ -421,11 +389,40 @@ namespace Rhino.Raft
 				}
 			}
 
-			commitApplyFinished.Set();
+			var commitedEntriesCount = PersistentState.GetCommitedEntriesCount(to);
+			if (commitedEntriesCount >= MaxLogLengthBeforeCompaction)
+			{
+				SnapshotAndTruncateLog(to);
+			}
+		}
+
+		private void SnapshotAndTruncateLog(long to)
+		{
+			var task = new Task(() =>
+			{
+				OnSnapshotCreationStarted();
+				try
+				{
+					StateMachine.CreateSnapshot();
+					PersistentState.TruncateLogUntil(to,
+						MaxLogLengthBeforeCompaction - (MaxLogLengthBeforeCompaction / 8));
+
+					OnSnapshotCreationEnded();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Failed to create snapshot because {0}", e);
+					OnSnapshotCreationError(e);
+				}
+			});
+
+			if (Interlocked.CompareExchange(ref _snapshottingTask, task, null) != null)
+				return;
+			task.Start();
 		}
 
 		private void ApplyTopologyChanges(TopologyChangeCommand tcc)
-		{			
+		{
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
@@ -436,13 +433,13 @@ namespace Rhino.Raft
 				DebugLog.Write("@@@ This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
 				_currentTopology = new Topology(Enumerable.Empty<string>());
 				_changingTopology = null;
-				CurrentLeader = null;				
+				CurrentLeader = null;
 
 				SetState(RaftEngineState.None);
 			}
 			else
 			{
-				
+
 				_currentTopology = tcc.Requested;
 				_changingTopology = null;
 
@@ -455,13 +452,13 @@ namespace Rhino.Raft
 			}
 
 			PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
-			OnTopologyChanged(tcc);			
+			OnTopologyChanged(tcc);
 		}
 
 		internal void AnnounceCandidacy()
 		{
 			PersistentState.IncrementTermAndVoteFor(Name);
-			
+
 			SetState(RaftEngineState.Candidate);
 
 			DebugLog.Write("Calling an election in term {0}", PersistentState.CurrentTerm);
@@ -484,12 +481,12 @@ namespace Rhino.Raft
 			}
 
 			//dont't send to yourself the message
-			foreach (var votingPeer in allVotingNodes.Where(node => 
-											!node.Equals(Name,StringComparison.InvariantCultureIgnoreCase)))
+			foreach (var votingPeer in allVotingNodes.Where(node =>
+											!node.Equals(Name, StringComparison.InvariantCultureIgnoreCase)))
 			{
 				Transport.Send(votingPeer, rvr);
 			}
-			
+
 			OnCandidacyAnnounced();
 		}
 
@@ -566,6 +563,12 @@ namespace Rhino.Raft
 		{
 			var handler = SnapshotCreationEnded;
 			if (handler != null) handler();
+		}
+
+		protected virtual void OnSnapshotCreationError(Exception e)
+		{
+			var handler = SnapshotCreationError;
+			if (handler != null) handler(e);
 		}
 	}
 

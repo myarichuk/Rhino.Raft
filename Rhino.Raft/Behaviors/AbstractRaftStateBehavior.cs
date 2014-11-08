@@ -66,13 +66,11 @@ namespace Rhino.Raft.Behaviors
 		{
 			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
 			// Raft paper section 6 (cluster membership changes)
-			var currentRequestTime = DateTime.UtcNow;
-			var timeSpanBetweenLastHeartbeatAndCurrentRequest = (currentRequestTime - LastHeartbeatTime);
+			var timeSinceLastHeartbeat = GetMillisecondsSinceLastHeartbeat();
+			
+			TimeoutReduction = timeSinceLastHeartbeat;
 
-            var timeSinceLastHeartbeat = (int)timeSpanBetweenLastHeartbeatAndCurrentRequest.TotalMilliseconds;
-            TimeoutReduction += timeSinceLastHeartbeat;
-
-		    if (timeSinceLastHeartbeat < (Engine.MessageTimeout/2) && Engine.CurrentLeader != null)
+		    if ((timeSinceLastHeartbeat < (Timeout/2)) && Engine.CurrentLeader != null)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
 				Engine.Transport.Send(destination, new RequestVoteResponse
@@ -150,7 +148,9 @@ namespace Rhino.Raft.Behaviors
 				});
 				return;
 			}
-
+			// we are voting for this guy, so we can reset the timeout reduction and give it a full timeout
+			// span to do its work
+			TimeoutReduction = 0; 
 			Engine.DebugLog.Write("Recording vote for candidate = {0}",req.CandidateId);
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
 			
@@ -161,8 +161,15 @@ namespace Rhino.Raft.Behaviors
 				Message = "Vote granted",
 				From = Engine.Name
 			});
-            // reset the timeout
-		    TimeoutReduction = 0;
+		}
+
+		private int GetMillisecondsSinceLastHeartbeat()
+		{
+			var currentRequestTime = DateTime.UtcNow;
+			var timeSpanBetweenLastHeartbeatAndCurrentRequest = (currentRequestTime - LastHeartbeatTime);
+
+			var timeSinceLastHeartbeat = (int) timeSpanBetweenLastHeartbeatAndCurrentRequest.TotalMilliseconds;
+			return timeSinceLastHeartbeat;
 		}
 
 		public virtual void Handle(string destination, AppendEntriesResponse resp)
@@ -196,8 +203,6 @@ namespace Rhino.Raft.Behaviors
 				Engine.PersistentState.UpdateTermTo(lastLogEntry.Term);
 			}
 		    
-            TimeoutReduction = 0;
-
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
 				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
