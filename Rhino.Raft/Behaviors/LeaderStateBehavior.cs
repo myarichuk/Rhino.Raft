@@ -110,6 +110,10 @@ namespace Rhino.Raft.Behaviors
 					{
 						using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
 						{
+							Engine.DebugLog.Write("Sending snapshot to {0} - term {1}, index {2}", peer, 
+								snapshotWriter.Term,
+								snapshotWriter.Index);
+
 							Engine.Transport.Stream(peer, new InstallSnapshot
 							{
 								Term = Engine.PersistentState.CurrentTerm,
