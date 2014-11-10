@@ -43,6 +43,11 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, requestVoteResponse);
 		}
 
+	    public virtual void Handle(string destination, InstallSnapshotRequest req)
+	    {
+            //nothing to do here  TODO: log this
+	    }
+
 		public virtual void Handle(string destination, RequestVoteResponse resp)
 		{
 			//do nothing, irrelevant here

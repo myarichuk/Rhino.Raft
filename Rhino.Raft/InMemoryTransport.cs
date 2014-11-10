@@ -75,12 +75,12 @@ namespace Rhino.Raft
             return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
-	    public void Stream(string dest, InstallSnapshot snapshot, Action<Stream> stream)
+	    public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> stream)
 	    {
-			if (_disconnectedNodes.Contains(req.LeaderId) || _disconnectedNodesFromSending.Contains(req.From))
+			if (_disconnectedNodesFromSending.Contains(req.From))
 				return;
-	        throw new NotImplementedException();
-	    }
+            AddToQueue(dest, req);
+        }
 
 	    public void Send(string dest, AppendEntriesRequest req)
 		{
