@@ -144,6 +144,11 @@ namespace Rhino.Raft
 		public event Action SnapshotCreationEnded;
 		public event Action<Exception> SnapshotCreationError;
 
+		/// <summary>
+		/// will fire each time event loop of the node will process events and send response messages
+		/// </summary>
+		public event Action EventsProcessed;
+
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
 			Debug.Assert(raftEngineOptions.Stopwatch != null);
@@ -569,6 +574,13 @@ namespace Rhino.Raft
 		{
 			var handler = SnapshotCreationError;
 			if (handler != null) handler(e);
+		}
+
+
+		internal virtual void OnEventsProcessed()
+		{
+			var handler = EventsProcessed;
+			if (handler != null) handler();
 		}
 	}
 

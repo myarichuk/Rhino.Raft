@@ -41,6 +41,8 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, appendEntriesRequest);
 			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
 				Handle(envelope.Destination, requestVoteResponse);
+
+			Engine.OnEventsProcessed();
 		}
 
 	    public virtual void Handle(string destination, InstallSnapshotRequest req)
@@ -78,7 +80,7 @@ namespace Rhino.Raft.Behaviors
 		    if ((timeSinceLastHeartbeat < (Timeout/2)) && Engine.CurrentLeader != null)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
-				Engine.Transport.Send(destination, new RequestVoteResponse
+				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -91,7 +93,7 @@ namespace Rhino.Raft.Behaviors
 			if (Engine.ContainedInAllVotingNodes(req.From) == false)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.CandidateId);
-				Engine.Transport.Send(destination, new RequestVoteResponse
+				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -108,7 +110,7 @@ namespace Rhino.Raft.Behaviors
 				var msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
 					req.Term, Engine.PersistentState.CurrentTerm);
 				Engine.DebugLog.Write(msg);
-				Engine.Transport.Send(destination, new RequestVoteResponse
+				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -130,7 +132,7 @@ namespace Rhino.Raft.Behaviors
 					Engine.PersistentState.VotedFor, req.Term);
 
 				Engine.DebugLog.Write(msg);
-				Engine.Transport.Send(destination, new RequestVoteResponse
+				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,
@@ -144,7 +146,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				var msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.", req.CandidateId);
 				Engine.DebugLog.Write(msg);
-				Engine.Transport.Send(destination, new RequestVoteResponse
+				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
 					Term = Engine.PersistentState.CurrentTerm,

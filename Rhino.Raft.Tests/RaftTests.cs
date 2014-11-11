@@ -843,7 +843,6 @@ namespace Rhino.Raft.Tests
 		}
 
 
-
 		[Fact]
 		public void AllPeers_and_AllVotingPeers_can_be_persistantly_saved_and_loaded()
 		{
@@ -1325,7 +1324,110 @@ namespace Rhino.Raft.Tests
 			entriesAfterSnapshotCreation.Should().HaveCount((commandsCount + 1 /*nop command */ ) - leader.MaxLogLengthBeforeCompaction);
 			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.MaxLogLengthBeforeCompaction);
 		}
-	
+
+		[Fact]
+		public void New_node_should_receive_snapshot_when_applicable()
+		{
+			var snapshotCreationEndedEvent = new ManualResetEventSlim();
+			const int commandsCount = 9;
+			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(commandsCount)
+				.All()
+				.With(x => x.Completion = null)
+				.Build()
+				.ToList();
+
+			var transport = new InMemoryTransport();
+			var raftNodes = CreateRaftNetwork(3,transport).ToList();
+			raftNodes.ForEach(entry => entry.MaxEntriesPerRequest = 1);
+			raftNodes.First().WaitForLeader();
+
+			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
+
+			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
+			leader.SnapshotCreationEnded += snapshotCreationEndedEvent.Set;
+
+			leader.CommitApplied += cmd =>
+			{
+				if (cmd is DictionaryCommand.Set)
+				{
+					Trace.WriteLine("Commit applied --> DictionaryCommand.Set");
+					appliedAllCommandsEvent.Signal();
+				}
+			};
+
+			leader.MaxLogLengthBeforeCompaction = commandsCount - 4;
+			Trace.WriteLine("<--- Started appending commands..");
+			commands.ForEach(leader.AppendCommand);
+			Trace.WriteLine("<--- Ended appending commands..");
+
+			var millisecondsTimeout = Debugger.IsAttached ? 600000 : 4000;
+			Assert.True(snapshotCreationEndedEvent.Wait(millisecondsTimeout));
+			Assert.True(appliedAllCommandsEvent.Wait(millisecondsTimeout),
+				"Not all commands were applied, there are still " + appliedAllCommandsEvent.CurrentCount + " commands left");
+
+			using (var node = new RaftEngine(CreateNodeOptions("new_node", transport, 1500)))
+			{
+				var newNodeTopologyChangedEvent = new CountdownEvent(2);
+				
+				node.TopologyChangeFinished += cmd => newNodeTopologyChangedEvent.Signal();
+				leader.TopologyChangeFinished += cmd => newNodeTopologyChangedEvent.Signal();
+				leader.AddToClusterAsync(node.Name).Wait();
+
+				Assert.True(newNodeTopologyChangedEvent.Wait(5000));
+
+				//TODO : finish
+			}
+		}
+
+		[Fact]
+		public void Request_vote_when_leader_exists_will_be_rejected()
+		{
+			var transport = new InMemoryTransport();
+			var node = CreateNodeWithVirtualNetworkAndMakeItLeader("node",transport, "other_node1", "other_node2");
+
+			node.State.Should().Be(RaftEngineState.Leader);
+
+			var waitForEventLoop = node.WaitForEvent((n, handler) => n.EventsProcessed += handler,
+													 (n, handler) => n.EventsProcessed -= handler);
+
+			transport.Send("node", new RequestVoteRequest
+			{
+				CandidateId = "other_node1",
+				From = "other_node1",
+				LastLogIndex = 0,
+				Term = 0,
+				LastLogTerm = 0
+			});
+
+			waitForEventLoop.Wait();
+
+			transport.MessageQueue["other_node1"].Should().Contain(envelope => envelope.Message is RequestVoteResponse &&
+																		((RequestVoteResponse)envelope.Message).VoteGranted == false &&
+																		((RequestVoteResponse)envelope.Message).Message.Contains("I currently have a leader and I am receiving"));
+		}
+
+		private RaftEngine CreateNodeWithVirtualNetworkAndMakeItLeader(string leaderNodeName, ITransport transport, params string[] virtualPeers)
+		{
+			var leaderNode = new RaftEngine(CreateNodeOptions(leaderNodeName, transport, 1500, virtualPeers));
+			leaderNode.WaitForEvent(
+				(node, handler) => node.ElectionStarted += handler,
+				(node, handler) => node.ElectionStarted -= handler).Wait();
+
+			foreach(var peer in virtualPeers)
+				transport.Send(leaderNodeName,new RequestVoteResponse
+				{
+					From = peer,
+					Term = 1,
+					VoteGranted = true
+				});
+
+			leaderNode.WaitForLeader();
+
+			_nodes.Add(leaderNode);
+			return leaderNode;
+		}
+
 		private static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
 		{
 			var nodeOptions = new RaftEngineOptions(nodeName,
