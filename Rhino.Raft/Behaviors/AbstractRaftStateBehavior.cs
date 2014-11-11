@@ -1,9 +1,7 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Linq;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
-using Rhino.Raft.Storage;
 
 
 namespace Rhino.Raft.Behaviors

@@ -1,9 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -51,6 +46,7 @@ namespace Rhino.Raft.Behaviors
 		public override void HandleTimeout()
 		{
 			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout);
+			Engine.DebugLog.Write("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished
 		}
 	}
