@@ -1388,8 +1388,8 @@ namespace Rhino.Raft.Tests
 
 			node.State.Should().Be(RaftEngineState.Leader);
 
-			var waitForEventLoop = node.WaitForEvent((n, handler) => n.EventsProcessed += handler,
-													 (n, handler) => n.EventsProcessed -= handler);
+			var waitForEventLoopToProcess = node.WaitForEvent((n, handler) => n.EventsProcessed += handler,
+															  (n, handler) => n.EventsProcessed -= handler);
 
 			transport.Send("node", new RequestVoteRequest
 			{
@@ -1400,11 +1400,39 @@ namespace Rhino.Raft.Tests
 				LastLogTerm = 0
 			});
 
-			waitForEventLoop.Wait();
+			waitForEventLoopToProcess.Wait();
 
 			transport.MessageQueue["other_node1"].Should().Contain(envelope => envelope.Message is RequestVoteResponse &&
 																		((RequestVoteResponse)envelope.Message).VoteGranted == false &&
 																		((RequestVoteResponse)envelope.Message).Message.Contains("I currently have a leader and I am receiving"));
+		}
+
+
+
+		[Fact]
+		public void Adding_additional_node_that_goes_offline_and_then_online_should_still_work()
+		{
+			var transport = new InMemoryTransport();
+			var nodes = CreateRaftNetwork(3,transport).ToList();
+			nodes.First().WaitForLeader();
+
+			var leaderNode = nodes.First(x => x.State == RaftEngineState.Leader);
+
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("additional_node", transport, 1500)))
+			{
+				additionalNode.TopologyChangeStarted += () => transport.DisconnectNode("additional_node");
+				var waitForTopologyChangeInLeader =
+					leaderNode.WaitForEvent((n, handler) => n.TopologyChangeFinished += cmd => handler(),
+		// ReSharper disable once EventUnsubscriptionViaAnonymousDelegate
+											(n, handler) => n.TopologyChangeFinished -= cmd => handler());
+		
+				leaderNode.AddToClusterAsync(additionalNode.Name).Wait();
+
+				Thread.Sleep(additionalNode.MessageTimeout * 2);
+				transport.ReconnectNode(additionalNode.Name);
+
+				Assert.True(waitForTopologyChangeInLeader.Wait(3000));
+			}
 		}
 
 		private RaftEngine CreateNodeWithVirtualNetworkAndMakeItLeader(string leaderNodeName, ITransport transport, params string[] virtualPeers)
