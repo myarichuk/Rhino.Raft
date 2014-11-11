@@ -144,7 +144,7 @@ namespace Rhino.Raft.Tests
 
 				Assert.True(newNodeTopologyChangedEvent.Wait(5000));
 
-				//TODO : finish
+				
 			}
 		}
 

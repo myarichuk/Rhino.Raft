@@ -74,10 +74,11 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CommandsTests.cs" />
     <Compile Include="DictionaryCommand.cs" />
     <Compile Include="DictionaryStateMachine.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RaftTests.cs" />
+    <Compile Include="ElectionRelatedTests.cs" />
     <Compile Include="RaftTestsBase.cs" />
     <Compile Include="SnapshotTests.cs" />
     <Compile Include="TopologyChangesTests.cs" />

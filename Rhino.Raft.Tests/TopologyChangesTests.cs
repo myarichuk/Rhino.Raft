@@ -15,6 +15,26 @@ namespace Rhino.Raft.Tests
 	public class TopologyChangesTests : RaftTestsBase
 	{
 		[Fact]
+		public void New_node_can_be_added_even_if_it_is_down()
+		{
+			const int nodeCount = 3;
+
+			var topologyChangeFinishedOnAllNodes = new CountdownEvent(nodeCount);
+			var nodes = CreateRaftNetwork(nodeCount).ToList();
+			nodes.First().WaitForLeader();
+			var leader = nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			leader.Should().NotBeNull("if at this stage no leader was selected then something is really wrong");
+
+			nodes.ForEach(n => n.TopologyChangeFinished += cmd => topologyChangeFinishedOnAllNodes.Signal());
+
+			// ReSharper disable once PossibleNullReferenceException
+			leader.AddToClusterAsync("non-existing-node").Wait();
+
+			Assert.True(topologyChangeFinishedOnAllNodes.Wait(5000),"Topology changes should happen in less than 5 sec for 3 node network");
+		}
+
+
+		[Fact]
 		public void Adding_additional_node_that_goes_offline_and_then_online_should_still_work()
 		{
 			var transport = new InMemoryTransport();

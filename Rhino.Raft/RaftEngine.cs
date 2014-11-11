@@ -589,6 +589,7 @@ namespace Rhino.Raft
 		None,
 		Follower,
 		Leader,
-		Candidate
+		Candidate,
+		ApplyingSnapshot
 	}
 }

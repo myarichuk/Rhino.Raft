@@ -47,7 +47,7 @@ namespace Rhino.Raft.Tests
 
 		//this test is a show-case of how to check for command commit time-out
 		[Fact]
-		public async Task While_command_not_committed_CompletionTaskSource_is_not_notified()
+		public void While_command_not_committed_CompletionTaskSource_is_not_notified()
 		{
 			const int CommandCount = 5;
 			var dataTransport = new InMemoryTransport();
@@ -76,7 +76,7 @@ namespace Rhino.Raft.Tests
 			//don't append the last command yet
 			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
 			//make sure commands that were appended before network leader disconnection are replicated
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 2));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 3));
 
 			dataTransport.DisconnectNode(leader.Name);
 
@@ -86,8 +86,9 @@ namespace Rhino.Raft.Tests
 
 			leader.AppendCommand(lastCommand);
 
-			var result = await Task.WhenAny(commandCompletionTask, timeout);
-			Assert.Equal(timeout, result);
+		    var whenAnyTask = Task.WhenAny(commandCompletionTask, timeout);
+			whenAnyTask.Wait();
+			Assert.Equal(timeout, whenAnyTask.Result);
 		}
 
 		[Fact]
