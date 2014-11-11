@@ -12,7 +12,7 @@ namespace Rhino.Raft
 	{
 		//good idea - adapted version of code from http://stackoverflow.com/questions/17635440/how-to-wait-for-a-single-event-in-c-with-timeout-and-cancellation
 		//this is kind of preparation of airconditioning before its actually needed, but in the tests it is very useful
-		public static Task WaitForEvent<TObject>(this TObject objectWithEvents, Action<TObject,Action> subscribeToEvent, Action<TObject,Action> unsubscribeFromEvent, CancellationToken? cancellationToken = null)
+		public static Task WaitForEventTask<TObject>(this TObject objectWithEvents, Action<TObject,Action> subscribeToEvent, Action<TObject,Action> unsubscribeFromEvent, CancellationToken? cancellationToken = null)
 			where TObject : class 
 		{
 			var tcs = new TaskCompletionSource<object>();

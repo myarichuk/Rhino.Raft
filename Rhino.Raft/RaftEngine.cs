@@ -111,7 +111,7 @@ namespace Rhino.Raft
 		private AbstractRaftStateBehavior _stateBehavior;
 		private string _currentLeader;
 
-		private Task _snapshottingTask = null;
+		private Task _snapshottingTask;
 
 		private AbstractRaftStateBehavior StateBehavior
 		{
@@ -138,10 +138,16 @@ namespace Rhino.Raft
 		public event Action<LogEntry[]> EntriesAppended;
 		public event Action<long, long> CommitIndexChanged;
 		public event Action ElectedAsLeader;
+
 		public event Action<TopologyChangeCommand> TopologyChangeFinished;
 		public event Action TopologyChangeStarted;
+
 		public event Action SnapshotCreationStarted;
 		public event Action SnapshotCreationEnded;
+
+		public event Action SnapshotInstallationStarted;
+		public event Action SnapshotInstallationEnded;
+
 		public event Action<Exception> SnapshotCreationError;
 
 		/// <summary>
@@ -196,7 +202,7 @@ namespace Rhino.Raft
 				try
 				{
 					MessageEnvelope message;
-					var behavior = StateBehavior;
+					var behavior = _stateBehavior;
 					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout - behavior.TimeoutReduction, _eventLoopCancellationTokenSource.Token, out message);
 					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
 						break;
@@ -210,6 +216,14 @@ namespace Rhino.Raft
 					}
 					DebugLog.Write("State {0} message {1}", State, message.Message);
 					behavior.TimeoutReduction = 0;
+					//special case for InstallSnapshotRequest
+
+					if (message.Message is InstallSnapshotRequest)
+					{
+						SetState(RaftEngineState.SnapshotInstallation);
+						behavior = _stateBehavior;
+					}
+
 					behavior.HandleMessage(message);
 				}
 				catch (OperationCanceledException)
@@ -251,6 +265,9 @@ namespace Rhino.Raft
 						break;
 					case RaftEngineState.Candidate:
 						StateBehavior = new CandidateStateBehavior(this);
+						break;
+					case RaftEngineState.SnapshotInstallation:
+						StateBehavior = new SnapshotInstallationStateBehavior(this);
 						break;
 					case RaftEngineState.Leader:
 						StateBehavior = new LeaderStateBehavior(this);
@@ -576,10 +593,21 @@ namespace Rhino.Raft
 			if (handler != null) handler(e);
 		}
 
-
 		internal virtual void OnEventsProcessed()
 		{
 			var handler = EventsProcessed;
+			if (handler != null) handler();
+		}
+
+		internal virtual void OnSnapshotInstallationStarted()
+		{
+			var handler = SnapshotInstallationStarted;
+			if (handler != null) handler();
+		}
+
+		internal virtual void OnSnapshotInstallationEnded()
+		{
+			var handler = SnapshotInstallationEnded;
 			if (handler != null) handler();
 		}
 	}
@@ -590,6 +618,6 @@ namespace Rhino.Raft
 		Follower,
 		Leader,
 		Candidate,
-		ApplyingSnapshot
+		SnapshotInstallation
 	}
 }

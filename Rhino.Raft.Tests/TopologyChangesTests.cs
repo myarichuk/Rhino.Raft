@@ -20,7 +20,7 @@ namespace Rhino.Raft.Tests
 			const int nodeCount = 3;
 
 			var topologyChangeFinishedOnAllNodes = new CountdownEvent(nodeCount);
-			var nodes = CreateRaftNetwork(nodeCount).ToList();
+			var nodes = CreateNodeNetwork(nodeCount).ToList();
 			nodes.First().WaitForLeader();
 			var leader = nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			leader.Should().NotBeNull("if at this stage no leader was selected then something is really wrong");
@@ -31,6 +31,7 @@ namespace Rhino.Raft.Tests
 			leader.AddToClusterAsync("non-existing-node").Wait();
 
 			Assert.True(topologyChangeFinishedOnAllNodes.Wait(5000),"Topology changes should happen in less than 5 sec for 3 node network");
+			nodes.ForEach(n => n.CurrentTopology.AllVotingNodes.Should().Contain("non-existing-node"));
 		}
 
 
@@ -38,7 +39,7 @@ namespace Rhino.Raft.Tests
 		public void Adding_additional_node_that_goes_offline_and_then_online_should_still_work()
 		{
 			var transport = new InMemoryTransport();
-			var nodes = CreateRaftNetwork(3, transport).ToList();
+			var nodes = CreateNodeNetwork(3, transport).ToList();
 			nodes.First().WaitForLeader();
 
 			var leaderNode = nodes.First(x => x.State == RaftEngineState.Leader);
@@ -47,7 +48,7 @@ namespace Rhino.Raft.Tests
 			{
 				additionalNode.TopologyChangeStarted += () => transport.DisconnectNode("additional_node");
 				var waitForTopologyChangeInLeader =
-					leaderNode.WaitForEvent((n, handler) => n.TopologyChangeFinished += cmd => handler(),
+					leaderNode.WaitForEventTask((n, handler) => n.TopologyChangeFinished += cmd => handler(),
 					// ReSharper disable once EventUnsubscriptionViaAnonymousDelegate
 											(n, handler) => n.TopologyChangeFinished -= cmd => handler());
 
@@ -84,7 +85,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Cluster_cannot_have_two_concurrent_node_removals()
 		{
-			var raftNodes = CreateRaftNetwork(4, messageTimeout: 1500).ToList();
+			var raftNodes = CreateNodeNetwork(4, messageTimeout: 1500).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -107,7 +108,7 @@ namespace Rhino.Raft.Tests
 		{
 			var electionStartedEvent = new ManualResetEventSlim();
 
-			var raftNodes = CreateRaftNetwork(nodeCount).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -130,7 +131,7 @@ namespace Rhino.Raft.Tests
 		{
 			var electionStartedEvent = new ManualResetEventSlim();
 			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, inMemoryTransport).ToList();
 
 			using (var additionalNode = new RaftEngine(CreateNodeOptions("extra_node", inMemoryTransport, 1500)))
 			{
@@ -158,7 +159,7 @@ namespace Rhino.Raft.Tests
 		public void Non_leader_Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
 			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, inMemoryTransport).ToList();
 			var topologyChangeTracker = new CountdownEvent(nodeCount - 1);
 			raftNodes.First().WaitForLeader();
 
@@ -264,7 +265,7 @@ namespace Rhino.Raft.Tests
 		public void Cluster_cannot_have_two_concurrent_node_additions()
 		{
 			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateRaftNetwork(4, messageTimeout: 1500, transport: inMemoryTransport).ToList();
+			var raftNodes = CreateNodeNetwork(4, messageTimeout: 1500, transport: inMemoryTransport).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -290,7 +291,7 @@ namespace Rhino.Raft.Tests
 		public void Node_added_to_cluster_should_update_peers_list(int nodeCount)
 		{
 			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateRaftNetwork(nodeCount, inMemoryTransport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, inMemoryTransport).ToList();
 			var topologyChangeTracker = new CountdownEvent(nodeCount + 1);
 			raftNodes.First().WaitForLeader();
 			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", inMemoryTransport, raftNodes.First().MessageTimeout)))
@@ -321,7 +322,7 @@ namespace Rhino.Raft.Tests
 		{
 			var topologyChangeComittedEvent = new CountdownEvent(nodeCount - 1);
 
-			var raftNodes = CreateRaftNetwork(nodeCount).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(n => n.State == RaftEngineState.Leader);
@@ -353,7 +354,7 @@ namespace Rhino.Raft.Tests
 						.Build()
 						.ToList();
 
-			var raftNodes = CreateRaftNetwork(4, messageTimeout: 1500).ToList();
+			var raftNodes = CreateNodeNetwork(4, messageTimeout: 1500).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -414,7 +415,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		public void Follower_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
-			var raftNodes = CreateRaftNetwork(nodeCount).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(n => n.State == RaftEngineState.Leader);

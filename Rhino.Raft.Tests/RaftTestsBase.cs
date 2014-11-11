@@ -15,7 +15,7 @@ namespace Rhino.Raft.Tests
 		protected RaftEngine CreateNodeWithVirtualNetworkAndMakeItLeader(string leaderNodeName, ITransport transport, params string[] virtualPeers)
 		{
 			var leaderNode = new RaftEngine(CreateNodeOptions(leaderNodeName, transport, 1500, virtualPeers));
-			leaderNode.WaitForEvent(
+			leaderNode.WaitForEventTask(
 				(node, handler) => node.ElectionStarted += handler,
 				(node, handler) => node.ElectionStarted -= handler).Wait();
 
@@ -32,6 +32,31 @@ namespace Rhino.Raft.Tests
 			_nodes.Add(leaderNode);
 			return leaderNode;
 		}
+
+		protected RaftEngine CreateNodeWithVirtualNetwork(string nodeName, ITransport transport, params string[] virtualPeers)
+		{
+			var node = new RaftEngine(CreateNodeOptions(nodeName, transport, 1500, virtualPeers));
+
+			var waitForEventLoop = node.WaitForEventTask(
+				(n, handler) => n.EventsProcessed += handler,
+				(n, handler) => n.EventsProcessed -= handler);
+
+			transport.Send(nodeName, new AppendEntriesRequest
+			{
+				Entries = new LogEntry[0],
+				From = virtualPeers.First(),
+				LeaderCommit = 1,
+				LeaderId = virtualPeers.First(),
+				Term = 1,
+				PrevLogIndex = 0,
+				PrevLogTerm = 0
+			});
+
+			waitForEventLoop.Wait();
+			_nodes.Add(node);
+			return node;
+		}
+
 
 		protected static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
 		{
@@ -69,7 +94,7 @@ namespace Rhino.Raft.Tests
 			return !array1.Where((t, i) => t != array2[i]).Any();
 		}
 
-		protected IEnumerable<RaftEngine> CreateRaftNetwork(int nodeCount, ITransport transport = null, int messageTimeout = 1000,Func<RaftEngineOptions,RaftEngineOptions> optionChangerFunc = null)
+		protected IEnumerable<RaftEngine> CreateNodeNetwork(int nodeCount, ITransport transport = null, int messageTimeout = 1000,Func<RaftEngineOptions,RaftEngineOptions> optionChangerFunc = null)
 		{
 			transport = transport ?? new InMemoryTransport();
 			var nodeNames = new List<string>();

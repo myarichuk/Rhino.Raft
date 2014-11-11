@@ -77,7 +77,7 @@ namespace Rhino.Raft.Tests
 			var leaderEvent = new ManualResetEventSlim();
 
 			var sp = Stopwatch.StartNew();
-			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
 			{
 				options.Stopwatch = sp;
 				return options;
@@ -95,7 +95,7 @@ namespace Rhino.Raft.Tests
 		}
 
 
-
+		//TODO : test with tryouts, seems to fail - very rare, but still it is there
 		[Fact]
 		public void Network_partition_should_cause_message_resend()
 		{
@@ -179,8 +179,11 @@ namespace Rhino.Raft.Tests
 					commandResendingMessage.Entries.Select(x => leader.PersistentState.CommandSerializer.Deserialize(x.Data) as DictionaryCommand.Set)
 												   .ToList();
 
+				commands.Should().HaveCount(count => count > 0 && count < 3,"if there are too much or too little commands that means there is a bug"); //precaution
+
 				for (int i = 1; i < 3; i++)
 				{
+					
 					Assert.Equal(commands[i].Value, deserializedCommands[i].Value);
 					Assert.Equal(commands[i].AssignedIndex, deserializedCommands[i].AssignedIndex);
 				}
@@ -209,7 +212,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
 			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
@@ -271,7 +274,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
 
 			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -319,7 +322,7 @@ namespace Rhino.Raft.Tests
 			var followerEvent = new CountdownEvent(nodeCount);
 
 			List<RaftEngine> raftNodes = null;
-			raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 250).ToList();
+			raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 250).ToList();
 			raftNodes.ForEach(node => node.StateChanged += state =>
 			{
 				if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
@@ -550,7 +553,7 @@ namespace Rhino.Raft.Tests
 
 			node.State.Should().Be(RaftEngineState.Leader);
 
-			var waitForEventLoopToProcess = node.WaitForEvent((n, handler) => n.EventsProcessed += handler,
+			var waitForEventLoopToProcess = node.WaitForEventTask((n, handler) => n.EventsProcessed += handler,
 															  (n, handler) => n.EventsProcessed -= handler);
 
 			transport.Send("node", new RequestVoteRequest

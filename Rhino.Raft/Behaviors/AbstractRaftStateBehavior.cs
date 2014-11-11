@@ -19,6 +19,8 @@ namespace Rhino.Raft.Behaviors
 
 		public event Action<TopologyChangeCommand> TopologyChangeStarted;
 
+		public event Action InstallSnapshotRequestReceived;
+
 		public DateTime LastHeartbeatTime;
 
 		protected AbstractRaftStateBehavior()
@@ -32,6 +34,7 @@ namespace Rhino.Raft.Behaviors
 			RequestVoteResponse requestVoteResponse;
 			AppendEntriesResponse appendEntriesResponse;
 			AppendEntriesRequest appendEntriesRequest;
+			InstallSnapshotRequest installSnapshotRequest;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
 				Handle(envelope.Destination, requestVoteRequest);
@@ -41,13 +44,17 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, appendEntriesRequest);
 			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
 				Handle(envelope.Destination, requestVoteResponse);
+			else if (TryCastMessage(envelope.Message, out installSnapshotRequest))
+				Handle(envelope.Destination, installSnapshotRequest);
 
 			Engine.OnEventsProcessed();
 		}
 
 	    public virtual void Handle(string destination, InstallSnapshotRequest req)
 	    {
-            //nothing to do here  TODO: log this
+            //nothing to do here -> handling of this is specific to different behaviors
+			Engine.DebugLog.Write("Received InstallSnapshotRequest from {0}", req.From);
+			OnInstallSnapshotRequestReceived();
 	    }
 
 		public virtual void Handle(string destination, RequestVoteResponse resp)
@@ -337,5 +344,10 @@ namespace Rhino.Raft.Behaviors
 			if (handler != null) handler(logEntries);
 		}
 
+		protected virtual void OnInstallSnapshotRequestReceived()
+		{
+			var handler = InstallSnapshotRequestReceived;
+			if (handler != null) handler();
+		}
 	}
 }

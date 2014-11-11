@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Behaviors\AbstractRaftStateBehavior.cs" />
+    <Compile Include="Behaviors\SnapshotInstallationStateBehavior.cs" />
     <Compile Include="Behaviors\CandidateStateBehavior.cs" />
     <Compile Include="Behaviors\FollowerStateBehavior.cs" />
     <Compile Include="Behaviors\LeaderStateBehavior.cs" />

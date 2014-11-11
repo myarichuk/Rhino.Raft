@@ -17,7 +17,7 @@ namespace Rhino.Raft.Tests
 		public void When_command_committed_CompletionTaskSource_is_notified()
 		{
 			const int CommandCount = 5;
-			var raftNodes = CreateRaftNetwork(3).ToList();
+			var raftNodes = CreateNodeNetwork(3).ToList();
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -51,7 +51,7 @@ namespace Rhino.Raft.Tests
 		{
 			const int CommandCount = 5;
 			var dataTransport = new InMemoryTransport();
-			var raftNodes = CreateRaftNetwork(3, dataTransport).ToList();
+			var raftNodes = CreateNodeNetwork(3, dataTransport).ToList();
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -237,7 +237,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 2000).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 2000).ToList();
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
 			raftNodes.ForEach(node =>
 			{
@@ -283,7 +283,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateRaftNetwork(nodeCount, messageTimeout: 10000).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 10000).ToList();
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
 			raftNodes.ForEach(node =>
 			{
