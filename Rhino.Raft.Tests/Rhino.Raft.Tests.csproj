@@ -78,6 +78,9 @@
     <Compile Include="DictionaryStateMachine.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftTests.cs" />
+    <Compile Include="RaftTestsBase.cs" />
+    <Compile Include="SnapshotTests.cs" />
+    <Compile Include="TopologyChangesTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

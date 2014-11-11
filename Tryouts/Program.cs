@@ -10,7 +10,7 @@ namespace Tryouts
 			{
 				Console.Clear();
 				Console.WriteLine(i);
-				using (var test = new RaftTests())
+				using (var test = new TopologyChangesTests())
 				{
 					test.Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change();
 				}
