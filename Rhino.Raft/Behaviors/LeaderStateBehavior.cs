@@ -23,7 +23,7 @@ namespace Rhino.Raft.Behaviors
 	{
 		private readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>();
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>();
-		private readonly ConcurrentDictionary<string, Task> _snapshotSending = new ConcurrentDictionary<string, Task>();
+		private readonly ConcurrentDictionary<string, Task> _snapshotsPendingInstallation = new ConcurrentDictionary<string, Task>();
 
 		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
 		private readonly Task _heartbeatTask;
@@ -58,7 +58,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				Engine.DebugLog.Write("Starting sending Leader heartbeats");
 				SendEntriesToAllPeers();
-				
+
 				OnHeartbeatSent();
 				Thread.Sleep(Engine.MessageTimeout / 6);
 			}
@@ -67,16 +67,16 @@ namespace Rhino.Raft.Behaviors
 		internal void SendEntriesToAllPeers()
 		{
 			var changingTopology = Engine.ChangingTopology;
-			var peers = (changingTopology == null) ? 
+			var peers = (changingTopology == null) ?
 				Engine.AllVotingNodes :
 				//if node is removed --> then we will need to send TopologyChangedCommand that will remove it from cluster and stop its messaging loop
 				//if node is added --> then we will need to send TopologyChangedCommand that will effectively add it to cluster
-				Engine.AllVotingNodes.Union(changingTopology.AllVotingNodes,StringComparer.OrdinalIgnoreCase);
+				Engine.AllVotingNodes.Union(changingTopology.AllVotingNodes, StringComparer.OrdinalIgnoreCase);
 			foreach (var peer in peers)
 			{
-				if(peer.Equals(Engine.Name,StringComparison.OrdinalIgnoreCase))
+				if (peer.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
 					continue;
-				
+
 				_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
 				SendEntriesToPeer(peer);
 			}
@@ -86,31 +86,34 @@ namespace Rhino.Raft.Behaviors
 		{
 			LogEntry prevLogEntry;
 			LogEntry[] entries;
-			try
+
+			var nextIndex = _nextIndexes.GetOrAdd(peer, 0); //new peer's index starts at 0
+
+			var snapshot = Engine.PersistentState.GetLastSnapshot();
+
+			if (snapshot != null &&
+				//no need for <= here, since there is no need for a snapshot if nextIndex is equal to the snapshot's one
+				nextIndex < snapshot.Index &&
+				_snapshotsPendingInstallation.ContainsKey(peer) == false)
 			{
-				var nextIndex = _nextIndexes.GetOrAdd(peer,0); //new peer's index starts at 0
-
-				var snapshot = Engine.PersistentState.GetLastSnapshot();
-
-				if (snapshot != null && 
-					nextIndex <= snapshot.Index &&
-					_snapshotSending.ContainsKey(peer) == false)
+				// problem, we can't just send the log entries, we have to send
+				// the full snapshot to this destination, this can take a very long 
+				// time for large data sets. Because of that, we are doing that in a 
+				// background thread, and while we are doing that, we aren't going to be
+				// doing any communication with this peer. Note that while the peer
+				// is accepting the snapshot, it isn't counting the heartbeat timer, or 
+				// can move to become a candidate.
+				// During normal operations, we will never be using this, since we leave a buffer
+				// in place (by default roughly 4K entries) to make sure that small disconnects will
+				// not cause us to be forced to send a snapshot over the wire.
+				var task = new Task(() =>
 				{
-					// problem, we can't just send the log entries, we have to send
-					// the full snapshot to this destination, this can take a very long 
-					// time for large data sets. Because of that, we are doing that in a 
-					// background thread, and while we are doing that, we aren't going to be
-					// doing any communication with this peer. Note that while the peer
-					// is accepting the snapshot, it isn't counting the heartbeat timer, or 
-					// can move to become a candidate.
-					// During normal operations, we will never be using this, since we leave a buffer
-					// in place (by default roughly 4K entries) to make sure that small disconnects will
-					// not cause us to be forced to send a snapshot over the wire.
-					var task = new Task(() =>
+					try
 					{
+						var sp = Stopwatch.StartNew();
 						using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
 						{
-							Engine.DebugLog.Write("Sending snapshot to {0} - term {1}, index {2}", peer, 
+							Engine.DebugLog.Write("Streaming snapshot to {0} - term {1}, index {2}", peer,
 								snapshotWriter.Term,
 								snapshotWriter.Index);
 
@@ -119,16 +122,41 @@ namespace Rhino.Raft.Behaviors
 								Term = Engine.PersistentState.CurrentTerm,
 								LastIncludedIndex = snapshotWriter.Index,
 								LastIncludedTerm = snapshotWriter.Term,
-                                From = Engine.Name
+								From = Engine.Name
 							}, snapshotWriter.WriteSnapshot);
 						}
+
+						Engine.DebugLog.Write("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshot.Index, snapshot.Term, sp.Elapsed);
+
+					}
+					catch (Exception e)
+					{
+						Engine.DebugLog.Write("Failed(!) to send snapshot to {0} from {1}/{2} because:\r\n{1}", peer, snapshot.Index, snapshot.Term, e);
+					}
+				}).ContinueWith(_ => _snapshotsPendingInstallation.TryRemove(peer, out _));
+				_snapshotsPendingInstallation.TryAdd(peer, task);
+
+				//we are generating the task that will start the snapshot streaming, 
+				//and then ask the potential target for the snapshot - can you accept it?
+
+				using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
+				{
+					Engine.Transport.Send(peer, new CanInstallSnapshotRequest
+					{
+						From = Engine.Name,
+						Index = snapshotWriter.Index,
+						Term = snapshotWriter.Term,
+						LeaderId = Engine.Name
 					});
-					if(_snapshotSending.TryAdd(peer, task))
-						task.Start();
-
-					return;
 				}
+				return;
+			}
 
+			if (_snapshotsPendingInstallation.ContainsKey(peer))
+				return;
+
+			try
+			{
 				entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
 					.Take(Engine.MaxEntriesPerRequest)
 					.ToArray();
@@ -139,11 +167,11 @@ namespace Rhino.Raft.Behaviors
 			}
 			catch (Exception e)
 			{
-				Engine.DebugLog.Write("Error while fetching entries from persistent state. Reason : {0}",e);
+				Engine.DebugLog.Write("Error while fetching entries from persistent state. Reason : {0}", e);
 				throw;
 			}
 
-			Engine.DebugLog.Write("SendEntriesToPeer({0}) --> prevLogEntry.Index == {1}",peer,(prevLogEntry == null) ? "null" : prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
+			Engine.DebugLog.Write("SendEntriesToPeer({0}) --> prevLogEntry.Index == {1}", peer, (prevLogEntry == null) ? "null" : prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
 			prevLogEntry = prevLogEntry ?? new LogEntry();
 
 			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}. Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)));
@@ -174,8 +202,49 @@ namespace Rhino.Raft.Behaviors
 			// we don't have to do anything here
 		}
 
+		public override void Handle(string destination, CanInstallSnapshotRequest req)
+		{
+			if (req.Term <= Engine.PersistentState.CurrentTerm)
+			{
+				Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
+				{
+					From = Engine.Name,
+					IsCurrentlyInstalling = true,
+					Message =
+						string.Format(
+							"I am a leader and not supposed to be accepting snapshot installations from a another leader with lower term (term received = {0})",
+							req.Term),
+					Success = false
+				});
+			}
+			else
+			{
+				//this might happen during long network partition
+				Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
+				{
+					From = Engine.Name,
+					IsCurrentlyInstalling = true,
+					Message =
+						string.Format(
+							"Received CanInstallSnapshotResponse from a leader with higher term, stepping down (term received = {0}, current term = {1})",
+							req.Term,Engine.PersistentState.CurrentTerm),
+					Success = true
+				});
+				
+				Engine.SetState(RaftEngineState.SnapshotInstallation);
+			}
+		}
+
+		public override void Handle(string destination, CanInstallSnapshotResponse resp)
+		{
+			Engine.DebugLog.Write("Received CanInstallSnapshotResponse from {0}, starting snapshot streaming task", resp.From);
+			Task snapshotInstallationTask;
+			if (_snapshotsPendingInstallation.TryGetValue(resp.From, out snapshotInstallationTask))
+				snapshotInstallationTask.Start();
+		}
+
 		public override void Handle(string destination, AppendEntriesResponse resp)
-		{			
+		{
 			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.Source);
 
 			// there is a new leader in town, time to step down
@@ -184,11 +253,14 @@ namespace Rhino.Raft.Behaviors
 				Engine.UpdateCurrentTerm(resp.CurrentTerm, resp.LeaderId);
 				return;
 			}
-			
+
 			if (resp.Success == false)
 			{
 				// go back in the log, this peer isn't matching us at this location				
-				_nextIndexes[resp.Source] -= 1;
+				// precaution -> if the index is at 0 -> obviously nowere to go back
+				if (_nextIndexes[resp.Source] >= 1)
+					_nextIndexes[resp.Source] -= 1;
+
 				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",
 					_nextIndexes[resp.Source], resp.Source);
 				return;
@@ -198,7 +270,7 @@ namespace Rhino.Raft.Behaviors
 			_matchIndexes[resp.Source] = resp.LastLogIndex;
 			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
 			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
-			
+
 			var maxIndexOnCurrentQuorom = GetMaxIndexOnQuorom();
 			if (maxIndexOnCurrentQuorom == -1)
 			{
@@ -282,7 +354,9 @@ namespace Rhino.Raft.Behaviors
 
 		public void AppendCommand(Command command)
 		{
-			_matchIndexes[Engine.Name] = Engine.PersistentState.AppendToLeaderLog(command);
+			var index = Engine.PersistentState.AppendToLeaderLog(command);
+			_matchIndexes[Engine.Name] = index;
+			_nextIndexes[Engine.Name] = index + 1;
 			if (command.Completion != null)
 				_pendingCommands.Enqueue(command);
 		}
@@ -292,7 +366,7 @@ namespace Rhino.Raft.Behaviors
 			_disposedCancellationTokenSource.Cancel();
 			try
 			{
-				_heartbeatTask.Wait(Timeout*2);
+				_heartbeatTask.Wait(Timeout * 2);
 			}
 			catch (OperationCanceledException)
 			{

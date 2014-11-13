@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
@@ -42,6 +43,7 @@ namespace Rhino.Raft.Tests
 				var streamWriter = new StreamWriter(stream);
 				_parent._serializer.Serialize(streamWriter, _snapshot);
 				streamWriter.Flush();
+				stream.Position = 0;
 			}
 		}
 
@@ -77,7 +79,12 @@ namespace Rhino.Raft.Tests
 
 		public void ApplySnapshot(long term, long index, Stream stream)
 		{
-			Data = _serializer.Deserialize<Dictionary<string, int>>(new JsonTextReader(new StreamReader(stream)));
+			if(stream.CanSeek)
+				stream.Position = 0;
+			
+			using (var streamReader = new StreamReader(stream))
+				Data = _serializer.Deserialize<Dictionary<string, int>>(new JsonTextReader(streamReader));
+
 			_snapshot = new SnapshotWriter(this, new Dictionary<string, int>(Data))
 			{
 				Term = term,

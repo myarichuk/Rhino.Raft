@@ -48,9 +48,7 @@ namespace Rhino.Raft.Tests
 			{
 				additionalNode.TopologyChangeStarted += () => transport.DisconnectNode("additional_node");
 				var waitForTopologyChangeInLeader =
-					leaderNode.WaitForEventTask((n, handler) => n.TopologyChangeFinished += cmd => handler(),
-					// ReSharper disable once EventUnsubscriptionViaAnonymousDelegate
-											(n, handler) => n.TopologyChangeFinished -= cmd => handler());
+					leaderNode.WaitForEventTask((n, handler) => n.TopologyChangeFinished += cmd => handler());
 
 				leaderNode.AddToClusterAsync(additionalNode.Name).Wait();
 

@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -377,7 +378,7 @@ namespace Rhino.Raft
 
 		public void ApplyCommits(long from, long to)
 		{
-			Debug.Assert(to >= from);
+			Debug.Assert(to >= from, String.Format("assert to ({0}) >= from ({1})", to.ToString(CultureInfo.InvariantCulture), from.ToString(CultureInfo.InvariantCulture)));
 			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
 				try
@@ -603,7 +604,7 @@ namespace Rhino.Raft
 			if (handler != null) handler();
 		}
 
-		internal virtual void OnSnapshotInstallationEnded()
+		internal virtual void OnSnapshotInstallationEnded(long snapshotTerm)
 		{
 			var handler = SnapshotInstallationEnded;
 			if (handler != null) handler();

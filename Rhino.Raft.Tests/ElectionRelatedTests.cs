@@ -553,8 +553,7 @@ namespace Rhino.Raft.Tests
 
 			node.State.Should().Be(RaftEngineState.Leader);
 
-			var waitForEventLoopToProcess = node.WaitForEventTask((n, handler) => n.EventsProcessed += handler,
-															  (n, handler) => n.EventsProcessed -= handler);
+			var waitForEventLoopToProcess = node.WaitForEventTask((n, handler) => n.EventsProcessed += handler);
 
 			transport.Send("node", new RequestVoteRequest
 			{

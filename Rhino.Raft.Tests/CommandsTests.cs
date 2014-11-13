@@ -13,6 +13,7 @@ namespace Rhino.Raft.Tests
 {
 	public class CommandsTests : RaftTestsBase
 	{
+		//TODO: check the stability of this test in tryouts --> I've seen several occasional failures of this test -> usually it passes
 		[Fact]
 		public void When_command_committed_CompletionTaskSource_is_notified()
 		{

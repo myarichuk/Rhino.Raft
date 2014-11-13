@@ -356,7 +356,7 @@ namespace Rhino.Raft.Storage
 
 		public IEnumerable<LogEntry> LogEntriesAfter(long index, long stopAfter = long.MaxValue)
 		{
-			Debug.Assert(index >= 0);
+			Debug.Assert(index >= 0, "assert index >= 0, index actually is " + index);
 
 			if (_isDisposed)
 				yield return null;

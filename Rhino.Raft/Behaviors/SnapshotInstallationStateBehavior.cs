@@ -1,4 +1,6 @@
 ﻿using System;
+using System.IO;
+using System.Threading;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -18,11 +20,53 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.SnapshotInstallation; }
 		}
 
-		public override void Handle(string destination, InstallSnapshotRequest req)
+		public override void Handle(string destination, CanInstallSnapshotRequest req)
 		{
-			Engine.OnSnapshotInstallationStarted();
-			base.Handle(destination, req);
-			Engine.OnSnapshotInstallationEnded();
+			Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
+			{
+				From = Engine.Name,
+				IsCurrentlyInstalling = true,
+				Message = "The node is in the process of installing a snapshot",
+				Success = false
+			});			
+		}
+
+		public override void Handle(string destination, InstallSnapshotRequest req, Stream stream)
+		{
+			using (stream)
+			{
+				var lastLogEntry = Engine.PersistentState.LastLogEntry();
+				if (req.Term < lastLogEntry.Term)
+				{
+					Engine.Transport.Send(req.From, new InstallSnapshotResponse
+					{
+						From = Engine.Name,
+						CurrentTerm = lastLogEntry.Term,
+						LastLogIndex = lastLogEntry.Index,
+						Message = "Term " + req.Term + " is older than last term in the log " + lastLogEntry.Term + " so the snapshot was rejected",
+						Success = false
+					});
+					return;
+				}
+
+				Engine.DebugLog.Write("Received InstallSnapshotRequest from {0} until term {1} / {2}", req.From, req.LastIncludedTerm, req.LastIncludedIndex);
+
+				Engine.OnSnapshotInstallationStarted();
+				OnInstallSnapshotRequestReceived();
+
+				Engine.StateMachine.ApplySnapshot(req.LastIncludedTerm, req.LastIncludedIndex, stream);
+
+				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+				Engine.OnSnapshotInstallationEnded(req.Term);
+				
+				Engine.Transport.Send(req.From, new InstallSnapshotResponse
+				{
+					From = Engine.Name,
+					CurrentTerm = lastLogEntry.Term,
+					LastLogIndex = lastLogEntry.Index,
+					Success = true
+				});
+			}
 		}
 
 		public override void Handle(string destination, AppendEntriesRequest req)
@@ -40,7 +84,6 @@ namespace Rhino.Raft.Behaviors
 					Success = false
 				});
 		}
-
 
 
 		public override void HandleTimeout()

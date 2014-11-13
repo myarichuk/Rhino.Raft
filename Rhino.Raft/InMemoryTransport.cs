@@ -13,6 +13,8 @@ namespace Rhino.Raft
 	{
 		private readonly ConcurrentDictionary<string,BlockingCollection<MessageEnvelope>> _messageQueue = new ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>>();
 
+		private readonly ConcurrentDictionary<string,BlockingCollection<Stream>> _streamsQueue = new ConcurrentDictionary<string, BlockingCollection<Stream>>();
+
 		private readonly HashSet<string> _disconnectedNodes = new HashSet<string>();
 
 		private readonly HashSet<string> _disconnectedNodesFromSending = new HashSet<string>();
@@ -22,7 +24,7 @@ namespace Rhino.Raft
 			get { return _messageQueue; }
 		}
 
-		private void AddToQueue<T>(string dest, T message)
+		private void AddToQueue<T>(string dest, T message, Stream stream = null)
 		{
 			//if destination is considered disconnected --> drop the message so it never arrives
 			if(_disconnectedNodes.Contains(dest))
@@ -31,7 +33,8 @@ namespace Rhino.Raft
 			var newMessage = new MessageEnvelope
 			{
 				Destination = dest,
-				Message = message
+				Message = message,
+				Stream = stream
 			};
 
 			_messageQueue.AddOrUpdate(dest,new BlockingCollection<MessageEnvelope> { newMessage }, 
@@ -75,12 +78,39 @@ namespace Rhino.Raft
             return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 		}
 
-	    public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> stream)
+	    public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
 	    {
 			if (_disconnectedNodesFromSending.Contains(req.From))
 				return;
-            AddToQueue(dest, req);
-        }
+			
+			var stream = new MemoryStream();
+		    streamWriter(stream);
+			stream.Position = 0;
+
+			AddToQueue(dest, req, stream);
+
+	    }
+
+		public void Send(string dest, CanInstallSnapshotRequest req)
+		{
+			if (_disconnectedNodes.Contains(req.LeaderId) || _disconnectedNodesFromSending.Contains(req.From))
+				return;
+			AddToQueue(dest, req);
+		}
+
+		public void Send(string dest, CanInstallSnapshotResponse resp)
+		{
+			if (_disconnectedNodesFromSending.Contains(resp.From))
+				return;
+			AddToQueue(dest, resp);
+		}
+
+		public void Send(string dest, InstallSnapshotResponse resp)
+		{
+			if (_disconnectedNodesFromSending.Contains(resp.From))
+				return;
+			AddToQueue(dest, resp);
+		}
 
 	    public void Send(string dest, AppendEntriesRequest req)
 		{

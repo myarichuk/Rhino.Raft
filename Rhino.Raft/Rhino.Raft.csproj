@@ -54,6 +54,8 @@
     <Compile Include="Commands\NopCommand.cs" />
     <Compile Include="Commands\TopologyChangeCommand.cs" />
     <Compile Include="Default.cs" />
+    <Compile Include="Messages\CanInstallSnapshotRequest.cs" />
+    <Compile Include="Messages\CanInstallSnapshotResponse.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
     <Compile Include="InMemoryTransport.cs" />
     <Compile Include="Interfaces\IRaftStateMachine.cs" />

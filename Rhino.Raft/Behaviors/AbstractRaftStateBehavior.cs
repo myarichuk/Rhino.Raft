@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Linq;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
@@ -33,6 +34,7 @@ namespace Rhino.Raft.Behaviors
 			AppendEntriesResponse appendEntriesResponse;
 			AppendEntriesRequest appendEntriesRequest;
 			InstallSnapshotRequest installSnapshotRequest;
+			CanInstallSnapshotRequest canInstallSnapshotRequest;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
 				Handle(envelope.Destination, requestVoteRequest);
@@ -42,17 +44,17 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, appendEntriesRequest);
 			else if (TryCastMessage(envelope.Message, out requestVoteResponse))
 				Handle(envelope.Destination, requestVoteResponse);
+			else if (TryCastMessage(envelope.Message, out canInstallSnapshotRequest))
+				Handle(envelope.Destination, canInstallSnapshotRequest);
 			else if (TryCastMessage(envelope.Message, out installSnapshotRequest))
-				Handle(envelope.Destination, installSnapshotRequest);
+				Handle(envelope.Destination, installSnapshotRequest, envelope.Stream);
 
 			Engine.OnEventsProcessed();
 		}
 
-	    public virtual void Handle(string destination, InstallSnapshotRequest req)
+		public virtual void Handle(string destination, InstallSnapshotRequest req, Stream stream)
 	    {
-            //nothing to do here -> handling of this is specific to different behaviors
-			Engine.DebugLog.Write("Received InstallSnapshotRequest from {0}", req.From);
-			OnInstallSnapshotRequestReceived();
+			//not relevant here, ignoring
 	    }
 
 		public virtual void Handle(string destination, RequestVoteResponse resp)
@@ -182,6 +184,42 @@ namespace Rhino.Raft.Behaviors
 
 			var timeSinceLastHeartbeat = (int) timeSpanBetweenLastHeartbeatAndCurrentRequest.TotalMilliseconds;
 			return timeSinceLastHeartbeat;
+		}
+
+		public virtual void Handle(string destination, CanInstallSnapshotResponse resp)
+		{
+			//irrelevant here, so doing nothing (used only in LeaderStateBehavior)
+			Engine.DebugLog.Write("Received CanInstallSnapshotResponse from {0}, but nothing to do with it. Ignoring..", resp.From);
+		}
+
+		public virtual void Handle(string destination, CanInstallSnapshotRequest req)
+		{
+			var lastLogEntry = Engine.PersistentState.LastLogEntry();
+			if(lastLogEntry == null)
+				throw new ObjectDisposedException("The node is disposed, error receiving CanInstallSnapshotRequest message");
+
+			var index = lastLogEntry.Index;
+			if (req.Term < Engine.PersistentState.CurrentTerm && req.Index < index)
+			{
+				Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
+				{
+					From = Engine.Name,
+					IsCurrentlyInstalling = false,
+					Message = String.Format("Term or Index do not match the ones on this node. Cannot install snapshot. (CurrentTerm = {0}, req.Term = {1}, LastLogEntry index = {2}, req.Index = {3}",
+						Engine.PersistentState.CurrentTerm,req.Term, index,req.Index),
+					Success = false
+				});
+			}
+
+			Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
+			{
+				From = Engine.Name,
+				IsCurrentlyInstalling = false,
+				Message = "Everything ok, go ahead, install the snapshot!",
+				Success = true
+			});
+
+			Engine.SetState(RaftEngineState.SnapshotInstallation);
 		}
 
 		public virtual void Handle(string destination, AppendEntriesResponse resp)

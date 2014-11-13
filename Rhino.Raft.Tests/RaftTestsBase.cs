@@ -16,8 +16,7 @@ namespace Rhino.Raft.Tests
 		{
 			var leaderNode = new RaftEngine(CreateNodeOptions(leaderNodeName, transport, 1500, virtualPeers));
 			leaderNode.WaitForEventTask(
-				(node, handler) => node.ElectionStarted += handler,
-				(node, handler) => node.ElectionStarted -= handler).Wait();
+				(node, handler) => node.ElectionStarted += handler).Wait();
 
 			foreach(var peer in virtualPeers)
 				transport.Send(leaderNodeName,new RequestVoteResponse
@@ -38,8 +37,7 @@ namespace Rhino.Raft.Tests
 			var node = new RaftEngine(CreateNodeOptions(nodeName, transport, 1500, virtualPeers));
 
 			var waitForEventLoop = node.WaitForEventTask(
-				(n, handler) => n.EventsProcessed += handler,
-				(n, handler) => n.EventsProcessed -= handler);
+				(n, handler) => n.EventsProcessed += handler);
 
 			transport.Send(nodeName, new AppendEntriesRequest
 			{
