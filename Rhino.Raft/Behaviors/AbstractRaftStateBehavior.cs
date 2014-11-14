@@ -177,14 +177,11 @@ namespace Rhino.Raft.Behaviors
 		public virtual void Handle(string destination, CanInstallSnapshotResponse resp)
 		{
 			//irrelevant here, so doing nothing (used only in LeaderStateBehavior)
-			Engine.DebugLog.Write("Received CanInstallSnapshotResponse from {0}, but nothing to do with it. Ignoring..", resp.From);
 		}
 
 		public virtual void Handle(string destination, CanInstallSnapshotRequest req)
 		{
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-			if(lastLogEntry == null)
-				throw new ObjectDisposedException("The node is disposed, error receiving CanInstallSnapshotRequest message");
 
 			var index = lastLogEntry.Index;
 			if (req.Term < Engine.PersistentState.CurrentTerm && req.Index < index)

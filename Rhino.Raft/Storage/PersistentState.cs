@@ -201,7 +201,7 @@ namespace Rhino.Raft.Storage
 		public LogEntry LastLogEntry()
 		{
 			if (_isDisposed)
-				return null;
+				throw new ObjectDisposedException("PersistentState");
 
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
