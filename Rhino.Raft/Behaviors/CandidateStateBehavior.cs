@@ -41,6 +41,7 @@ namespace Rhino.Raft.Behaviors
 			Engine.DebugLog.Write("Timeout ({1:#,#;;0} ms) for elections in term {0}", Engine.PersistentState.CurrentTerm,
 				  Timeout);
 
+			LastHeartbeatTime = DateTime.UtcNow;
 			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout); 
 			_votesForMyLeadership.Clear();
 			Engine.AnnounceCandidacy();

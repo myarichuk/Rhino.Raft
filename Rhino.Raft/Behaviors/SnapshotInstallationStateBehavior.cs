@@ -66,6 +66,8 @@ namespace Rhino.Raft.Behaviors
 					LastLogIndex = lastLogEntry.Index,
 					Success = true
 				});
+
+				Engine.SetState(RaftEngineState.Follower);// once we are done with the snapshot, we are back to follower mode
 			}
 		}
 
@@ -89,6 +91,7 @@ namespace Rhino.Raft.Behaviors
 		public override void HandleTimeout()
 		{
 			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout);
+			LastHeartbeatTime = DateTime.UtcNow;// avoid busy loop while waiting for the snapshot
 			Engine.DebugLog.Write("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished
 		}

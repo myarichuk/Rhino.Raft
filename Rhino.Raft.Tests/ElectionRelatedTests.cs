@@ -85,7 +85,9 @@ namespace Rhino.Raft.Tests
 			var transport = new InMemoryTransport();
 
 			transport.DisconnectNode("node1");
+			transport.DisconnectNodeSending("node1");
 			transport.DisconnectNode("node2");
+			transport.DisconnectNodeSending("node2");
 			var raftNodes = CreateNodeNetwork(3, messageTimeout: 300, transport: transport).ToList();
 			var countdown = new CountdownEvent(2);
 			raftNodes[0].ElectionStarted += () => countdown.Signal();
@@ -93,7 +95,9 @@ namespace Rhino.Raft.Tests
 			Assert.True(countdown.Wait(1500));
 
 			transport.ReconnectNode("node1");
+			transport.ReconnectNodeSending("node2");
 			transport.ReconnectNode("node2");
+			transport.ReconnectNodeSending("node2");
 
 			raftNodes.First().WaitForLeader();
 		}
