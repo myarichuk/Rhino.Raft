@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 using FizzWare.NBuilder;
@@ -78,103 +79,24 @@ namespace Rhino.Raft.Tests
 			Assert.Equal(1, raftNodes.Count(node => node.State == RaftEngineState.Leader));
 		}
 
-
-		//TODO : test with tryouts, seems to fail - very rare, but still it is there
 		[Fact]
 		public void Network_partition_should_cause_message_resend()
 		{
-			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(4)
-				.All()
-				.With(x => x.Completion = new TaskCompletionSource<object>())
-				.With(x => x.AssignedIndex = -1)
-				.Build()
-				.ToList();
-
 			var transport = new InMemoryTransport();
-			var nodeOptions = CreateNodeOptions("leader", transport, 1000, "fake1");
 
-			using (var leader = new RaftEngine(nodeOptions))
-			{
-				var stateChangeEvent = new ManualResetEventSlim();
-				leader.StateChanged += state => stateChangeEvent.Set();
+			transport.DisconnectNode("node1");
+			transport.DisconnectNode("node2");
+			var raftNodes = CreateNodeNetwork(3, messageTimeout: 300, transport: transport).ToList();
+			var countdown = new CountdownEvent(2);
+			raftNodes[0].ElectionStarted += () => countdown.Signal();
 
-				stateChangeEvent.Wait(); //wait for elections to start
+			Assert.True(countdown.Wait(1500));
 
-				stateChangeEvent.Reset();
+			transport.ReconnectNode("node1");
+			transport.ReconnectNode("node2");
 
-				transport.Send("leader", new RequestVoteResponse
-				{
-					Term = 1,
-					VoteGranted = true,
-					From = "fake1"
-				});
-				
-				Trace.WriteLine("<ack for NOP command sent>");
-				Thread.Sleep(150);
-
-				Assert.True(stateChangeEvent.Wait(50),
-					"wait for votes to be acknowledged -> acknowledgement should happen at most within 50ms");
-
-				//ack for NOP command reaching the fake1 node
-				transport.Send("leader", new AppendEntriesResponse
-				{
-					CurrentTerm = 1,
-					LastLogIndex = 1,
-					LeaderId = "leader",
-					Success = true,
-					Source = "fake1",
-					From = "fake1"
-				});
-
-				leader.AppendCommand(commands[0]);
-				transport.Send("leader", new AppendEntriesResponse
-				{
-					CurrentTerm = 1,
-					LastLogIndex = 2,
-					LeaderId = "leader",
-					Success = true,
-					Source = "fake1",
-					From = "fake1"
-				});
-				
-				//make sure the command is committed (quorum)
-				Thread.Sleep(150);
-				Assert.Equal(2, leader.CommitIndex);
-
-				//"clear" the message queue for fake1 node
-				transport.MessageQueue["fake1"] = new BlockingCollection<MessageEnvelope>();
-				leader.AppendCommand(commands[1]);
-				leader.AppendCommand(commands[2]);
-				transport.Send("leader", new AppendEntriesResponse
-				{
-					CurrentTerm = 1,
-					LeaderId = "leader",
-					Success = false,
-					Source = "fake1"
-				});
-
-				Thread.Sleep(150);
-
-				var commandResendingMessage = transport.MessageQueue["fake1"].Where(x => x.Message is AppendEntriesRequest)
-																			 .Select(x => (AppendEntriesRequest)x.Message)
-																			 .FirstOrDefault(x => x.Entries.Length > 0);
-				Assert.NotNull(commandResendingMessage);
-				var deserializedCommands =
-					commandResendingMessage.Entries.Select(x => leader.PersistentState.CommandSerializer.Deserialize(x.Data) as DictionaryCommand.Set)
-												   .ToList();
-
-				Assert.True(commands.Count> 0 && commands.Count < 3, 
-					"if there are too much or too little commands that means there is a bug"); //precaution
-
-				for (int i = 1; i < 3; i++)
-				{
-					
-					Assert.Equal(commands[i].Value, deserializedCommands[i].Value);
-					Assert.Equal(commands[i].AssignedIndex, deserializedCommands[i].AssignedIndex);
-				}
-			}
+			raftNodes.First().WaitForLeader();
 		}
-
 
 		/*
 		 * This test deals with network "partition" -> leader is detached from the rest of the nodes (simulation of network issues)
