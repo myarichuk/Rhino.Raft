@@ -10,7 +10,6 @@ namespace Rhino.Raft.Behaviors
 	public abstract class AbstractRaftStateBehavior : IDisposable
 	{
 		protected readonly RaftEngine Engine;
-        public int TimeoutReduction { get; set; }
 		public int Timeout { get; set; }
 		public abstract RaftEngineState State { get; }
 
@@ -80,10 +79,8 @@ namespace Rhino.Raft.Behaviors
 		{
 			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
 			// Raft paper section 6 (cluster membership changes)
-			var timeSinceLastHeartbeat = GetMillisecondsSinceLastHeartbeat();
+			var timeSinceLastHeartbeat = (int) (DateTime.UtcNow - LastHeartbeatTime).TotalMilliseconds;
 			
-			TimeoutReduction = timeSinceLastHeartbeat;
-
 		    if ((timeSinceLastHeartbeat < (Timeout/2)) && Engine.CurrentLeader != null)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
@@ -162,9 +159,9 @@ namespace Rhino.Raft.Behaviors
 				});
 				return;
 			}
-			// we are voting for this guy, so we can reset the timeout reduction and give it a full timeout
-			// span to do its work
-			TimeoutReduction = 0; 
+			// we are voting for this guy, so we can give it a full election timeout, by treating this
+			// as a heart beat
+			LastHeartbeatTime = DateTime.UtcNow; 
 			Engine.DebugLog.Write("Recording vote for candidate = {0}",req.CandidateId);
 			Engine.PersistentState.RecordVoteFor(req.CandidateId);
 			
@@ -175,15 +172,6 @@ namespace Rhino.Raft.Behaviors
 				Message = "Vote granted",
 				From = Engine.Name
 			});
-		}
-
-		private int GetMillisecondsSinceLastHeartbeat()
-		{
-			var currentRequestTime = DateTime.UtcNow;
-			var timeSpanBetweenLastHeartbeatAndCurrentRequest = (currentRequestTime - LastHeartbeatTime);
-
-			var timeSinceLastHeartbeat = (int) timeSpanBetweenLastHeartbeatAndCurrentRequest.TotalMilliseconds;
-			return timeSinceLastHeartbeat;
 		}
 
 		public virtual void Handle(string destination, CanInstallSnapshotResponse resp)

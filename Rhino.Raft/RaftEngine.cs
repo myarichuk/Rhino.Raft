@@ -202,7 +202,8 @@ namespace Rhino.Raft
 				{
 					MessageEnvelope message;
 					var behavior = _stateBehavior;
-					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout - behavior.TimeoutReduction, _eventLoopCancellationTokenSource.Token, out message);
+					var lastHeartBeat = (int)(DateTime.UtcNow - behavior.LastHeartbeatTime).TotalMilliseconds;
+					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout - lastHeartBeat, _eventLoopCancellationTokenSource.Token, out message);
 					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
 						break;
 
@@ -214,7 +215,6 @@ namespace Rhino.Raft
 						continue;
 					}
 					DebugLog.Write("State {0} message {1}", State, message.Message);
-					behavior.TimeoutReduction = 0;
 					//special case for InstallSnapshotRequest
 
 					if (message.Message is InstallSnapshotRequest)
