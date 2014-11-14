@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2012
+# Visual Studio 2013
+VisualStudioVersion = 12.0.30723.0
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft", "Rhino.Raft\Rhino.Raft.csproj", "{F796F69F-D17B-4260-92D6-65CB94C0E05C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rhino.Raft.Tests", "Rhino.Raft.Tests\Rhino.Raft.Tests.csproj", "{61B3D01A-F286-42B1-AA6B-83D9D6DF0873}"
@@ -14,7 +16,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{279C1A
 		.nuget\NuGet.targets = .nuget\NuGet.targets
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voron", "..\ravendb-3.0\Raven.Voron\Voron\Voron.csproj", "{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Voron", "..\ravendb\Raven.Voron\Voron\Voron.csproj", "{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
