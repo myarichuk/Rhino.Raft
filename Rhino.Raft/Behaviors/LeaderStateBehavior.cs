@@ -199,7 +199,10 @@ namespace Rhino.Raft.Behaviors
 
 		public override void HandleTimeout()
 		{
-			// we don't have to do anything here
+			// we set this value purely because we want to wait
+			// for messages from the network. And we use the last heartbeat time 
+			// to change the timeout we have
+			LastHeartbeatTime = DateTime.UtcNow; 
 		}
 
 		public override void Handle(string destination, CanInstallSnapshotRequest req)
