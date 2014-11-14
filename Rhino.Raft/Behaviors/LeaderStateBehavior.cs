@@ -205,39 +205,6 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow; 
 		}
 
-		public override void Handle(string destination, CanInstallSnapshotRequest req)
-		{
-			if (req.Term <= Engine.PersistentState.CurrentTerm)
-			{
-				Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
-				{
-					From = Engine.Name,
-					IsCurrentlyInstalling = true,
-					Message =
-						string.Format(
-							"I am a leader and not supposed to be accepting snapshot installations from a another leader with lower term (term received = {0})",
-							req.Term),
-					Success = false
-				});
-			}
-			else
-			{
-				//this might happen during long network partition
-				Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
-				{
-					From = Engine.Name,
-					IsCurrentlyInstalling = true,
-					Message =
-						string.Format(
-							"Received CanInstallSnapshotResponse from a leader with higher term, stepping down (term received = {0}, current term = {1})",
-							req.Term,Engine.PersistentState.CurrentTerm),
-					Success = true
-				});
-				
-				Engine.SetState(RaftEngineState.SnapshotInstallation);
-			}
-		}
-
 		public override void Handle(string destination, CanInstallSnapshotResponse resp)
 		{
 			Task snapshotInstallationTask;
