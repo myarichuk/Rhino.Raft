@@ -13,18 +13,13 @@ namespace Rhino.Raft.Behaviors
 		public int Timeout { get; set; }
 		public abstract RaftEngineState State { get; }
 
+		public DateTime LastHeartbeatTime { get; set; }
+
 		public event Action<LogEntry[]> EntriesAppended;
 
 		public event Action<TopologyChangeCommand> TopologyChangeStarted;
 
 		public event Action InstallSnapshotRequestReceived;
-
-		public DateTime LastHeartbeatTime;
-
-		protected AbstractRaftStateBehavior()
-		{
-			LastHeartbeatTime = DateTime.UtcNow;
-		}
 
 		public void HandleMessage(MessageEnvelope envelope)
 		{
@@ -73,6 +68,8 @@ namespace Rhino.Raft.Behaviors
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
 			Engine = engine;
+			LastHeartbeatTime = DateTime.UtcNow;
+
 		}
 
 		public void Handle(string destination, RequestVoteRequest req)
