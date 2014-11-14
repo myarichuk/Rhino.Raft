@@ -92,43 +92,5 @@ namespace Rhino.Raft.Tests
 			entriesAfterSnapshotCreation.Should().HaveCount((commandsCount + 1 /*nop command */ ) - leader.MaxLogLengthBeforeCompaction);
 			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.MaxLogLengthBeforeCompaction);
 		}
-
-		[Fact]
-		public void When_receiving_snapshot_state_and_behavior_should_be_changed()
-		{
-			var transport = new InMemoryTransport();
-			var node = CreateNodeWithVirtualNetwork("non-leader-node", transport, "leader-node", "another-node");
-			node.MonitorEvents();
-
-			var waitForStateChange = node.WaitForEventTask(
-				(n, handler) => n.StateChanged += state => handler());
-			var serializer = new JsonSerializer();
-			transport.Stream("non-leader-node", new InstallSnapshotRequest
-			{
-				Term = 1,
-				LastIncludedIndex = 1,
-				LastIncludedTerm = 1,
-				From = "leader-node"
-// ReSharper disable once AccessToDisposedClosure
-			}, WriteEmptySnapshotInto);
-
-			var millisecondsTimeout = Debugger.IsAttached ? 600000 : 5000;
-			Assert.True(waitForStateChange.Wait(millisecondsTimeout));
-			//those asserts here is a precaution -> this definitely should not take more than 5 sec -> even 1 sec is too much for this
-
-			node.State.Should().Be(RaftEngineState.SnapshotInstallation);
-			node.ShouldRaise("SnapshotInstallationStarted");
-			//this event should be thrown when snapshot installation is starting
-		}
-
-
-		private static void WriteEmptySnapshotInto(Stream stream)
-		{
-			var serializer = new JsonSerializer();
-			var snapshotStreamWriter = new StreamWriter(stream);
-			serializer.Serialize(snapshotStreamWriter, new Dictionary<string, int>());
-			snapshotStreamWriter.Flush();
-			stream.Position = 0;
-		}
 	}
 }
