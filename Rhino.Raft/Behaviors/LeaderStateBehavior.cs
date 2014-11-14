@@ -240,8 +240,29 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string destination, CanInstallSnapshotResponse resp)
 		{
-			Engine.DebugLog.Write("Received CanInstallSnapshotResponse from {0}, starting snapshot streaming task", resp.From);
 			Task snapshotInstallationTask;
+			if (resp.Success == false)
+			{
+				Engine.DebugLog.Write("Received CanInstallSnapshotResponse(Success=false) from {0}, Term = {1}, Index = {2}, updating and will try again", 
+					resp.From,
+					resp.Term,
+					resp.Index);
+				_matchIndexes[resp.From] = resp.Index;
+				_nextIndexes[resp.From] = resp.Index + 1;
+				_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
+				return;
+			}
+			if (resp.IsCurrentlyInstalling)
+			{
+				Engine.DebugLog.Write("Received CanInstallSnapshotResponse(IsCurrentlyInstalling=false) from {0}, Term = {1}, Index = {2}, will retry when it is done",
+					resp.From,
+					resp.Term,
+					resp.Index);
+				
+				_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
+				return;
+			}
+			Engine.DebugLog.Write("Received CanInstallSnapshotResponse from {0}, starting snapshot streaming task", resp.From);
 			if (_snapshotsPendingInstallation.TryGetValue(resp.From, out snapshotInstallationTask))
 				snapshotInstallationTask.Start();
 		}
