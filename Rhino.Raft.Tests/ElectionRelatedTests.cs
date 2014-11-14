@@ -36,35 +36,19 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void On_two_node_network_first_to_become_candidate_becomes_leader()
 		{
-			var candidateChangeEvent = new CountdownEvent(2);
 			var transport = new InMemoryTransport();
 
-			var node1Options = CreateNodeOptions("node1", transport, 1000, "node2");
-			var node2Options = CreateNodeOptions("node2", transport, 20000, "node1");
+			var node1Options = CreateNodeOptions("node1", transport, 1000, "node1", "node2");
+			var node2Options = CreateNodeOptions("node2", transport, 20000, "node1", "node2");
 
 			using (var raftNode1 = new RaftEngine(node1Options))
 			using (var raftNode2 = new RaftEngine(node2Options))
 			{
 				//less election timeout --> will send vote request sooner, and thus expected to become candidate first
-				raftNode1.StateChanged += state =>
-				{
-					candidateChangeEvent.Signal();
+				raftNode1.WaitForLeader();
 
-					switch (candidateChangeEvent.CurrentCount)
-					{
-						case 1:
-// ReSharper disable AccessToDisposedClosure
-							Assert.Equal(RaftEngineState.Candidate, raftNode1.State);
-							break;
-						case 0:
-							Assert.Equal(RaftEngineState.Leader, raftNode1.State);
-							Assert.Equal(RaftEngineState.Follower, raftNode2.State);
-// ReSharper restore AccessToDisposedClosure
-							break;
-					}
-				};
-
-				candidateChangeEvent.Wait();
+				Assert.Equal(RaftEngineState.Leader,raftNode1.State);
+				Assert.Equal(RaftEngineState.Follower, raftNode2.State);
 			}
 		}
 
@@ -179,7 +163,8 @@ namespace Rhino.Raft.Tests
 					commandResendingMessage.Entries.Select(x => leader.PersistentState.CommandSerializer.Deserialize(x.Data) as DictionaryCommand.Set)
 												   .ToList();
 
-				commands.Should().HaveCount(count => count > 0 && count < 3,"if there are too much or too little commands that means there is a bug"); //precaution
+				Assert.True(commands.Count> 0 && commands.Count < 3, 
+					"if there are too much or too little commands that means there is a bug"); //precaution
 
 				for (int i = 1; i < 3; i++)
 				{
