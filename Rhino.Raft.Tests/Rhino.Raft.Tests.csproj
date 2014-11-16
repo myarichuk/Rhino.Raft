@@ -87,10 +87,6 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\ravendb\Raven.Voron\Voron\Voron.csproj">
-      <Project>{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}</Project>
-      <Name>Voron</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Rhino.Raft\Rhino.Raft.csproj">
       <Project>{f796f69f-d17b-4260-92d6-65cb94c0e05c}</Project>
       <Name>Rhino.Raft</Name>
