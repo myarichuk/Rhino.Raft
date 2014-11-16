@@ -13,5 +13,6 @@ namespace Rhino.Raft
 		public static readonly TimeSpan ElectionTimeout = TimeSpan.FromSeconds(20);
 		public const int MaxIncomingConcurrentRequests = 1024;		
 		public const short HttpTransportListeningPort = 8082;
+		public const int DisposalTimeoutMs = 5000;
 	}
 }

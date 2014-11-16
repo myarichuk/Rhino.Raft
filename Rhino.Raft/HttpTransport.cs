@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -18,7 +19,7 @@ namespace Rhino.Raft
 		private readonly DebugWriter _logWriter;
 
 		private readonly NodeConnectionInfo _currentNodeConnection;
-		private readonly List<NodeConnectionInfo> _peersConnections;
+		private readonly Dictionary<string,NodeConnectionInfo> _peersConnections;
 		private readonly JsonSerializer _serializer; 
 		
 		private readonly Task _messageReceiverThread;
@@ -36,14 +37,14 @@ namespace Rhino.Raft
 			if (options.PeersConnections == null) throw new ArgumentNullException("peersConnections");
 
 			_currentNodeConnection = options.CurrentNodeConnection;
-			_peersConnections = options.PeersConnections.ToList();
+			_peersConnections = options.PeersConnections.ToDictionary(x => x.NodeName,x => x);
 			_serializer= new JsonSerializer();
 			_cancellationTokenSource = new CancellationTokenSource();			
 			_httpListener = new HttpListener
 			{
 				Prefixes =
 				{
-					"http://+:" + options.Port + "/"
+					"http://+:" + options.CurrentNodeConnection.Port + "/"
 				}
 			};
 			_httpListener.Start();
@@ -99,37 +100,37 @@ namespace Rhino.Raft
 
 		public void Send(string dest, CanInstallSnapshotRequest req)
 		{
-			throw new NotImplementedException();
+			Send<CanInstallSnapshotRequest>(dest, req);
 		}
 
 		public void Send(string dest, CanInstallSnapshotResponse resp)
 		{
-			throw new NotImplementedException();
+			Send<CanInstallSnapshotResponse>(dest, resp);
 		}
 
 		public void Send(string dest, InstallSnapshotResponse resp)
 		{
-			throw new NotImplementedException();
+			Send<InstallSnapshotResponse>(dest, resp);
 		}
 
 		public void Send(string dest, AppendEntriesRequest req)
 		{
-			throw new NotImplementedException();
+			Send<AppendEntriesRequest>(dest, req);
 		}
 
 		public void Send(string dest, RequestVoteRequest req)
 		{
-			throw new NotImplementedException();
+			Send<RequestVoteRequest>(dest, req);
 		}
 
 		public void Send(string dest, AppendEntriesResponse resp)
 		{
-			throw new NotImplementedException();
+			Send<AppendEntriesResponse>(dest, resp);
 		}
 
 		public void Send(string dest, RequestVoteResponse resp)
 		{
-			throw new NotImplementedException();
+			Send<RequestVoteResponse>(dest, resp);
 		}
 
 		public void Dispose()
@@ -139,26 +140,44 @@ namespace Rhino.Raft
 			_httpListener.Stop();
 			_httpListener.Close();
 			_logWriter.Write("--== stopped http listener ==--");
+
+			if (!_messageReceiverThread.Wait(Default.DisposalTimeoutMs, _cancellationTokenSource.Token))
+				_logWriter.Write("--== Could not stop Http transport message thread within allocated timeout ( {0}ms ). Probably something went wrong ==--", Default.DisposalTimeoutMs);
 		}
 
 		//------------ helpers
 
-		private bool TryGetDestinationInfo(string dest,out NodeConnectionInfo peerDestinationInfo)
+		private void Send<TMessage>(string dest, TMessage message)
+			where TMessage : class
 		{
-			peerDestinationInfo = _peersConnections.FirstOrDefault(peerConnection => peerConnection.NodeName == dest);
-			return peerDestinationInfo == null;
+			var envelope = new MessageEnvelope
+			{
+				Destination = dest,
+				Message = message
+			};
+
+			using(var stream = new MemoryStream())
+			using(var streamWriter = new StreamWriter(stream))
+			using (var jsonWriter = new JsonTextWriter(streamWriter))
+			{
+				_serializer.Serialize(jsonWriter,envelope);
+				using (var client = new HttpClient())
+				{
+					NodeConnectionInfo peerConnection;
+					if (!_peersConnections.TryGetValue(dest, out peerConnection))
+						throw new ApplicationException(String.Format("The node '{0}' is not in the peer list. Cannot send message to a node *NOT* in the peer list",dest));
+
+					client.PostAsync(peerConnection.GetUriForMessageSending<TMessage>(), new StreamContent(stream),
+										_cancellationTokenSource.Token).Wait(_cancellationTokenSource.Token);
+				}
+			}
 		}
+	
 	}
 
 	public class HttpTransportOptions
 	{
 		public NodeConnectionInfo CurrentNodeConnection { get; set; }
 		public List<NodeConnectionInfo> PeersConnections { get; set; }
-		public short Port { get; set; }
-
-		public HttpTransportOptions()
-		{
-			Port = Default.HttpTransportListeningPort;
-		}
 	}
 }

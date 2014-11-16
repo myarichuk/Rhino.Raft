@@ -12,8 +12,7 @@ namespace Rhino.Raft
 		/// </summary>
 
 		private string url;
-
-		public NodeConnectionInfo ConnectionInfo { Get; set; }
+		private const string Http = "http";
 
 		public string Url
 		{
@@ -55,16 +54,17 @@ namespace Rhino.Raft
 		/// </summary>
 		public bool IgnoredClient { get; set; }
 
-		/// <summary>
-		/// Gets or sets if node to this destination is disabled in both client and server.
-		/// </summary>
-		public bool Disabled { get; set; }
+		public short Port { get; set; }
 
-		/// <summary>
-		/// Gets or sets the Client URL of the node destination
-		/// </summary>
-		public string ClientVisibleUrl { get; set; }
+		public NodeConnectionInfo()
+		{
+			Port = Default.HttpTransportListeningPort;
+		}
 
-
+		public Uri GetUriForMessageSending<TMessage>()
+			where TMessage : class 
+		{
+			return new Uri(String.Format("{0}://{1}:{2}/{3}", Http, Url, Port, typeof(TMessage).Name));
+		}
 	}
 }
