@@ -214,27 +214,23 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				var lastLogEntry = Engine.PersistentState.LastLogEntry();
-				if (req.Term < lastLogEntry.Term)
+				var msg = string.Format(
+					"Rejecting append entries because msg term {0} is lower then current term: {1}",
+					req.Term, Engine.PersistentState.CurrentTerm);
+
+				Engine.DebugLog.Write(msg);
+
+				Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
 				{
-					var msg = string.Format("Rejecting append entries because msg term {0} is lower than last log entry ({1}) term: {2}",
-						req.Term, lastLogEntry.Index, lastLogEntry.Term);
-
-					Engine.DebugLog.Write(msg);
-
-					Engine.Transport.Send(req.LeaderId, new AppendEntriesResponse
-					{
-						Success = false,
-						CurrentTerm = Engine.PersistentState.CurrentTerm,
-						LeaderId = Engine.CurrentLeader,
-						Message = msg,
-						Source = Engine.Name
-					});
-					return;	
-				}
-				Engine.PersistentState.UpdateTermTo(lastLogEntry.Term);
+					Success = false,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					LeaderId = Engine.CurrentLeader,
+					Message = msg,
+					Source = Engine.Name
+				});
+				return;
 			}
-		    
+
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
 				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
