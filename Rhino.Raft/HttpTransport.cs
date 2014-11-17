@@ -133,6 +133,11 @@ namespace Rhino.Raft
 			Send<RequestVoteResponse>(dest, resp);
 		}
 
+		public void Execute(string dest, Action action)
+		{
+			throw new NotImplementedException();
+		}
+
 		public void Dispose()
 		{
 			_logWriter.Write("--== starting disposal of http transport ==--");

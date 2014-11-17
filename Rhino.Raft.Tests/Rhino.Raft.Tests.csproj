@@ -78,7 +78,6 @@
     <Compile Include="CommandsTests.cs" />
     <Compile Include="DictionaryCommand.cs" />
     <Compile Include="DictionaryStateMachine.cs" />
-    <Compile Include="HttpTransportTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ElectionRelatedTests.cs" />
     <Compile Include="RaftTestsBase.cs" />
@@ -92,7 +91,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\ravendb-3.0\Raven.Voron\Voron\Voron.csproj">
+    <ProjectReference Include="..\..\ravendb\Raven.Voron\Voron\Voron.csproj">
       <Project>{ff83c7c2-bc7b-4dcc-a782-49ef9bbd9390}</Project>
       <Name>Voron</Name>
     </ProjectReference>
