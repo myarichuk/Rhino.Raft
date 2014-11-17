@@ -4,8 +4,8 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
-using System;
 using System.Diagnostics;
+using NLog;
 
 namespace Rhino.Raft.Utils
 {
@@ -13,6 +13,8 @@ namespace Rhino.Raft.Utils
 	{
 		private readonly string _name;
 		private readonly Stopwatch _duration;
+
+		private static readonly Logger log = LogManager.GetCurrentClassLogger();
 
 		public DebugWriter(string name, Stopwatch duration)
 		{
@@ -32,7 +34,7 @@ namespace Rhino.Raft.Utils
 
 		public void Write(string format, params object[] args)
 		{
-			Console.WriteLine("{0} @ {1,7:#,#;;0}: {2}", _name, _duration.ElapsedMilliseconds, string.Format(format, args));
+			log.Debug("{0} @ {1,7:#,#;;0}: {2}", _name, _duration.ElapsedMilliseconds, string.Format(format, args));
 		}
 	}
 }

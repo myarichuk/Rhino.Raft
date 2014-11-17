@@ -74,6 +74,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BasicTests.cs" />
     <Compile Include="CommandsTests.cs" />
     <Compile Include="DictionaryCommand.cs" />
     <Compile Include="DictionaryStateMachine.cs" />
@@ -84,6 +85,9 @@
     <Compile Include="TopologyChangesTests.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
