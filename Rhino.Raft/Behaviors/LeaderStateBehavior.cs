@@ -56,22 +56,17 @@ namespace Rhino.Raft.Behaviors
 		{
 			while (_stopHeartbeatCancellationTokenSource.IsCancellationRequested == false)
 			{
-				Engine.DebugLog.Write("Starting sending Leader heartbeats");
+				Engine.DebugLog.Write("Starting sending Leader heartbeats to: {0}", string.Join(", ", Engine.CurrentTopology.AllVotingNodes));
 				SendEntriesToAllPeers();
 
 				OnHeartbeatSent();
-				Thread.Sleep(Engine.MessageTimeout / 6);
+				Thread.Sleep(Math.Min(Engine.MessageTimeout / 6, 250));
 			}
 		}
 
 		internal void SendEntriesToAllPeers()
 		{
-			var changingTopology = Engine.ChangingTopology;
-			var peers = (changingTopology == null) ?
-				Engine.AllVotingNodes :
-				//if node is removed --> then we will need to send TopologyChangedCommand that will remove it from cluster and stop its messaging loop
-				//if node is added --> then we will need to send TopologyChangedCommand that will effectively add it to cluster
-				Engine.AllVotingNodes.Union(changingTopology.AllVotingNodes, StringComparer.OrdinalIgnoreCase);
+			var peers = Engine.AllVotingNodes;
 			foreach (var peer in peers)
 			{
 				if (peer.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
@@ -89,30 +84,28 @@ namespace Rhino.Raft.Behaviors
 
 			var nextIndex = _nextIndexes.GetOrAdd(peer, 0); //new peer's index starts at 0
 
-			var snapshot = Engine.PersistentState.GetLastSnapshot();
-
-			if (snapshot != null &&
-				//no need for <= here, since there is no need for a snapshot if nextIndex is equal to the snapshot's one
-				nextIndex < snapshot.Index &&
-				_snapshotsPendingInstallation.ContainsKey(peer) == false)
+			if (Engine.StateMachine.SupportSnapshots)
 			{
-				//we are generating the task that will start the snapshot streaming, 
-				//and then ask the potential target for the snapshot - can you accept it?
-				using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
-				{
-					Engine.Transport.Send(peer, new CanInstallSnapshotRequest
-					{
-						From = Engine.Name,
-						Index = snapshotWriter.Index,
-						Term = snapshotWriter.Term,
-						LeaderId = Engine.Name
-					});
-				}
-				return;
-			}
+				var snapshotIndex = Engine.PersistentState.GetLastSnapshotIndex();
 
-			if (_snapshotsPendingInstallation.ContainsKey(peer))
-				return;
+				if (snapshotIndex != null && nextIndex < snapshotIndex)
+				{
+					if (_snapshotsPendingInstallation.ContainsKey(peer))
+						return;
+
+					using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
+					{
+						Engine.Transport.Send(peer, new CanInstallSnapshotRequest
+						{
+							From = Engine.Name,
+							Index = snapshotWriter.Index,
+							Term = snapshotWriter.Term,
+							LeaderId = Engine.Name
+						});
+					}
+					return;
+				}
+			}
 
 			try
 			{
@@ -130,10 +123,14 @@ namespace Rhino.Raft.Behaviors
 				throw;
 			}
 
-			Engine.DebugLog.Write("SendEntriesToPeer({0}) --> prevLogEntry.Index == {1}", peer, (prevLogEntry == null) ? "null" : prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
 			prevLogEntry = prevLogEntry ?? new LogEntry();
-
-			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}. Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)));
+			
+			if (entries.Length> 0)
+				Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: {3}). Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)),
+					prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
+			else
+				Engine.DebugLog.Write("Sending empty heartbeat to {0} (PrevLogEntry: {1})", peer,
+					prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
 
 			var aer = new AppendEntriesRequest
 			{
@@ -148,7 +145,7 @@ namespace Rhino.Raft.Behaviors
 
 			Engine.Transport.Send(peer, aer);
 
-			OnEntriesAppended(entries); //equivalent to followers receiving the entries			
+			Engine.OnEntriesAppended(entries);
 		}
 
 		private void SendSnapshotToPeer(string peer)
@@ -167,8 +164,9 @@ namespace Rhino.Raft.Behaviors
 						Term = Engine.PersistentState.CurrentTerm,
 						LastIncludedIndex = snapshotWriter.Index,
 						LastIncludedTerm = snapshotWriter.Term,
-						From = Engine.Name
-					}, snapshotWriter.WriteSnapshot);
+						From = Engine.Name,
+						LeaderId = Engine.Name,
+					}, stream => snapshotWriter.WriteSnapshot(stream));
 
 					Engine.DebugLog.Write("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,
 						snapshotWriter.Term, sp.Elapsed);
@@ -254,22 +252,17 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
+			Debug.Assert(resp.Source != null);
+			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
+			_matchIndexes[resp.Source] = resp.LastLogIndex;
+			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
+
 			if (resp.Success == false)
 			{
-				// go back in the log, this peer isn't matching us at this location				
-				// precaution -> if the index is at 0 -> obviously nowere to go back
-				if (_nextIndexes[resp.Source] >= 1)
-					_nextIndexes[resp.Source] -= 1;
-
 				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",
 					_nextIndexes[resp.Source], resp.Source);
 				return;
 			}
-
-			Debug.Assert(resp.Source != null);
-			_matchIndexes[resp.Source] = resp.LastLogIndex;
-			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
-			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
 
 			var maxIndexOnCurrentQuorom = GetMaxIndexOnQuorom();
 			if (maxIndexOnCurrentQuorom == -1)
@@ -314,21 +307,7 @@ namespace Rhino.Raft.Behaviors
 		/// </summary>
 		private long GetMaxIndexOnQuorom()
 		{
-			var maxIndexOnQuoromForCurrentTopology = GetMaxIndexOnQuoromForTopology(Engine.CurrentTopology);
-			var changingTopology = Engine.ChangingTopology;
-			if (changingTopology != null)
-			{
-				// in this case, we have to take into account BOTH the current and changing topologies
-				var maxIndexOnQuoromForChangingTopology = GetMaxIndexOnQuoromForTopology(changingTopology);
-
-				return Math.Min(maxIndexOnQuoromForCurrentTopology, maxIndexOnQuoromForChangingTopology);
-			}
-
-			return maxIndexOnQuoromForCurrentTopology;
-		}
-
-		private long GetMaxIndexOnQuoromForTopology(Topology topology)
-		{
+			var topology = Engine.CurrentTopology;
 			var dic = new Dictionary<long, int>();
 			foreach (var index in _matchIndexes)
 			{
@@ -357,6 +336,16 @@ namespace Rhino.Raft.Behaviors
 			var index = Engine.PersistentState.AppendToLeaderLog(command);
 			_matchIndexes[Engine.Name] = index;
 			_nextIndexes[Engine.Name] = index + 1;
+
+			if (Engine.CurrentTopology.QuoromSize == 1)
+			{
+				CommitEntries(null, index, index);
+				if (command.Completion != null)
+					command.Completion.SetResult(null);
+
+				return;
+			}
+
 			if (command.Completion != null)
 				_pendingCommands.Enqueue(command);
 		}

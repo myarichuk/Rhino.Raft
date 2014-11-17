@@ -22,10 +22,10 @@ namespace Rhino.Raft
 			get { return _messageQueue; }
 		}
 
-		private void AddToQueue<T>(string dest, T message, Stream stream = null)
+		private void AddToQueue<T>(string dest, T message, Stream stream = null, bool evenIfDisconnected = false)
 		{
 			//if destination is considered disconnected --> drop the message so it never arrives
-			if(_disconnectedNodes.Contains(dest))
+			if (_disconnectedNodes.Contains(dest) && evenIfDisconnected == false)
 				return;
 
 			var newMessage = new MessageEnvelope
@@ -73,7 +73,16 @@ namespace Rhino.Raft
 		        timeout = 0;
 
 			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
-            return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
+			var tryReceiveMessage = messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
+			if (tryReceiveMessage)
+			{
+				if (messageEnvelope.Message is TimeoutException)
+				{
+					messageEnvelope = null;
+					return false;
+				}
+			}
+			return tryReceiveMessage;
 		}
 
 	    public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
@@ -138,5 +147,14 @@ namespace Rhino.Raft
 			AddToQueue(dest, resp);
 		}
 
+		public void Execute(string dest, Action action)
+		{
+			AddToQueue(dest, action);
+		}
+
+		public void ForceTimeout(string name)
+		{
+			AddToQueue(name, new TimeoutException(), evenIfDisconnected: true);
+		}
 	}
 }

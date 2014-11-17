@@ -4,7 +4,7 @@
 	{
 		public long Index { get; set; }
 		public long Term { get; set; }
-		public bool IsTopologyChange { get; set; }
+		public bool? IsTopologyChange { get; set; }
         public byte[] Data { get; set; }
 	}
 }

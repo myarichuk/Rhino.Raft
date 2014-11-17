@@ -1,20 +1,76 @@
 ﻿using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using FizzWare.NBuilder;
 using FluentAssertions;
 using FluentAssertions.Events;
 using Newtonsoft.Json;
 using Rhino.Raft.Messages;
 using Xunit;
+using Xunit.Extensions;
 
 namespace Rhino.Raft.Tests
 {
 	public class SnapshotTests : RaftTestsBase
 	{
-		//this test is about verifying that there is no race condition in running snapshot
+
+		[Theory]
+		//[InlineData(1)]
+		[InlineData(2)]
+		//[InlineData(3)]
+		//[InlineData(5)]
+		//[InlineData(7)]
+		public void AfterSnapshotInstalled_CanContinueGettingLogEntriesNormally(int amount)
+		{
+			var leader = CreateNetworkAndWaitForLeader(amount);
+			leader.MaxLogLengthBeforeCompaction = 5;
+			var snapshot = WaitForSnapshot(leader);
+			var commits = WaitForCommitsOnCluster(
+				machine => machine.Data.Count == 5);
+			for (int i = 0; i < 5; i++)
+			{
+				leader.AppendCommand(new DictionaryCommand.Set
+				{
+					Key = i.ToString(),
+					Value = i
+				});
+			}
+			snapshot.Wait();
+			commits.Wait();
+
+			Assert.NotNull(leader.StateMachine.GetSnapshotWriter());
+
+			var newNode = NewNodeFor(leader);
+
+			leader.AddToClusterAsync(newNode.Name).Wait();
+
+			WaitForSnapshotInstallation(newNode).Wait();
+
+			Assert.Equal(newNode.CurrentLeader, leader.Name);
+
+			var commit = WaitForCommit<DictionaryCommand.Set>(newNode,
+				machine => machine.Data.ContainsKey("c"));
+
+			leader.AppendCommand(new DictionaryCommand.Set
+			{
+				Key = "c",
+				Value = 1
+			});
+
+			commit.Wait();
+
+			var dictionary = ((DictionaryStateMachine)newNode.StateMachine).Data;
+			for (int i = 0; i < 5; i++)
+			{
+				Assert.Equal(i, dictionary[i.ToString()]);
+			}
+			Assert.Equal(1, dictionary["c"]);
+		}
+
 		[Fact]
 		public void Snapshot_after_enough_command_applies_snapshot_is_applied_only_once()
 		{
@@ -27,11 +83,7 @@ namespace Rhino.Raft.Tests
 				.ToList();
 			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
 
-			var raftNodes = CreateNodeNetwork(3).ToList();
-			raftNodes.First().WaitForLeader();
-
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
+			var leader = CreateNetworkAndWaitForLeader(3);
 
 			leader.MonitorEvents();
 			leader.SnapshotCreationEnded += snapshotCreationEndedEvent.Set;
@@ -48,6 +100,7 @@ namespace Rhino.Raft.Tests
 			leader.GetRecorderForEvent("SnapshotCreationEnded")
 				  .Should().HaveCount(1);
 		}
+
 
 		[Fact]
 		public void Snaphot_after_enough_command_applies_snapshot_is_created()
