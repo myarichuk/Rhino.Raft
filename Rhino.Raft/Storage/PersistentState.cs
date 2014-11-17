@@ -181,16 +181,28 @@ namespace Rhino.Raft.Storage
 
 		public long? TermFor(long logIndex)
 		{
-			if (_isDisposed)
-				return null;
-
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
 				var key = new Slice(EndianBitConverter.Big.GetBytes(logIndex));
 				var result = terms.Read(key);
 				if (result == null)
-					return null;
+				{
+					var metadata = tx.ReadTree(MetadataTreeName);
+					var snapshotIndex = metadata.Read("snapshot-index");
+					if (snapshotIndex == null)
+						return null;
+
+					var snapshotIndexVal = snapshotIndex.Reader.ReadLittleEndianInt64();
+					if (snapshotIndexVal != logIndex)
+						return null;
+
+					var snapshotTerm = metadata.Read("snapshot-term");
+					if (snapshotTerm == null)
+						return null;
+					var snapshotTermVal = snapshotTerm.Reader.ReadLittleEndianInt64();
+					return snapshotTermVal;
+				}
 				var term = result.Reader.ReadLittleEndianInt64();
 
 				tx.Commit();
@@ -200,9 +212,6 @@ namespace Rhino.Raft.Storage
 
 		public LogEntry LastLogEntry()
 		{
-			if (_isDisposed)
-				throw new ObjectDisposedException("PersistentState");
-
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
@@ -211,7 +220,20 @@ namespace Rhino.Raft.Storage
 
 				var lastKey = logs.LastKeyOrDefault();
 				if (lastKey == null)
-					return new LogEntry();
+				{
+					// maybe there is a snapshot?
+					var snapshotTerm = metadata.Read("snapshot-term");
+					var snapshotIndex = metadata.Read("snapshot-index");
+
+					if(snapshotIndex == null || snapshotTerm == null)
+						return new LogEntry();
+
+					return new LogEntry
+					{
+						Term = snapshotTerm.Reader.ReadLittleEndianInt64(),
+						Index = snapshotIndex.Reader.ReadLittleEndianInt64()
+					};
+				}
 
 				var index = lastKey.CreateReader().ReadBigEndianInt64();
 
@@ -276,9 +298,6 @@ namespace Rhino.Raft.Storage
 
 		public void IncrementTermAndVoteFor(string name)
 		{
-			if (_isDisposed)
-				return;
-
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
@@ -292,9 +311,6 @@ namespace Rhino.Raft.Storage
 
 		public void UpdateTermTo(long term)
 		{
-			if (_isDisposed)
-				return;
-
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
@@ -311,9 +327,6 @@ namespace Rhino.Raft.Storage
 
 		public LogEntry LastTopologyChangeEntry()
 		{
-			if (_isDisposed)
-				return null;
-
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
@@ -357,9 +370,6 @@ namespace Rhino.Raft.Storage
 		public IEnumerable<LogEntry> LogEntriesAfter(long index, long stopAfter = long.MaxValue)
 		{
 			Debug.Assert(index >= 0, "assert index >= 0, index actually is " + index);
-
-			if (_isDisposed)
-				yield return null;
 
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
@@ -411,28 +421,27 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		public LogEntry GetLastSnapshot()
+		public long? GetLastSnapshotIndex()
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
-				return  metadata.Read<LogEntry>("last-snapshot");
+				var lastSnapshot = metadata.Read("snapshot-index");
+				if (lastSnapshot == null)
+					return null;
+				return lastSnapshot.Reader.ReadLittleEndianInt64();
 			}
 		}
 
-		public void MarkSnapshotFor(long lastCommittedIndex, int maxNumberOfItemsToRemove)
+		public void MarkSnapshotFor(long lastCommittedIndex, long lastCommittedTerm, int maxNumberOfItemsToRemove)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
 				var terms = tx.ReadTree(EntryTermsTreeName);
 				var metadata = tx.ReadTree(MetadataTreeName);
-				var termForLastCommittedIndex = terms.Read(new Slice(EndianBitConverter.Big.GetBytes(lastCommittedIndex)));
-				metadata.Add("last-snapshot", new LogEntry
-				{
-					Index = lastCommittedIndex,
-					Term = termForLastCommittedIndex.Reader.ReadLittleEndianInt64()
-				});
+				metadata.Add("snapshot-index", EndianBitConverter.Little.GetBytes(lastCommittedIndex));
+				metadata.Add("snapshot-term", EndianBitConverter.Little.GetBytes(lastCommittedTerm));
 
 				using (var it = logs.Iterate())
 				{
@@ -451,9 +460,6 @@ namespace Rhino.Raft.Storage
 
 		public void AppendToLog(IEnumerable<LogEntry> entries, long removeAllAfter)
 		{
-			if (_isDisposed)
-				return;
-
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);
