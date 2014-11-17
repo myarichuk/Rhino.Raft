@@ -1,9 +1,7 @@
 using System;
 using System.IO;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using Rhino.Raft.Messages;
-using Rhino.Raft.Storage;
 
 namespace Rhino.Raft.Interfaces
 {

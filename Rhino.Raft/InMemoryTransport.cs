@@ -13,8 +13,6 @@ namespace Rhino.Raft
 	{
 		private readonly ConcurrentDictionary<string,BlockingCollection<MessageEnvelope>> _messageQueue = new ConcurrentDictionary<string, BlockingCollection<MessageEnvelope>>();
 
-		private readonly ConcurrentDictionary<string,BlockingCollection<Stream>> _streamsQueue = new ConcurrentDictionary<string, BlockingCollection<Stream>>();
-
 		private readonly HashSet<string> _disconnectedNodes = new HashSet<string>();
 
 		private readonly HashSet<string> _disconnectedNodesFromSending = new HashSet<string>();
