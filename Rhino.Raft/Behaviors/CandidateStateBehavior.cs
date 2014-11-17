@@ -83,13 +83,6 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 			
-			var changingTopology = Engine.ChangingTopology;
-			if (changingTopology != null && changingTopology.HasQuorum(_votesForMyLeadership) == false)
-			{
-				Engine.DebugLog.Write("Not enough votes for leadership (changing topology), votes = {0}", string.Join(", ", _votesForMyLeadership));
-				return;
-			}
-
 			Engine.SetState(RaftEngineState.Leader);
 			Engine.DebugLog.Write("Selected as leader, term = {0}", resp.Term);
 		}

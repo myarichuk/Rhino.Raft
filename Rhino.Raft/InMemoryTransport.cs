@@ -22,10 +22,10 @@ namespace Rhino.Raft
 			get { return _messageQueue; }
 		}
 
-		private void AddToQueue<T>(string dest, T message, Stream stream = null)
+		private void AddToQueue<T>(string dest, T message, Stream stream = null, bool evenIfDisconnected = false)
 		{
 			//if destination is considered disconnected --> drop the message so it never arrives
-			if(_disconnectedNodes.Contains(dest))
+			if (_disconnectedNodes.Contains(dest) && evenIfDisconnected == false)
 				return;
 
 			var newMessage = new MessageEnvelope
@@ -154,7 +154,7 @@ namespace Rhino.Raft
 
 		public void ForceTimeout(string name)
 		{
-			AddToQueue(name, new TimeoutException());
+			AddToQueue(name, new TimeoutException(), evenIfDisconnected: true);
 		}
 	}
 }

@@ -15,10 +15,6 @@ namespace Rhino.Raft.Behaviors
 
 		public DateTime LastHeartbeatTime { get; set; }
 
-		public event Action<LogEntry[]> EntriesAppended;
-
-		public event Action<TopologyChangeCommand> TopologyChangeStarted;
-
 		public void HandleMessage(MessageEnvelope envelope)
 		{
 			RequestVoteRequest requestVoteRequest;
@@ -276,7 +272,7 @@ namespace Rhino.Raft.Behaviors
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
 				Engine.PersistentState.AppendToLog(req.Entries, req.PrevLogIndex);
-				var topologyChange = req.Entries.LastOrDefault(x=>x.IsTopologyChange);
+				var topologyChange = req.Entries.LastOrDefault(x=>x.IsTopologyChange == true);
 				
 				// we consider the latest topology change to be in effect as soon as we see it, even before the 
 				// it is committed, see raft spec section 6:
@@ -288,13 +284,14 @@ namespace Rhino.Raft.Behaviors
 					var topologyChangeCommand = command as TopologyChangeCommand;
 					if(topologyChangeCommand == null) //precaution,should never be true
 													  //if this is true --> it is a serious issue and should be fixed immediately!
-						throw new ApplicationException(@"Log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand.
+						throw new InvalidOperationException(@"Log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand.
 															Instead, it is of type: " + command.GetType() +". It is probably a bug!");
 
-					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
-					Engine.ChangingTopology = topologyChangeCommand.Requested;
-					Engine.PersistentState.SetCurrentTopology(Engine.CurrentTopology, Engine.ChangingTopology);
-					OnTopologyChangeStarted(topologyChangeCommand);
+					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log): {0}", string.Join(", ", topologyChangeCommand.Requested));
+					Engine.PersistentState.SetCurrentTopology(topologyChangeCommand.Requested, topologyChange.Index);
+					Engine.TopologyChangeStarting(topologyChangeCommand);
+
+					Engine.OnTopologyChangeStarted(topologyChangeCommand);
 				}
 			}
 
@@ -352,7 +349,7 @@ namespace Rhino.Raft.Behaviors
 			var message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
 			Engine.DebugLog.Write(message);
 
-			OnEntriesAppended(entries);
+			Engine.OnEntriesAppended(entries);
 			return message;
 		}
 
@@ -360,19 +357,5 @@ namespace Rhino.Raft.Behaviors
 		{
 			
 		}
-
-		protected virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
-		{
-			var handler = TopologyChangeStarted;
-			if (handler != null) handler(tcc);
-		}
-
-
-		protected virtual void OnEntriesAppended(LogEntry[] logEntries)
-		{
-			var handler = EntriesAppended;
-			if (handler != null) handler(logEntries);
-		}
-
 	}
 }

@@ -14,11 +14,12 @@ namespace Rhino.Raft.Utils
 		private readonly string _name;
 		private readonly Stopwatch _duration;
 
-		private static readonly Logger log = LogManager.GetCurrentClassLogger();
+		private readonly Logger _log;
 
 		public DebugWriter(string name, Stopwatch duration)
 		{
 			_name = name;
+			_log = LogManager.GetLogger("DebugWriter." + name);
 			_duration = duration;
 		}
 
@@ -34,7 +35,7 @@ namespace Rhino.Raft.Utils
 
 		public void Write(string format, params object[] args)
 		{
-			log.Debug("{0} @ {1,7:#,#;;0}: {2}", _name, _duration.ElapsedMilliseconds, string.Format(format, args));
+			_log.Debug("{0} @ {1,7:#,#;;0}: {2}", _name, _duration.ElapsedMilliseconds, string.Format(format, args));
 		}
 	}
 }

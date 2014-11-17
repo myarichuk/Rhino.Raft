@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Utils;
 using Voron;
 using Xunit;
 
@@ -14,7 +15,25 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly List<RaftEngine> _nodes = new List<RaftEngine>();
 
-		public IEnumerable<RaftEngine> Nodes { get { return _nodes; } } 
+		private readonly DebugWriter _writer = new DebugWriter("Test", Stopwatch.StartNew());
+
+		protected void WriteLine(string format, params object[] args)
+		{
+			_writer.Write(format, args);
+		}
+
+		public IEnumerable<RaftEngine> Nodes { get { return _nodes; } }
+
+		protected ManualResetEventSlim WaitForStateChange(RaftEngine node, RaftEngineState requestedState)
+		{
+			var mre = new ManualResetEventSlim();
+			node.StateChanged += state =>
+			{
+				if (state == requestedState)
+					mre.Set();
+			};
+			return mre;
+		}
 
 		protected ManualResetEventSlim WaitForCommit<T>(RaftEngine node, Func<DictionaryStateMachine, bool> predicate)
 		{
@@ -34,15 +53,29 @@ namespace Rhino.Raft.Tests
 			return cde;
 		}
 
-		protected CountdownEvent WaitForCommitsOnCluster<T>(int amount)
+		protected CountdownEvent WaitForCommitsOnCluster(Func<DictionaryStateMachine, bool> predicate)
 		{
-			var cde = new CountdownEvent(amount * _nodes.Count);
+			var cde = new CountdownEvent(_nodes.Count);
 			foreach (var node in _nodes)
 			{
-				node.CommitApplied += command =>
+				var n = node;
+				n.CommitApplied += command =>
 				{
-					if (command is T && cde.CurrentCount > 0)
+					var state = (DictionaryStateMachine)n.StateMachine;
+					if (predicate(state) && cde.CurrentCount > 0)
+					{
+						n.DebugLog.Write("WaitForCommitsOnCluster match");
 						cde.Signal();
+					}
+				};
+				n.SnapshotInstallationEnded += () =>
+				{
+					var state = (DictionaryStateMachine) n.StateMachine;
+					if (predicate(state) && cde.CurrentCount > 0)
+					{
+						n.DebugLog.Write("WaitForCommitsOnCluster match"); 
+						cde.Signal();
+					}
 				};
 			}
 			
@@ -55,15 +88,12 @@ namespace Rhino.Raft.Tests
 			return cde;
 		}
 
-		protected RaftEngine CreateNetworkAndWaitForLeader(int nodeCount)
+		protected RaftEngine CreateNetworkAndWaitForLeader(int nodeCount, int messageTimeout = -1)
 		{
-			var raftNodes = CreateNodeNetwork(nodeCount).ToList();
-
-
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: messageTimeout).ToList();
 			var raftEngine = _nodes[new Random().Next(0, _nodes.Count)];
 
 			((InMemoryTransport) raftEngine.Transport).ForceTimeout(raftEngine.Name);
-
 
 			raftNodes.First().WaitForLeader();
 

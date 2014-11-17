@@ -432,10 +432,10 @@ namespace Rhino.Raft.Tests
 						CommandSerializer = new JsonCommandSerializer()
 					})
 					{
-						var currentConfiguration = persistentState.GetCurrentConfiguration();
+						var currentConfiguration = persistentState.GetCurrentTopology();
 						Assert.Empty(currentConfiguration.AllVotingNodes);
 
-						persistentState.SetCurrentTopology(new Topology(expectedAllVotingPeers),null);
+						persistentState.SetCurrentTopology(new Topology(expectedAllVotingPeers), 1);
 					}
 				}
 				using (var options = StorageEnvironmentOptions.ForPath(path))
@@ -445,7 +445,7 @@ namespace Rhino.Raft.Tests
 						CommandSerializer = new JsonCommandSerializer()
 					})
 					{
-						var currentConfiguration = persistentState.GetCurrentConfiguration();
+						var currentConfiguration = persistentState.GetCurrentTopology();
 						expectedAllVotingPeers.Should().Contain(currentConfiguration.AllVotingNodes);
 					}
 				}

@@ -11,19 +11,26 @@ using FluentAssertions.Events;
 using Newtonsoft.Json;
 using Rhino.Raft.Messages;
 using Xunit;
+using Xunit.Extensions;
 
 namespace Rhino.Raft.Tests
 {
 	public class SnapshotTests : RaftTestsBase
 	{
 
-		[Fact]
-		public void AfterSnapshotInstalled_CanContinueGettingLogEntriesNormally()
+		[Theory]
+		//[InlineData(1)]
+		[InlineData(2)]
+		//[InlineData(3)]
+		//[InlineData(5)]
+		//[InlineData(7)]
+		public void AfterSnapshotInstalled_CanContinueGettingLogEntriesNormally(int amount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(1);
+			var leader = CreateNetworkAndWaitForLeader(amount);
 			leader.MaxLogLengthBeforeCompaction = 5;
 			var snapshot = WaitForSnapshot(leader);
-			var commits = WaitForCommitsOnCluster<DictionaryCommand.Set>(5);
+			var commits = WaitForCommitsOnCluster(
+				machine => machine.Data.Count == 5);
 			for (int i = 0; i < 5; i++)
 			{
 				leader.AppendCommand(new DictionaryCommand.Set
@@ -45,7 +52,8 @@ namespace Rhino.Raft.Tests
 
 			Assert.Equal(newNode.CurrentLeader, leader.Name);
 
-			var commit = WaitForCommit<DictionaryCommand.Set>(newNode, machine => machine.Data.ContainsKey("c"));
+			var commit = WaitForCommit<DictionaryCommand.Set>(newNode,
+				machine => machine.Data.ContainsKey("c"));
 
 			leader.AppendCommand(new DictionaryCommand.Set
 			{

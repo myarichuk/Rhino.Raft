@@ -56,7 +56,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			while (_stopHeartbeatCancellationTokenSource.IsCancellationRequested == false)
 			{
-				Engine.DebugLog.Write("Starting sending Leader heartbeats");
+				Engine.DebugLog.Write("Starting sending Leader heartbeats to: {0}", string.Join(", ", Engine.CurrentTopology.AllVotingNodes));
 				SendEntriesToAllPeers();
 
 				OnHeartbeatSent();
@@ -66,12 +66,7 @@ namespace Rhino.Raft.Behaviors
 
 		internal void SendEntriesToAllPeers()
 		{
-			var changingTopology = Engine.ChangingTopology;
-			var peers = (changingTopology == null) ?
-				Engine.AllVotingNodes :
-				//if node is removed --> then we will need to send TopologyChangedCommand that will remove it from cluster and stop its messaging loop
-				//if node is added --> then we will need to send TopologyChangedCommand that will effectively add it to cluster
-				Engine.AllVotingNodes.Union(changingTopology.AllVotingNodes, StringComparer.OrdinalIgnoreCase);
+			var peers = Engine.AllVotingNodes;
 			foreach (var peer in peers)
 			{
 				if (peer.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
@@ -128,10 +123,14 @@ namespace Rhino.Raft.Behaviors
 				throw;
 			}
 
-			Engine.DebugLog.Write("SendEntriesToPeer({0}) --> prevLogEntry.Index == {1}", peer, (prevLogEntry == null) ? "null" : prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
 			prevLogEntry = prevLogEntry ?? new LogEntry();
-
-			Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1}. Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)));
+			
+			if (entries.Length> 0)
+				Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: {3}). Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)),
+					prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
+			else
+				Engine.DebugLog.Write("Sending empty heartbeat to {0} (PrevLogEntry: {1})", peer,
+					prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
 
 			var aer = new AppendEntriesRequest
 			{
@@ -146,7 +145,7 @@ namespace Rhino.Raft.Behaviors
 
 			Engine.Transport.Send(peer, aer);
 
-			OnEntriesAppended(entries); //equivalent to followers receiving the entries			
+			Engine.OnEntriesAppended(entries);
 		}
 
 		private void SendSnapshotToPeer(string peer)
@@ -308,21 +307,7 @@ namespace Rhino.Raft.Behaviors
 		/// </summary>
 		private long GetMaxIndexOnQuorom()
 		{
-			var maxIndexOnQuoromForCurrentTopology = GetMaxIndexOnQuoromForTopology(Engine.CurrentTopology);
-			var changingTopology = Engine.ChangingTopology;
-			if (changingTopology != null)
-			{
-				// in this case, we have to take into account BOTH the current and changing topologies
-				var maxIndexOnQuoromForChangingTopology = GetMaxIndexOnQuoromForTopology(changingTopology);
-
-				return Math.Min(maxIndexOnQuoromForCurrentTopology, maxIndexOnQuoromForChangingTopology);
-			}
-
-			return maxIndexOnQuoromForCurrentTopology;
-		}
-
-		private long GetMaxIndexOnQuoromForTopology(Topology topology)
-		{
+			var topology = Engine.CurrentTopology;
 			var dic = new Dictionary<long, int>();
 			foreach (var index in _matchIndexes)
 			{

@@ -27,8 +27,6 @@ namespace Rhino.Raft
 
 		private Topology _currentTopology;
 
-		private Topology _changingTopology;
-
 		public DebugWriter DebugLog { get; set; }
 		public ITransport Transport { get; set; }
 		public IRaftStateMachine StateMachine { get; set; }
@@ -94,7 +92,7 @@ namespace Rhino.Raft
 		{
 			get
 			{
-				var behavior = _stateBehavior;
+				var behavior = StateBehavior;
 				if (behavior == null)
 					return RaftEngineState.None;
 				return behavior.State;
@@ -107,20 +105,12 @@ namespace Rhino.Raft
 		private readonly Task _eventLoopTask;
 
 		private long _commitIndex;
-		private AbstractRaftStateBehavior _stateBehavior;
 		private string _currentLeader;
 
 		private Task _snapshottingTask;
+		private Task _changingTopology;
 
-		private AbstractRaftStateBehavior StateBehavior
-		{
-			get { return _stateBehavior; }
-			set
-			{
-				_stateBehavior = value;
-				_stateBehavior.EntriesAppended += OnEntriesAppended;
-			}
-		}
+		private AbstractRaftStateBehavior StateBehavior { get; set; }
 
 		/// <summary>
 		/// can be heartbeat timeout or election timeout - depends on the state behavior
@@ -171,14 +161,13 @@ namespace Rhino.Raft
 				CommandSerializer = new JsonCommandSerializer()
 			};
 
-			_currentTopology = PersistentState.GetCurrentConfiguration();
-			_changingTopology = PersistentState.GetChangingConfiguration();
+			_currentTopology = PersistentState.GetCurrentTopology();
 
 			if (raftEngineOptions.ForceNewTopology ||
 				(_currentTopology.AllVotingNodes.Count == 0))
 			{
 				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new[] { Name });
-				PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
+				PersistentState.SetCurrentTopology(_currentTopology, 0);
 			}
 
 			MaxLogLengthBeforeCompaction = raftEngineOptions.MaxLogLengthBeforeCompaction;
@@ -210,7 +199,7 @@ namespace Rhino.Raft
 				try
 				{
 					MessageEnvelope message;
-					var behavior = _stateBehavior;
+					var behavior = StateBehavior;
 					var lastHeartBeat = (int)(DateTime.UtcNow - behavior.LastHeartbeatTime).TotalMilliseconds;
 					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout - lastHeartBeat, _eventLoopCancellationTokenSource.Token, out message);
 					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
@@ -218,7 +207,7 @@ namespace Rhino.Raft
 
 					if (hasMessage == false)
 					{
-						if(State != RaftEngineState.Leader)
+						if (State != RaftEngineState.Leader)
 							DebugLog.Write("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
 						behavior.HandleTimeout();
 						OnStateTimeout();
@@ -247,12 +236,6 @@ namespace Rhino.Raft
 		{
 			if (state == State)
 				return;
-
-			if (StateBehavior != null)
-			{
-				StateBehavior.EntriesAppended -= OnEntriesAppended;
-				StateBehavior.TopologyChangeStarted -= OnTopologyChangeStarted;
-			}
 
 			if (State == RaftEngineState.Leader)
 				_leaderSelectedEvent.Reset();
@@ -285,7 +268,6 @@ namespace Rhino.Raft
 				}
 
 				Debug.Assert(StateBehavior != null, "StateBehavior != null");
-				StateBehavior.TopologyChangeStarted += OnTopologyChangeStarted;
 
 				OnStateChanged(state);
 			}
@@ -313,24 +295,21 @@ namespace Rhino.Raft
 
 		private Task ModifyTopology(Topology requested)
 		{
-			if (_changingTopology != null)
-				throw new InvalidOperationException("Cannot change the cluster topology while another topology change is in progress");
-
-			try
-			{
-				_changingTopology = requested;
-				var tcc = new TopologyChangeCommand
+			var tcc = new TopologyChangeCommand
 				{
 					Completion = new TaskCompletionSource<object>(),
-					Existing = new Topology(_currentTopology.AllVotingNodes),
 					Requested = requested,
 					BufferCommand = false,
 				};
 
+			if (Interlocked.CompareExchange(ref _changingTopology, tcc.Completion.Task, null) != null)
+				throw new InvalidOperationException("Cannot change the cluster topology while another topology change is in progress");
+
+			try
+			{
 				AppendCommand(tcc);
-				PersistentState.SetCurrentTopology(_currentTopology, _changingTopology);
 				DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
-				OnTopologyChangeStarted(tcc);
+				TopologyChangeStarting(tcc);
 				return tcc.Completion.Task;
 			}
 			catch (Exception)
@@ -338,12 +317,6 @@ namespace Rhino.Raft
 				Interlocked.Exchange(ref _changingTopology, null);
 				throw;
 			}
-		}
-
-		public Topology ChangingTopology
-		{
-			get { return _changingTopology; }
-			set { _changingTopology = value; }
 		}
 
 		public Topology CurrentTopology
@@ -400,7 +373,7 @@ namespace Rhino.Raft
 					if (tcc != null)
 					{
 						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingNodes), Name);
-						ApplyTopologyChanges(tcc);
+						CommitTopologyChange(tcc);
 					}
 
 					OnCommitIndexChanged(oldCommitIndex, CommitIndex);
@@ -432,7 +405,7 @@ namespace Rhino.Raft
 				{
 					var currentTerm = PersistentState.CurrentTerm;
 					StateMachine.CreateSnapshot(to, currentTerm);
-					PersistentState.MarkSnapshotFor(to,currentTerm,
+					PersistentState.MarkSnapshotFor(to, currentTerm,
 						MaxLogLengthBeforeCompaction - (MaxLogLengthBeforeCompaction / 8));
 
 					OnSnapshotCreationEnded();
@@ -449,28 +422,21 @@ namespace Rhino.Raft
 			task.Start();
 		}
 
-		private void ApplyTopologyChanges(TopologyChangeCommand tcc)
+
+		private void CommitTopologyChange(TopologyChangeCommand tcc)
 		{
+			Interlocked.Exchange(ref _changingTopology, null);
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
-				var leaderBehavior = StateBehavior as LeaderStateBehavior;
-				if (leaderBehavior != null)
-					leaderBehavior.SendEntriesToAllPeers();
-
 				DebugLog.Write("@@@ This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
-				_currentTopology = new Topology(Enumerable.Empty<string>());
-				_changingTopology = null;
+				Interlocked.Exchange(ref _changingTopology, null);
 				CurrentLeader = null;
 
 				SetState(RaftEngineState.None);
 			}
 			else
 			{
-
-				_currentTopology = tcc.Requested;
-				_changingTopology = null;
-
 				if (_currentTopology.AllVotingNodes.Contains(CurrentLeader) == false)
 				{
 					CurrentLeader = null;
@@ -479,7 +445,6 @@ namespace Rhino.Raft
 				DebugLog.Write("@@@ Finished applying new topology. New AllVotingNodes: {0}", string.Join(",", _currentTopology.AllVotingNodes));
 			}
 
-			PersistentState.SetCurrentTopology(_currentTopology, changingTopology: null);
 			OnTopologyChanged(tcc);
 		}
 
@@ -502,11 +467,6 @@ namespace Rhino.Raft
 			};
 
 			var allVotingNodes = AllVotingNodes;
-			var changingTopology = ChangingTopology;
-			if (changingTopology != null)
-			{
-				allVotingNodes = allVotingNodes.Union(changingTopology.AllVotingNodes);
-			}
 
 			//dont't send to yourself the message
 			foreach (var votingPeer in allVotingNodes.Where(node =>
@@ -545,7 +505,7 @@ namespace Rhino.Raft
 			if (handler != null) handler();
 		}
 
-		protected virtual void OnEntriesAppended(LogEntry[] logEntries)
+		internal virtual void OnEntriesAppended(LogEntry[] logEntries)
 		{
 			var handler = EntriesAppended;
 			if (handler != null) handler(logEntries);
@@ -575,7 +535,7 @@ namespace Rhino.Raft
 			if (handler != null) handler(cmd);
 		}
 
-		protected virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
+		internal virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
 		{
 			var handler = TopologyChangeStarted;
 			if (handler != null) handler();
@@ -615,6 +575,28 @@ namespace Rhino.Raft
 		{
 			var handler = SnapshotInstallationEnded;
 			if (handler != null) handler();
+		}
+
+		public override string ToString()
+		{
+			return string.Format("Name: {0}", Name);
+		}
+
+		internal void TopologyChangeStarting(TopologyChangeCommand tcc)
+		{
+			_currentTopology = tcc.Requested;
+			Interlocked.Exchange(ref _changingTopology, new TaskCompletionSource<object>().Task);
+			OnTopologyChangeStarted(tcc);
+		}
+
+		internal void RevertTopologyTo(string[] previousPeers)
+		{
+			Interlocked.Exchange(ref _changingTopology, null);
+			_currentTopology = new Topology(previousPeers);
+			OnTopologyChanged(new TopologyChangeCommand
+			{
+				Requested = new Topology(previousPeers)
+			});
 		}
 	}
 
