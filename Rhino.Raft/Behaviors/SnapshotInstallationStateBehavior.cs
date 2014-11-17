@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -8,6 +9,8 @@ namespace Rhino.Raft.Behaviors
 	public class SnapshotInstallationStateBehavior : AbstractRaftStateBehavior
 	{
 		private readonly Random _random;
+
+		private Task _installingSnapshot;
 
 		public SnapshotInstallationStateBehavior(RaftEngine engine) : base(engine)
 		{
@@ -22,6 +25,11 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string destination, CanInstallSnapshotRequest req)
 		{
+			if (_installingSnapshot == null)
+			{
+				base.Handle(destination, req);
+				return;
+			}
 			Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
 			{
 				From = Engine.Name,
@@ -33,42 +41,64 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string destination, InstallSnapshotRequest req, Stream stream)
 		{
-			using (stream)
+			if (_installingSnapshot != null)
 			{
-				var lastLogEntry = Engine.PersistentState.LastLogEntry();
-				if (req.Term < lastLogEntry.Term)
-				{
-					Engine.Transport.Send(req.From, new InstallSnapshotResponse
-					{
-						From = Engine.Name,
-						CurrentTerm = lastLogEntry.Term,
-						LastLogIndex = lastLogEntry.Index,
-						Message = "Term " + req.Term + " is older than last term in the log " + lastLogEntry.Term + " so the snapshot was rejected",
-						Success = false
-					});
-					return;
-				}
+				base.Handle(destination, req, stream);
+				return;
+			}
 
-				Engine.DebugLog.Write("Received InstallSnapshotRequest from {0} until term {1} / {2}", req.From, req.LastIncludedTerm, req.LastIncludedIndex);
+			var lastLogEntry = Engine.PersistentState.LastLogEntry();
+			if (req.Term < lastLogEntry.Term)
+			{
+				stream.Dispose();
 
-				Engine.OnSnapshotInstallationStarted();
-				OnInstallSnapshotRequestReceived();
-
-				Engine.StateMachine.ApplySnapshot(req.LastIncludedTerm, req.LastIncludedIndex, stream);
-
-				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
-				Engine.OnSnapshotInstallationEnded(req.Term);
-				
 				Engine.Transport.Send(req.From, new InstallSnapshotResponse
 				{
 					From = Engine.Name,
 					CurrentTerm = lastLogEntry.Term,
 					LastLogIndex = lastLogEntry.Index,
-					Success = true
+					Message = "Term " + req.Term + " is older than last term in the log " + lastLogEntry.Term + " so the snapshot was rejected",
+					Success = false
 				});
-
-				Engine.SetState(RaftEngineState.Follower);// once we are done with the snapshot, we are back to follower mode
+				return;
 			}
+				
+			Engine.DebugLog.Write("Received InstallSnapshotRequest from {0} until term {1} / {2}", req.From, req.LastIncludedTerm, req.LastIncludedIndex);
+
+			Engine.OnSnapshotInstallationStarted();
+			
+			// this can be a long running task
+			_installingSnapshot = Task.Run(() =>
+			{
+				try
+				{
+					Engine.StateMachine.ApplySnapshot(req.LastIncludedTerm, req.LastIncludedIndex, stream);
+					Engine.PersistentState.MarkSnapshotFor(req.LastIncludedIndex, req.LastIncludedTerm, int.MaxValue);
+				}
+				catch (Exception e)
+				{
+					Engine.DebugLog.Write("Failed to install snapshot because {0}", e);
+					Engine.Transport.Execute(Engine.Name, () =>
+					{
+						_installingSnapshot = null;
+					});
+				}
+
+				// we are doing it this way to ensure that we are single threaded
+				Engine.Transport.Execute(Engine.Name, () =>
+				{
+					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+					Engine.OnSnapshotInstallationEnded(req.Term);
+
+					Engine.Transport.Send(req.From, new InstallSnapshotResponse
+					{
+						From = Engine.Name,
+						CurrentTerm = lastLogEntry.Term,
+						LastLogIndex = lastLogEntry.Index,
+						Success = true
+					});
+				});
+			});
 		}
 
 		public override void Handle(string destination, AppendEntriesRequest req)
@@ -94,6 +124,11 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow;// avoid busy loop while waiting for the snapshot
 			Engine.DebugLog.Write("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished
+		}
+
+		public override void Dispose()
+		{
+			base.Dispose();
 		}
 	}
 }
