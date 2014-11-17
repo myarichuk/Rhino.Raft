@@ -16,6 +16,8 @@ namespace Rhino.Raft.Interfaces
 
 		void Apply(LogEntry entry, Command cmd);
 
+		bool SupportSnapshots { get; }
+
 		/// <summary>
 		/// Create a snapshot, can be called concurrently with GetSnapshotWriter
 		/// </summary>

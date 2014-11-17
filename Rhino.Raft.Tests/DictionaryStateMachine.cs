@@ -62,6 +62,8 @@ namespace Rhino.Raft.Tests
 				dicCommand.Apply(Data);
 		}
 
+		public bool SupportSnapshots { get { return true; }}
+
 		public void CreateSnapshot(long index, long term)
 		{
 			_snapshot = new SnapshotWriter(this, new Dictionary<string, int>(Data))

@@ -89,30 +89,28 @@ namespace Rhino.Raft.Behaviors
 
 			var nextIndex = _nextIndexes.GetOrAdd(peer, 0); //new peer's index starts at 0
 
-			var snapshot = Engine.PersistentState.GetLastSnapshotIndex();
-
-			if (snapshot != null &&
-				//no need for <= here, since there is no need for a snapshot if nextIndex is equal to the snapshot's one
-				nextIndex < snapshot &&
-				_snapshotsPendingInstallation.ContainsKey(peer) == false)
+			if (Engine.StateMachine.SupportSnapshots)
 			{
-				//we are generating the task that will start the snapshot streaming, 
-				//and then ask the potential target for the snapshot - can you accept it?
-				using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
-				{
-					Engine.Transport.Send(peer, new CanInstallSnapshotRequest
-					{
-						From = Engine.Name,
-						Index = snapshotWriter.Index,
-						Term = snapshotWriter.Term,
-						LeaderId = Engine.Name
-					});
-				}
-				return;
-			}
+				var snapshotIndex = Engine.PersistentState.GetLastSnapshotIndex();
 
-			if (_snapshotsPendingInstallation.ContainsKey(peer))
-				return;
+				if (snapshotIndex != null && nextIndex < snapshotIndex)
+				{
+					if (_snapshotsPendingInstallation.ContainsKey(peer))
+						return;
+
+					using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
+					{
+						Engine.Transport.Send(peer, new CanInstallSnapshotRequest
+						{
+							From = Engine.Name,
+							Index = snapshotWriter.Index,
+							Term = snapshotWriter.Term,
+							LeaderId = Engine.Name
+						});
+					}
+					return;
+				}
+			}
 
 			try
 			{
@@ -169,7 +167,7 @@ namespace Rhino.Raft.Behaviors
 						LastIncludedTerm = snapshotWriter.Term,
 						From = Engine.Name,
 						LeaderId = Engine.Name,
-					}, snapshotWriter.WriteSnapshot);
+					}, stream => snapshotWriter.WriteSnapshot(stream));
 
 					Engine.DebugLog.Write("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,
 						snapshotWriter.Term, sp.Elapsed);
