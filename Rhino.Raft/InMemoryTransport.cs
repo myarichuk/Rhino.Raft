@@ -75,7 +75,16 @@ namespace Rhino.Raft
 		        timeout = 0;
 
 			var messageQueue = _messageQueue.GetOrAdd(dest, s => new BlockingCollection<MessageEnvelope>());
-            return messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
+			var tryReceiveMessage = messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
+			if (tryReceiveMessage)
+			{
+				if (messageEnvelope.Message is TimeoutException)
+				{
+					messageEnvelope = null;
+					return false;
+				}
+			}
+			return tryReceiveMessage;
 		}
 
 	    public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
@@ -140,5 +149,14 @@ namespace Rhino.Raft
 			AddToQueue(dest, resp);
 		}
 
+		public void Execute(string dest, Action action)
+		{
+			AddToQueue(dest, action);
+		}
+
+		public void ForceTimeout(string name)
+		{
+			AddToQueue(name, new TimeoutException());
+		}
 	}
 }
