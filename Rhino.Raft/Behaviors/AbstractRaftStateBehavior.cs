@@ -271,7 +271,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
-				Engine.PersistentState.AppendToLog(req.Entries, req.PrevLogIndex);
+				Engine.PersistentState.AppendToLog(Engine, req.Entries, req.PrevLogIndex);
 				var topologyChange = req.Entries.LastOrDefault(x=>x.IsTopologyChange == true);
 				
 				// we consider the latest topology change to be in effect as soon as we see it, even before the 
