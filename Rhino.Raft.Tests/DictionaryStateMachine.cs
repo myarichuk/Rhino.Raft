@@ -43,7 +43,6 @@ namespace Rhino.Raft.Tests
 				var streamWriter = new StreamWriter(stream);
 				_parent._serializer.Serialize(streamWriter, _snapshot);
 				streamWriter.Flush();
-				stream.Position = 0;
 			}
 		}
 
