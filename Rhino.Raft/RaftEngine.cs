@@ -189,7 +189,16 @@ namespace Rhino.Raft
 			Transport = raftEngineOptions.Transport;
 			StateMachine = raftEngineOptions.StateMachine;
 
-			SetState(AllVotingNodes.Any(n => !n.Equals(Name, StringComparison.OrdinalIgnoreCase)) ? RaftEngineState.Follower : RaftEngineState.Leader);
+			var thereAreOthersInTheCluster = AllVotingNodes.Any(n => !n.Equals(Name, StringComparison.OrdinalIgnoreCase));
+			if (thereAreOthersInTheCluster == false)
+			{
+				SetState(RaftEngineState.Leader);
+				PersistentState.UpdateTermTo(PersistentState.CurrentTerm + 1);// restart means new term
+			}
+			else
+			{
+				SetState(RaftEngineState.Follower);
+			}
 
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
@@ -209,19 +218,13 @@ namespace Rhino.Raft
 
 					if (hasMessage == false)
 					{
-						DebugLog.Write("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
+						if(State != RaftEngineState.Leader)
+							DebugLog.Write("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
 						behavior.HandleTimeout();
 						OnStateTimeout();
 						continue;
 					}
 					DebugLog.Write("State {0} message {1}", State, message.Message);
-					//special case for InstallSnapshotRequest
-
-					if (message.Message is InstallSnapshotRequest)
-					{
-						SetState(RaftEngineState.SnapshotInstallation);
-						behavior = _stateBehavior;
-					}
 
 					behavior.HandleMessage(message);
 				}
@@ -390,8 +393,8 @@ namespace Rhino.Raft
 					StateMachine.Apply(entry, command);
 
 					var oldCommitIndex = CommitIndex;
-					CommitIndex = to;
-					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", CommitIndex);
+					CommitIndex = entry.Index;
+					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", entry.Index);
 
 					var tcc = command as TopologyChangeCommand;
 					if (tcc != null)
@@ -410,6 +413,9 @@ namespace Rhino.Raft
 				}
 			}
 
+			if (StateMachine.SupportSnapshots == false)
+				return;
+
 			var commitedEntriesCount = PersistentState.GetCommitedEntriesCount(to);
 			if (commitedEntriesCount >= MaxLogLengthBeforeCompaction)
 			{
@@ -424,8 +430,9 @@ namespace Rhino.Raft
 				OnSnapshotCreationStarted();
 				try
 				{
-					StateMachine.CreateSnapshot(to + 1,PersistentState.CurrentTerm);
-					PersistentState.MarkSnapshotFor(to,
+					var currentTerm = PersistentState.CurrentTerm;
+					StateMachine.CreateSnapshot(to, currentTerm);
+					PersistentState.MarkSnapshotFor(to,currentTerm,
 						MaxLogLengthBeforeCompaction - (MaxLogLengthBeforeCompaction / 8));
 
 					OnSnapshotCreationEnded();
