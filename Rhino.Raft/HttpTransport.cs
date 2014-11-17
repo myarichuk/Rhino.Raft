@@ -1,13 +1,16 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Utils;
@@ -30,6 +33,12 @@ namespace Rhino.Raft
 
 		//---- comm stuff
 		private readonly HttpListener _httpListener;
+
+		public string NodeName
+		{
+			get { return _currentNodeConnection.NodeName; }
+		}
+
 		public HttpTransport(HttpTransportOptions options, DebugWriter logWriter)
 		{
 			_logWriter = logWriter;
@@ -45,7 +54,7 @@ namespace Rhino.Raft
 				Prefixes =
 				{
 					"http://+:" + options.CurrentNodeConnection.Port + "/"
-				}
+				},			
 			};
 			_httpListener.Start();
 
@@ -57,11 +66,11 @@ namespace Rhino.Raft
 		private void RunMessageLoop()
 		{
 			_logWriter.Write("--== Started Listening Thread ==--");
-			while (_httpListener.IsListening)
-			{
+			while (_httpListener.IsListening && !_cancellationTokenSource.IsCancellationRequested)
+			{				
 				var ctx = _httpListener.GetContext();
 				_requests.Add(ctx);
-				_logWriter.Write("--== Incoming request from {0}, adding to incoming cache ==--", ctx.Request.RawUrl);
+				_logWriter.Write("--== Incoming request from {0}, adding to incoming cache ==--", ctx.Request.Url);
 			}
 		}
 
@@ -73,7 +82,7 @@ namespace Rhino.Raft
 			HttpListenerContext ctx;
 			if (_requests.TryTake(out ctx, timeout, cancellationToken) == false)
 			{
-				_logWriter.Write("--== Http transport timed-out while trying to receive message. Request url was {0} ==--", ctx.Request.RawUrl);
+				_logWriter.Write("--== Http transport timed-out while trying to receive message. ==--");
 				return false;
 			}
 
@@ -82,14 +91,36 @@ namespace Rhino.Raft
 				using (var requestReader = new StreamReader(ctx.Request.InputStream))
 				using (var jsonReader = new JsonTextReader(requestReader))
 					messageEnvelope = _serializer.Deserialize<MessageEnvelope>(jsonReader);
+
+				var messageType = Type.GetType("Rhino.Raft.Messages." + ctx.Request.RawUrl.Replace("/", ""),true,true);
+				var messageJObject = messageEnvelope.Message as JObject;
+				if(messageJObject == null)
+					throw new FormatException("Received message with unknown format - it is not a Json object. This should not happen, it is a bug.");
+
+				messageEnvelope.Message = messageJObject.ToObject(messageType);
 			}
 			catch (Exception e)
 			{
-				throw new ApplicationException("Failed to deserialize a message. This should not happen - it is probably a bug. Exception thrown: " + e);
+				ctx.Response.StatusCode = 500;
+				var error = "Failed to deserialize a message. This should not happen - it is probably a bug. Exception thrown: " + e;
+				ctx.Response.StatusDescription = error;
+				ctx.Response.ContentLength64 = 0;
+				ctx.Response.OutputStream.Close();
+
+				throw new ApplicationException(error);				
 			}
 
+			
+			const string message = "Http transport received a message. Request url was {0} ";
+			var successMessage = String.Format(message, ctx.Request.Url);
 
-			_logWriter.Write("--== Http transport received a message. Request url was {0} ==--", ctx.Request.RawUrl);			
+			_logWriter.Write(successMessage);
+			
+			ctx.Response.StatusCode = 200;
+			ctx.Response.StatusDescription = successMessage;
+			ctx.Response.ContentLength64 = 0;
+			ctx.Response.OutputStream.Close();
+
 			return true;
 		}
 
@@ -136,13 +167,20 @@ namespace Rhino.Raft
 		public void Dispose()
 		{
 			_logWriter.Write("--== starting disposal of http transport ==--");
+			_cancellationTokenSource.Cancel();
 
-			_httpListener.Stop();
-			_httpListener.Close();
 			_logWriter.Write("--== stopped http listener ==--");
 
-			if (!_messageReceiverThread.Wait(Default.DisposalTimeoutMs, _cancellationTokenSource.Token))
-				_logWriter.Write("--== Could not stop Http transport message thread within allocated timeout ( {0}ms ). Probably something went wrong ==--", Default.DisposalTimeoutMs);
+			try
+			{
+				if (!_messageReceiverThread.Wait(Default.DisposalTimeoutMs, _cancellationTokenSource.Token))
+					_logWriter.Write(
+						"--== Could not stop Http transport message thread within allocated timeout ( {0}ms ). Probably something went wrong ==--",
+						Default.DisposalTimeoutMs);
+			}
+			catch (OperationCanceledException) { }
+			_httpListener.Stop();
+			_httpListener.Close();
 		}
 
 		//------------ helpers
@@ -156,20 +194,19 @@ namespace Rhino.Raft
 				Message = message
 			};
 
-			using(var stream = new MemoryStream())
-			using(var streamWriter = new StreamWriter(stream))
-			using (var jsonWriter = new JsonTextWriter(streamWriter))
+			using (var client = new HttpClient())
 			{
-				_serializer.Serialize(jsonWriter,envelope);
-				using (var client = new HttpClient())
-				{
-					NodeConnectionInfo peerConnection;
-					if (!_peersConnections.TryGetValue(dest, out peerConnection))
-						throw new ApplicationException(String.Format("The node '{0}' is not in the peer list. Cannot send message to a node *NOT* in the peer list",dest));
+				NodeConnectionInfo peerConnection;
+				if (!_peersConnections.TryGetValue(dest, out peerConnection))
+					throw new ApplicationException(String.Format("The node '{0}' is not in the peer list. Cannot send message to a node *NOT* in the peer list", dest));
 
-					client.PostAsync(peerConnection.GetUriForMessageSending<TMessage>(), new StreamContent(stream),
-										_cancellationTokenSource.Token).Wait(_cancellationTokenSource.Token);
-				}
+				var targetAddress = peerConnection.GetUriForMessageSending<TMessage>();
+				var json = JObject.FromObject(envelope).ToString();
+				var postAsync = client.PostAsync(targetAddress, new StringContent(json,Encoding.UTF8), _cancellationTokenSource.Token);
+				postAsync.Wait(Default.SendTimeout, _cancellationTokenSource.Token);
+
+				var response = postAsync.Result;
+				_logWriter.Write("--== sending message of type {0}, response code = {1} (message in the response is {2})", typeof(TMessage).Name, response.StatusCode, response.ReasonPhrase ?? "no explanation sent by the server");
 			}
 		}
 	

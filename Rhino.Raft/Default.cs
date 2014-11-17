@@ -14,5 +14,6 @@ namespace Rhino.Raft
 		public const int MaxIncomingConcurrentRequests = 1024;		
 		public const short HttpTransportListeningPort = 8082;
 		public const int DisposalTimeoutMs = 5000;
+		public const int SendTimeout = 5000;
 	}
 }
