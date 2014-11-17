@@ -60,7 +60,7 @@ namespace Rhino.Raft.Behaviors
 				SendEntriesToAllPeers();
 
 				OnHeartbeatSent();
-				Thread.Sleep(Engine.MessageTimeout / 6);
+				Thread.Sleep(Math.Min(Engine.MessageTimeout / 6, 250));
 			}
 		}
 
@@ -89,11 +89,11 @@ namespace Rhino.Raft.Behaviors
 
 			var nextIndex = _nextIndexes.GetOrAdd(peer, 0); //new peer's index starts at 0
 
-			var snapshot = Engine.PersistentState.GetLastSnapshot();
+			var snapshot = Engine.PersistentState.GetLastSnapshotIndex();
 
 			if (snapshot != null &&
 				//no need for <= here, since there is no need for a snapshot if nextIndex is equal to the snapshot's one
-				nextIndex < snapshot.Index &&
+				nextIndex < snapshot &&
 				_snapshotsPendingInstallation.ContainsKey(peer) == false)
 			{
 				//we are generating the task that will start the snapshot streaming, 
@@ -167,7 +167,8 @@ namespace Rhino.Raft.Behaviors
 						Term = Engine.PersistentState.CurrentTerm,
 						LastIncludedIndex = snapshotWriter.Index,
 						LastIncludedTerm = snapshotWriter.Term,
-						From = Engine.Name
+						From = Engine.Name,
+						LeaderId = Engine.Name,
 					}, snapshotWriter.WriteSnapshot);
 
 					Engine.DebugLog.Write("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,
@@ -254,22 +255,17 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
+			Debug.Assert(resp.Source != null);
+			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
+			_matchIndexes[resp.Source] = resp.LastLogIndex;
+			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
+
 			if (resp.Success == false)
 			{
-				// go back in the log, this peer isn't matching us at this location				
-				// precaution -> if the index is at 0 -> obviously nowere to go back
-				if (_nextIndexes[resp.Source] >= 1)
-					_nextIndexes[resp.Source] -= 1;
-
 				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",
 					_nextIndexes[resp.Source], resp.Source);
 				return;
 			}
-
-			Debug.Assert(resp.Source != null);
-			_matchIndexes[resp.Source] = resp.LastLogIndex;
-			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
-			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
 
 			var maxIndexOnCurrentQuorom = GetMaxIndexOnQuorom();
 			if (maxIndexOnCurrentQuorom == -1)
@@ -357,6 +353,16 @@ namespace Rhino.Raft.Behaviors
 			var index = Engine.PersistentState.AppendToLeaderLog(command);
 			_matchIndexes[Engine.Name] = index;
 			_nextIndexes[Engine.Name] = index + 1;
+
+			if (Engine.CurrentTopology.QuoromSize == 1)
+			{
+				CommitEntries(null, index, index);
+				if (command.Completion != null)
+					command.Completion.SetResult(null);
+
+				return;
+			}
+
 			if (command.Completion != null)
 				_pendingCommands.Enqueue(command);
 		}
