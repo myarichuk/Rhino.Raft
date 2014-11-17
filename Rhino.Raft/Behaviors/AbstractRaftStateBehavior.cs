@@ -19,8 +19,6 @@ namespace Rhino.Raft.Behaviors
 
 		public event Action<TopologyChangeCommand> TopologyChangeStarted;
 
-		public event Action InstallSnapshotRequestReceived;
-
 		public void HandleMessage(MessageEnvelope envelope)
 		{
 			RequestVoteRequest requestVoteRequest;
@@ -29,6 +27,8 @@ namespace Rhino.Raft.Behaviors
 			AppendEntriesRequest appendEntriesRequest;
 			InstallSnapshotRequest installSnapshotRequest;
 			CanInstallSnapshotRequest canInstallSnapshotRequest;
+			CanInstallSnapshotResponse canInstallSnapshotResponse;
+			Action action;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
 				Handle(envelope.Destination, requestVoteRequest);
@@ -42,12 +42,17 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, canInstallSnapshotRequest);
 			else if (TryCastMessage(envelope.Message, out installSnapshotRequest))
 				Handle(envelope.Destination, installSnapshotRequest, envelope.Stream);
+			else if (TryCastMessage(envelope.Message, out canInstallSnapshotResponse))
+				Handle(envelope.Destination, canInstallSnapshotResponse);
+			else if (TryCastMessage(envelope.Message, out action))
+				action();
 
 			Engine.OnEventsProcessed();
 		}
 
 		public virtual void Handle(string destination, InstallSnapshotRequest req, Stream stream)
 	    {
+			stream.Dispose();
 			//not relevant here, ignoring
 	    }
 
@@ -181,7 +186,7 @@ namespace Rhino.Raft.Behaviors
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
 			var index = lastLogEntry.Index;
-			if (req.Term < Engine.PersistentState.CurrentTerm && req.Index < index)
+			if (req.Term <= Engine.PersistentState.CurrentTerm && req.Index <= index)
 			{
 				Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
 				{
@@ -189,8 +194,11 @@ namespace Rhino.Raft.Behaviors
 					IsCurrentlyInstalling = false,
 					Message = String.Format("Term or Index do not match the ones on this node. Cannot install snapshot. (CurrentTerm = {0}, req.Term = {1}, LastLogEntry index = {2}, req.Index = {3}",
 						Engine.PersistentState.CurrentTerm,req.Term, index,req.Index),
-					Success = false
+					Success = false,
+					Index = index,
+					Term = Engine.PersistentState.CurrentTerm
 				});
+				return;
 			}
 
 			Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
@@ -224,6 +232,7 @@ namespace Rhino.Raft.Behaviors
 				{
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					LeaderId = Engine.CurrentLeader,
 					Message = msg,
 					Source = Engine.Name
@@ -253,6 +262,7 @@ namespace Rhino.Raft.Behaviors
 				{
 					Success = false,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = msg,
 					LeaderId = req.LeaderId,
 					Source = Engine.Name
@@ -296,17 +306,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				if (req.LeaderCommit > Engine.CommitIndex)
 				{
-					Engine.DebugLog.Write(
-						"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", req.LeaderCommit,
-						Engine.CommitIndex, lastIndex);
-					var oldCommitIndex = Engine.CommitIndex + 1;
-
-					Engine.CommitIndex = Math.Min(req.LeaderCommit, lastIndex);
-					Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
-					message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
-					Engine.DebugLog.Write(message);
-
-					OnEntriesAppended(req.Entries);
+					message = CommitEntries(req.Entries, lastIndex, req.LeaderCommit);
 				}
 				else
 				{
@@ -340,6 +340,22 @@ namespace Rhino.Raft.Behaviors
 			}
 		}
 
+		protected string CommitEntries(LogEntry[] entries, long lastIndex, long leaderCommit)
+		{
+			Engine.DebugLog.Write(
+				"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", leaderCommit,
+				Engine.CommitIndex, lastIndex);
+			var oldCommitIndex = Engine.CommitIndex + 1;
+
+			Engine.CommitIndex = Math.Min(leaderCommit, lastIndex);
+			Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
+			var message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;
+			Engine.DebugLog.Write(message);
+
+			OnEntriesAppended(entries);
+			return message;
+		}
+
 		public virtual void Dispose()
 		{
 			
@@ -358,10 +374,5 @@ namespace Rhino.Raft.Behaviors
 			if (handler != null) handler(logEntries);
 		}
 
-		protected virtual void OnInstallSnapshotRequestReceived()
-		{
-			var handler = InstallSnapshotRequestReceived;
-			if (handler != null) handler();
-		}
 	}
 }
