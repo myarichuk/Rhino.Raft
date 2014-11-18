@@ -360,11 +360,7 @@ namespace Rhino.Raft.Behaviors
 
 		protected string CommitEntries(LogEntry[] entries, long lastIndex, long leaderCommit)
 		{
-			Engine.DebugLog.Write(
-				"preparing to apply commits: req.LeaderCommit: {0}, Engine.CommitIndex: {1}, lastIndex: {2}", leaderCommit,
-				Engine.CommitIndex, lastIndex);
 			var oldCommitIndex = Engine.CommitIndex + 1;
-
 			Engine.CommitIndex = Math.Min(leaderCommit, lastIndex);
 			Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 			var message = "Applied commits, new CommitIndex is " + Engine.CommitIndex;

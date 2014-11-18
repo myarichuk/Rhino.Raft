@@ -243,6 +243,12 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string destination, AppendEntriesResponse resp)
 		{
+			if (Engine.ContainedInAllVotingNodes(resp.From) == false)
+			{
+				Engine.DebugLog.Write("Rejecting append entries response from {0} because it is not in my cluster", resp.From);
+				return;
+			}
+
 			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.From);
 
 			// there is a new leader in town, time to step down
