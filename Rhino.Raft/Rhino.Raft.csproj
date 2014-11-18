@@ -79,6 +79,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftEngine.cs" />
     <Compile Include="RaftEngineOptions.cs" />
+    <Compile Include="RaftEngineState.cs" />
     <Compile Include="Storage\Topology.cs" />
     <Compile Include="Storage\PersistentState.cs" />
     <Compile Include="Utils\DebugWriter.cs" />

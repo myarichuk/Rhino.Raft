@@ -90,7 +90,11 @@ namespace Rhino.Raft.Tests
 			transport.DisconnectNodeSending("node2");
 			var raftNodes = CreateNodeNetwork(3, messageTimeout: 300, transport: transport).ToList();
 			var countdown = new CountdownEvent(2);
-			raftNodes[0].ElectionStarted += () => countdown.Signal();
+			raftNodes[0].ElectionStarted += () =>
+			{
+				if (countdown.CurrentCount > 0)
+					countdown.Signal();
+			};
 
 			Assert.True(countdown.Wait(1500));
 

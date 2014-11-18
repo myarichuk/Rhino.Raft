@@ -500,91 +500,241 @@ namespace Rhino.Raft
 		protected virtual void OnCandidacyAnnounced()
 		{
 			var handler = ElectionStarted;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on ElectionStarted event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnStateChanged(RaftEngineState state)
 		{
 			var handler = StateChanged;
-			if (handler != null) handler(state);
+			if (handler != null)
+			{
+				try
+				{
+					handler(state);
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on StateChanged event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnStateTimeout()
 		{
 			var handler = StateTimeout;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on StateTimeout event: " + e);
+				}
+			}
 		}
 
 		internal virtual void OnEntriesAppended(LogEntry[] logEntries)
 		{
 			var handler = EntriesAppended;
-			if (handler != null) handler(logEntries);
+			if (handler != null)
+			{
+				try
+				{
+					handler(logEntries);
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on EntriesAppended event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnCommitIndexChanged(long oldCommitIndex, long newCommitIndex)
 		{
 			var handler = CommitIndexChanged;
-			if (handler != null) handler(oldCommitIndex, newCommitIndex);
+			if (handler != null)
+			{
+				try
+				{
+					handler(oldCommitIndex, newCommitIndex);
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on CommitIndexChanged event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnElectedAsLeader()
 		{
 			var handler = ElectedAsLeader;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on ElectedAsLeader event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnTopologyChanged(TopologyChangeCommand cmd)
 		{
 			var handler = TopologyChangeFinished;
-			if (handler != null) handler(cmd);
+			if (handler != null)
+			{
+				try
+				{
+					handler(cmd);
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on TopologyChangeFinished event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnCommitApplied(Command cmd)
 		{
 			var handler = CommitApplied;
-			if (handler != null) handler(cmd);
+			if (handler != null)
+			{
+				try
+				{
+					handler(cmd);
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on CommitApplied event: " + e);
+				}
+			}
 		}
 
 		internal virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
 		{
 			var handler = TopologyChangeStarted;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on TopologyChangeStarted event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnSnapshotCreationStarted()
 		{
 			var handler = SnapshotCreationStarted;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on SnapshotCreationStarted event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnSnapshotCreationEnded()
 		{
 			var handler = SnapshotCreationEnded;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on SnapshotCreationEnded event: " + e);
+				}
+			}
 		}
 
 		protected virtual void OnSnapshotCreationError(Exception e)
 		{
 			var handler = SnapshotCreationError;
-			if (handler != null) handler(e);
+			if (handler != null)
+			{
+				try
+				{
+					handler(e);
+				}
+				catch (Exception ex)
+				{
+					DebugLog.Write("Error on SnapshotCreationError event: " + ex);
+				}
+			}
 		}
 
 		internal virtual void OnEventsProcessed()
 		{
 			var handler = EventsProcessed;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on EventsProcessed event: " + e);
+				}
+			}
 		}
 
 		internal virtual void OnSnapshotInstallationStarted()
 		{
 			var handler = SnapshotInstallationStarted;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on SnapshotInstallationStarted event: " + e);
+				}
+			}
 		}
 
 		internal virtual void OnSnapshotInstallationEnded(long snapshotTerm)
 		{
 			var handler = SnapshotInstallationEnded;
-			if (handler != null) handler();
+			if (handler != null)
+			{
+				try
+				{
+					handler();
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on SnapshotInstallationEnded event: " + e);
+				}
+			}
 		}
 
 		public override string ToString()
@@ -608,14 +758,5 @@ namespace Rhino.Raft
 				Requested = new Topology(previousPeers)
 			});
 		}
-	}
-
-	public enum RaftEngineState
-	{
-		None,
-		Follower,
-		Leader,
-		Candidate,
-		SnapshotInstallation
 	}
 }
