@@ -78,7 +78,6 @@
     <Compile Include="CommandsTests.cs" />
     <Compile Include="DictionaryCommand.cs" />
     <Compile Include="DictionaryStateMachine.cs" />
-    <Compile Include="HttpTransportTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ElectionRelatedTests.cs" />
     <Compile Include="RaftTestsBase.cs" />
