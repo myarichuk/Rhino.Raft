@@ -318,7 +318,7 @@ namespace Rhino.Raft.Tests
 					if(containedInAllVotingNodes)
 						continue;
 					Assert.True(containedInAllVotingNodes,
-						string.Join(", ", node.AllVotingNodes));
+						string.Join(", ", node.AllVotingNodes) + " on " + node.Name);
 				}
 
 				additionalNode.AllVotingNodes.Should().Contain(raftNodes.Select(node => node.Name));

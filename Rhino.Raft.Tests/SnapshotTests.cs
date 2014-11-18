@@ -82,9 +82,11 @@ namespace Rhino.Raft.Tests
 
 			var newNode = NewNodeFor(leader);
 			WriteLine("<-- adding node");
+			var waitForSnapshotInstallation = WaitForSnapshotInstallation(newNode);
+
 			leader.AddToClusterAsync(newNode.Name).Wait();
 
-			WaitForSnapshotInstallation(newNode).Wait();
+			waitForSnapshotInstallation.Wait();
 
 			Assert.Equal(newNode.CurrentLeader, leader.Name);
 
