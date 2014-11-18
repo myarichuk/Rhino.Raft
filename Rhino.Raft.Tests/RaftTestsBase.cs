@@ -214,7 +214,7 @@ namespace Rhino.Raft.Tests
 			return raftNetwork;
 		}
 
-		public void Dispose()
+		public virtual void Dispose()
 		{
 			_nodes.ForEach(node => node.Dispose());
 		}

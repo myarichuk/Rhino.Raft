@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -28,7 +29,7 @@ namespace Rhino.Raft.Tests
 				Process.GetProcesses().Any(p => p.ProcessName.Equals("fiddler",StringComparison.InvariantCultureIgnoreCase));
 			_localHost = isFiddlerActive ? "localhost.fiddler" : "localhost";
 		}
-
+		
 		[Fact]
 		public void Should_receive_messages_in_the_same_order()
 		{
