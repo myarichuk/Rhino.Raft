@@ -17,6 +17,8 @@ namespace Rhino.Raft
 
 		private readonly HashSet<string> _disconnectedNodesFromSending = new HashSet<string>();
 
+		private readonly Dictionary<string, InMemoryTransport> _transports = new Dictionary<string, InMemoryTransport>();
+
 		public ConcurrentDictionary<string, BlockingCollection<MessageContext>> MessageQueue
 		{
 			get { return _messageQueue; }
@@ -24,7 +26,12 @@ namespace Rhino.Raft
 
 		public ITransport CreateTransportFor(string from)
 		{
-			return new InMemoryTransport(this, from);
+			InMemoryTransport value;
+			if (_transports.TryGetValue(from, out value))
+				return value;
+			value = new InMemoryTransport(this, from);
+			_transports[from] = value;
+			return value;
 		}
 
 		public class InMemoryTransport : ITransport
@@ -87,7 +94,7 @@ namespace Rhino.Raft
 				_parent.AddToQueue(this, From, resp);
 			}
 
-			public void ForceTimeout(string name)
+			public void ForceTimeout()
 			{
 				_parent.AddToQueue(this, From, new TimeoutException(), evenIfDisconnected: true);
 			}

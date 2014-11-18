@@ -20,9 +20,9 @@ namespace Rhino.Raft.Tests
 		{
 			var leader = CreateNetworkAndWaitForLeader(3);
 			var nonLeaders = Nodes.Where(x => x != leader).ToList();
-			var inMemoryTransport = ((InMemoryTransport) leader.Transport);
+			var inMemoryTransport = ((InMemoryTransportHub.InMemoryTransport) leader.Transport);
 
-			inMemoryTransport.DisconnectNodeSending(leader.Name);
+			DisconnectNodeSending(leader.Name);
 
 			WriteLine("Initial leader is " + leader.Name);
 			leader.AddToClusterAsync("node3");
@@ -33,9 +33,9 @@ namespace Rhino.Raft.Tests
 
 			WriteLine("<-- should switch leaders now");
 
-			nonLeaders.ForEach(engine => inMemoryTransport.ForceTimeout(engine.Name));
+			nonLeaders.ForEach(engine => inMemoryTransport.ForceTimeout());
 
-			inMemoryTransport.ForceTimeout(nonLeaders[0].Name);// force it to win
+			inMemoryTransport.ForceTimeout();// force it to win
 
 			topologyChnaged.Wait();
 
@@ -72,22 +72,18 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Adding_additional_node_that_goes_offline_and_then_online_should_still_work()
 		{
-			var transport = new InMemoryTransport();
-			var nodes = CreateNodeNetwork(3, transport).ToList();
-			nodes.First().WaitForLeader();
+			var leaderNode = CreateNetworkAndWaitForLeader(3);
 
-			var leaderNode = nodes.First(x => x.State == RaftEngineState.Leader);
-
-			using (var additionalNode = new RaftEngine(CreateNodeOptions("additional_node", transport, 1500)))
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("additional_node", 1500)))
 			{
-				additionalNode.TopologyChanging += () => transport.DisconnectNode("additional_node");
+				additionalNode.TopologyChanging += () => DisconnectNode("additional_node");
 				var waitForTopologyChangeInLeader =
 					leaderNode.WaitForEventTask((n, handler) => n.TopologyChanged += cmd => handler());
 
 				leaderNode.AddToClusterAsync(additionalNode.Name).Wait();
 
 				Thread.Sleep(additionalNode.Options.MessageTimeout * 2);
-				transport.ReconnectNode(additionalNode.Name);
+				ReconnectNode(additionalNode.Name);
 
 				Assert.True(waitForTopologyChangeInLeader.Wait(3000));
 			}
@@ -96,7 +92,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Adding_already_existing_node_should_throw()
 		{
-			using (var node = new RaftEngine(CreateNodeOptions("node", new InMemoryTransport(), 1500, "node", "other-node")))
+			using (var node = new RaftEngine(CreateNodeOptions("node", 1500, "node", "other-node")))
 			{
 				node.Invoking(x => x.AddToClusterAsync("other-node"))
 					.ShouldThrow<InvalidOperationException>();
@@ -106,7 +102,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Removal_of_non_existing_node_should_throw()
 		{
-			using (var node = new RaftEngine(CreateNodeOptions("node", new InMemoryTransport(), 1500, "node")))
+			using (var node = new RaftEngine(CreateNodeOptions("node", 1500, "node")))
 			{
 				node.Invoking(x => x.RemoveFromClusterAsync("non-existing"))
 					.ShouldThrow<InvalidOperationException>();
@@ -138,10 +134,9 @@ namespace Rhino.Raft.Tests
 		public void Node_added_to_cluster_will_not_cause_new_election(int nodeCount)
 		{
 			var electionStartedEvent = new ManualResetEventSlim();
-			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateNodeNetwork(nodeCount, inMemoryTransport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount).ToList();
 
-			using (var additionalNode = new RaftEngine(CreateNodeOptions("extra_node", inMemoryTransport, 1500)))
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("extra_node", 1500)))
 			{
 
 				raftNodes.First().WaitForLeader();
@@ -202,7 +197,6 @@ namespace Rhino.Raft.Tests
 		public void Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change()
 		{
 			const int timeout = 2500;
-			var inMemoryTransport = new InMemoryTransport();
 
 			var testDataFolder = Path.Combine(Directory.GetCurrentDirectory(), "test");
 			if (Directory.Exists(testDataFolder))
@@ -212,19 +206,19 @@ namespace Rhino.Raft.Tests
 			var nodeApath = Path.Combine(Directory.GetCurrentDirectory(), "test", tempFolder, "A");
 			var nodeBpath = Path.Combine(Directory.GetCurrentDirectory(), "test", tempFolder, "B");
 
-			inMemoryTransport.DisconnectNode("nodeC");
+			DisconnectNode("nodeC");
 			var topologyChangeStarted = new ManualResetEventSlim();
 			string nonLeaderName;
 			using (
 				var nodeA =
-					new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath),
+					new RaftEngine(CreateNodeOptions("nodeA", timeout, StorageEnvironmentOptions.ForPath(nodeApath),
 						"nodeA", "nodeB")))
 			using (
 				var nodeB =
-					new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
+					new RaftEngine(CreateNodeOptions("nodeB", timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
 						"nodeA", "nodeB")))
 			{
-				inMemoryTransport.ForceTimeout("nodeA");
+				ForceTimeout("nodeA");
 				nodeA.WaitForLeader();
 				Assert.True(nodeA.State != nodeB.State,
 					String.Format("nodeA.State {0} != nodeB.State {1}", nodeA.State, nodeB.State));
@@ -237,7 +231,7 @@ namespace Rhino.Raft.Tests
 				nonLeader.TopologyChanging += () =>
 				{
 					Console.WriteLine("<---disconnected from sending : " + nonLeaderName);
-					inMemoryTransport.DisconnectNodeSending(nonLeaderName);
+					DisconnectNodeSending(nonLeaderName);
 					topologyChangeStarted.Set();
 				};
 
@@ -247,22 +241,22 @@ namespace Rhino.Raft.Tests
 			}
 			WriteLine("<---nodeA, nodeB are down");
 
-			inMemoryTransport.ReconnectNodeSending(nonLeaderName);
+			ReconnectNodeSending(nonLeaderName);
 
 			var topologyChangesFinished = new CountdownEvent(2);
 			using (
 				var nodeA =
-					new RaftEngine(CreateNodeOptions("nodeA", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeApath),
+					new RaftEngine(CreateNodeOptions("nodeA", timeout, StorageEnvironmentOptions.ForPath(nodeApath),
 						"nodeA", "nodeB")))
 			using (
 				var nodeB =
-					new RaftEngine(CreateNodeOptions("nodeB", inMemoryTransport, timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
+					new RaftEngine(CreateNodeOptions("nodeB", timeout, StorageEnvironmentOptions.ForPath(nodeBpath),
 						"nodeA", "nodeB")))
 			{
 				nodeA.TopologyChanged += cmd => topologyChangesFinished.Signal();
 				nodeB.TopologyChanged += cmd => topologyChangesFinished.Signal();
 
-				inMemoryTransport.ForceTimeout("nodeA");
+				ForceTimeout("nodeA");
 
 				nodeA.WaitForLeader();
 				nodeB.WaitForLeader();
@@ -278,15 +272,14 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Cluster_cannot_have_two_concurrent_node_additions()
 		{
-			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateNodeNetwork(4, messageTimeout: 1500, transport: inMemoryTransport).ToList();
+			var raftNodes = CreateNodeNetwork(4, messageTimeout: 1500).ToList();
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
-			using (var additionalNode = new RaftEngine(CreateNodeOptions("extra_node", inMemoryTransport, 1500)))
-			using (var additionalNode2 = new RaftEngine(CreateNodeOptions("extra_node2", inMemoryTransport, 1500)))
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("extra_node", 1500)))
+			using (var additionalNode2 = new RaftEngine(CreateNodeOptions("extra_node2", 1500)))
 			{
 
 				leader.AddToClusterAsync(additionalNode.Name);
@@ -303,7 +296,7 @@ namespace Rhino.Raft.Tests
 		public void Node_added_to_cluster_should_update_peers_list(int nodeCount)
 		{
 			var leader = CreateNetworkAndWaitForLeader(nodeCount);
-			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", leader.Transport, leader.Options.MessageTimeout)))
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", leader.Options.MessageTimeout)))
 			{
 				var clusterChanged = WaitForToplogyChangeOnCluster();
 				var newNodeAdded = WaitForToplogyChange(additionalNode);

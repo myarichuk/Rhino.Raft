@@ -51,8 +51,7 @@ namespace Rhino.Raft.Tests
 		public void While_command_not_committed_CompletionTaskSource_is_not_notified()
 		{
 			const int CommandCount = 5;
-			var dataTransport = new InMemoryTransport();
-			var raftNodes = CreateNodeNetwork(3, dataTransport).ToList();
+			var raftNodes = CreateNodeNetwork(3).ToList();
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -79,7 +78,7 @@ namespace Rhino.Raft.Tests
 			//make sure commands that were appended before network leader disconnection are replicated
 			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * 3));
 
-			dataTransport.DisconnectNode(leader.Name);
+			DisconnectNode(leader.Name);
 
 			var lastCommand = commands.Last();
 			var commandCompletionTask = lastCommand.Completion.Task;

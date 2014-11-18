@@ -22,10 +22,11 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Follower_as_a_single_node_becomes_leader_automatically()
 		{
+			var hub = new InMemoryTransportHub();
 			var raftEngineOptions = new RaftEngineOptions(
 				"node1",
 				StorageEnvironmentOptions.CreateMemoryOnly(),
-				new InMemoryTransport(),
+				hub.CreateTransportFor("node1"),
 				new DictionaryStateMachine(),
 				1000);
 			using (var raftNode = new RaftEngine(raftEngineOptions))
@@ -37,21 +38,14 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void On_two_node_network_first_to_become_candidate_becomes_leader()
 		{
-			var transport = new InMemoryTransport();
+			var nodeNetwork = CreateNodeNetwork(2);
 
-			var node1Options = CreateNodeOptions("node1", transport, 1000, "node1", "node2");
-			var node2Options = CreateNodeOptions("node2", transport, 20000, "node1", "node2");
+			ForceTimeout("node1");
+			//less election timeout --> will send vote request sooner, and thus expected to become candidate first
+			Nodes.First().WaitForLeader();
 
-			using (var raftNode1 = new RaftEngine(node1Options))
-			using (var raftNode2 = new RaftEngine(node2Options))
-			{
-				transport.ForceTimeout("node1");
-				//less election timeout --> will send vote request sooner, and thus expected to become candidate first
-				raftNode1.WaitForLeader();
-
-				Assert.Equal(RaftEngineState.Leader,raftNode1.State);
-				Assert.Equal(RaftEngineState.Follower, raftNode2.State);
-			}
+			Assert.Equal(RaftEngineState.Leader, Nodes.First().State);
+			Assert.Equal(RaftEngineState.Follower, Nodes.Last().State);
 		}
 
 		[Theory]
@@ -83,13 +77,12 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Network_partition_should_cause_message_resend()
 		{
-			var transport = new InMemoryTransport();
 
-			transport.DisconnectNode("node1");
-			transport.DisconnectNodeSending("node1");
-			transport.DisconnectNode("node2");
-			transport.DisconnectNodeSending("node2");
-			var raftNodes = CreateNodeNetwork(3, messageTimeout: 300, transport: transport).ToList();
+			DisconnectNode("node1");
+			DisconnectNodeSending("node1");
+			DisconnectNode("node2");
+			DisconnectNodeSending("node2");
+			var raftNodes = CreateNodeNetwork(3, messageTimeout: 300).ToList();
 			var countdown = new CountdownEvent(2);
 			raftNodes[0].ElectionStarted += () =>
 			{
@@ -99,10 +92,10 @@ namespace Rhino.Raft.Tests
 
 			Assert.True(countdown.Wait(1500));
 
-			transport.ReconnectNode("node1");
-			transport.ReconnectNodeSending("node2");
-			transport.ReconnectNode("node2");
-			transport.ReconnectNodeSending("node2");
+			ReconnectNode("node1");
+			ReconnectNodeSending("node2");
+			ReconnectNode("node2");
+			ReconnectNodeSending("node2");
 
 			raftNodes.First().WaitForLeader();
 		}
@@ -119,7 +112,6 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		public void Network_partition_for_more_time_than_timeout_can_be_healed(int nodeCount)
 		{
-			var transport = new InMemoryTransport();
 			const int CommandCount = 5;
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
@@ -128,7 +120,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500).ToList();
 			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
@@ -144,21 +136,21 @@ namespace Rhino.Raft.Tests
 			commands.Take(3).ToList().ForEach(leader.AppendCommand);
 			Assert.True(commitsAppliedEvent.Wait(5000)); //with in-memory transport it shouldn't take more than 5 sec
 
-			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
-			transport.DisconnectNode(leader.Name);
+			WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
+			DisconnectNode(leader.Name);
 
 			commands.Skip(3).ToList().ForEach(leader.AppendCommand);
 			var formerLeader = leader;
 			Thread.Sleep(raftNodes.Max(x => x.Options.MessageTimeout) + 5); // cause election while current leader is disconnected
 
-			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
-			transport.ReconnectNode(leader.Name);
+			WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
+			ReconnectNode(leader.Name);
 
 			//other leader was selected
 			raftNodes.First().WaitForLeader();
-			leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);			
+			leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
-			
+
 			//former leader that is now a follower, should get the first 3 entries it distributed
 			while (formerLeader.CommitIndex < 4) //CommitIndex == 4 --> NOP command + first three commands
 				Thread.Sleep(50);
@@ -173,7 +165,7 @@ namespace Rhino.Raft.Tests
 				commands[i].AssignedIndex.Should().Be(committedCommands[i].AssignedIndex);
 			}
 		}
-		
+
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
@@ -181,7 +173,6 @@ namespace Rhino.Raft.Tests
 		[InlineData(5)]
 		public void Network_partition_for_less_time_than_timeout_can_be_healed_without_elections(int nodeCount)
 		{
-			var transport = new InMemoryTransport();
 			const int CommandCount = 5;
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
@@ -190,7 +181,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500, transport: transport).ToList();
+			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500).ToList();
 
 			raftNodes.First().WaitForLeader();
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -206,16 +197,16 @@ namespace Rhino.Raft.Tests
 			};
 
 			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
-			while(nonLeaderNode.CommitIndex < 2) //make sure at least one command is committed
+			while (nonLeaderNode.CommitIndex < 2) //make sure at least one command is committed
 				Thread.Sleep(50);
 
-			Trace.WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
-			transport.DisconnectNode(leader.Name);
+			WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
+			DisconnectNode(leader.Name);
 
 			leader.AppendCommand(commands.Last());
-			
-			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");			
-			transport.ReconnectNode(leader.Name);
+
+			WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
+			ReconnectNode(leader.Name);
 			Assert.Equal(RaftEngineState.Leader, leader.State);
 
 			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * nodeCount));
@@ -237,7 +228,7 @@ namespace Rhino.Raft.Tests
 		{
 			var leader = CreateNetworkAndWaitForLeader(nodeCount);
 			var raftNodes = Nodes.ToList();
-			
+
 			var leadersOfNodes = raftNodes.Select(x => x.CurrentLeader).ToList();
 
 			leadersOfNodes.Should().NotContainNulls("After leader is established, all nodes should know that leader exists");
@@ -246,67 +237,9 @@ namespace Rhino.Raft.Tests
 		}
 
 		[Fact]
-		public void Leader_should_step_down_if_another_leader_is_up()
-		{
-			var transport = new InMemoryTransport();
-			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1", "fakeNode2",
-				"fakeNode3");
-
-			using (var node = new RaftEngine(nodeOptions))
-			{
-				var stateChangeEvent = new ManualResetEventSlim();
-				node.StateChanged += state => stateChangeEvent.Set();
-
-				stateChangeEvent.Wait(); //wait for elections to start
-
-				stateChangeEvent.Reset();
-				for (int i = 1; i <= 3; i++)
-				{
-					transport.Send("realNode", new RequestVoteResponse
-					{
-						CurrentTerm = 1,
-						VoteGranted = true,
-						From = "fakeNode" + i,
-						VoteTerm = 1,
-						TrialOnly = true
-					});
-				}
-				for (int i = 1; i <= 3; i++)
-				{
-					transport.Send("realNode", new RequestVoteResponse
-					{
-						CurrentTerm = 1,
-						VoteGranted = true,
-						From = "fakeNode" + i,
-						VoteTerm = 1,
-						TrialOnly = false
-					});
-				}
-
-				stateChangeEvent.Wait(150); //now the node should be a leader, no checks here because this is tested for in another test
-
-				stateChangeEvent.Reset();
-				transport.Send("realNode",new AppendEntriesRequest
-				{
-					Entries = new[] { new LogEntry() },
-					LeaderCommit = 0,
-					LeaderId = "fakeNode1",
-					PrevLogIndex = 0,
-					PrevLogTerm = 1,
-					Term = 2,
-					From = "fakeNode1"
-				});
-
-				Assert.True(stateChangeEvent.Wait(150),"acknolwedgement of a new leader should happen at most within 150ms (state change to leader)"); //wait for acknolwedgement of a new leader
-				Assert.Equal(RaftEngineState.Follower, node.State);
-			}
-		}
-
-		[Fact]
 		public void Follower_on_timeout_should_become_candidate()
 		{
-			var transport = new InMemoryTransport();
-			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode");
+			var nodeOptions = CreateNodeOptions("realNode", 100, "fakeNode");
 
 			using (var node = new RaftEngine(nodeOptions))
 			{
@@ -314,40 +247,9 @@ namespace Rhino.Raft.Tests
 				node.StateTimeout += timeoutEvent.Set;
 
 				timeoutEvent.Wait();
-				Assert.Equal(RaftEngineState.Candidate,node.State);
+				Assert.Equal(RaftEngineState.Candidate, node.State);
 			}
 		}
-
-		[Fact]
-		public void Follower_on_timeout_should_send_vote_requests()
-		{
-			var transport = new InMemoryTransport();
-			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1","fakeNode2");
-
-			using (var node = new RaftEngine(nodeOptions))
-			{
-				var electionEvent = new ManualResetEventSlim();
-				node.ElectionStarted += electionEvent.Set;
-				
-				electionEvent.Wait();
-				
-				Trace.WriteLine("<Finished realNode timeout>");
-
-				var fakeNodeMessage = transport.MessageQueue["fakeNode1"].FirstOrDefault();
-				Assert.NotNull(fakeNodeMessage);
-				Assert.IsType<RequestVoteRequest>(fakeNodeMessage.Message);
-				var requestVoteMessage = fakeNodeMessage.Message as RequestVoteRequest;
-				Assert.Equal("realNode", requestVoteMessage.CandidateId);
-
-				Assert.Equal(1, transport.MessageQueue["fakeNode2"].Count);
-				
-				fakeNodeMessage = transport.MessageQueue["fakeNode2"].First();
-				Assert.IsType<RequestVoteRequest>(fakeNodeMessage.Message);
-				requestVoteMessage = fakeNodeMessage.Message as RequestVoteRequest;
-				Assert.Equal("realNode", requestVoteMessage.CandidateId);
-			}
-		}
-
 
 		[Fact]
 		public void AllPeers_and_AllVotingPeers_can_be_persistantly_saved_and_loaded()
@@ -398,7 +300,7 @@ namespace Rhino.Raft.Tests
 			node.State.Should().Be(RaftEngineState.Leader);
 
 
-			
+
 		}
 	}
 }

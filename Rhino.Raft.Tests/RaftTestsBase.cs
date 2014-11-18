@@ -18,6 +18,37 @@ namespace Rhino.Raft.Tests
 		private readonly List<RaftEngine> _nodes = new List<RaftEngine>();
 
 		private readonly DebugWriter _writer = new DebugWriter("Test", Stopwatch.StartNew());
+		private readonly InMemoryTransportHub _inMemoryTransportHub;
+
+		protected void ForceTimeout(string name)
+		{
+			((InMemoryTransportHub.InMemoryTransport)_inMemoryTransportHub.CreateTransportFor(name)).ForceTimeout();
+		}
+
+		protected void DisconnectNodeSending(string name)
+		{
+			_inMemoryTransportHub.DisconnectNodeSending(name);
+		}
+
+		protected void DisconnectNode(string name)
+		{
+			_inMemoryTransportHub.DisconnectNode(name);
+		}
+
+		protected void ReconnectNodeSending(string name)
+		{
+			_inMemoryTransportHub.ReconnectNodeSending(name);
+		}
+
+		protected void ReconnectNode(string name)
+		{
+			_inMemoryTransportHub.ReconnectNode(name);
+		}
+
+		public RaftTestsBase()
+		{
+			_inMemoryTransportHub = new InMemoryTransportHub();
+		}
 
 		protected void WriteLine(string format, params object[] args)
 		{
@@ -179,7 +210,8 @@ namespace Rhino.Raft.Tests
 
 			var nopCommit = WaitForCommitsOnCluster(1); // nop commit
 
-			((InMemoryTransport) raftEngine.Transport).ForceTimeout(raftEngine.Name);
+			var transport = (InMemoryTransportHub.InMemoryTransport)_inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
+			transport.ForceTimeout();
 
 			raftNodes.First().WaitForLeader();
 
@@ -191,11 +223,11 @@ namespace Rhino.Raft.Tests
 		}
 
 
-		protected static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, params string[] peers)
+		protected RaftEngineOptions CreateNodeOptions(string nodeName, int messageTimeout, params string[] peers)
 		{
 			var nodeOptions = new RaftEngineOptions(nodeName,
 				StorageEnvironmentOptions.CreateMemoryOnly(),
-				transport,
+				_inMemoryTransportHub.CreateTransportFor(nodeName),
 				new DictionaryStateMachine(), 
 				messageTimeout)
 			{
@@ -205,11 +237,11 @@ namespace Rhino.Raft.Tests
 			return nodeOptions;
 		}
 
-		protected static RaftEngineOptions CreateNodeOptions(string nodeName, ITransport transport, int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
+		protected RaftEngineOptions CreateNodeOptions(string nodeName,int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
 		{
 			var nodeOptions = new RaftEngineOptions(nodeName,
 				storageOptions,
-				transport,
+				_inMemoryTransportHub.CreateTransportFor(nodeName),
 				new DictionaryStateMachine(),
 				messageTimeout)
 			{
@@ -230,7 +262,7 @@ namespace Rhino.Raft.Tests
 
 		protected RaftEngine NewNodeFor(RaftEngine leader)
 		{
-			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Transport, leader.Options.MessageTimeout));
+			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Options.MessageTimeout));
 			_nodes.Add(raftEngine);
 			return raftEngine;
 		}
@@ -239,7 +271,6 @@ namespace Rhino.Raft.Tests
 		{
 			if (messageTimeout == -1)
 				messageTimeout = Debugger.IsAttached ? 60*1000 : 1000;
-			transport = transport ?? new InMemoryTransport();
 			var nodeNames = new List<string>();
 			for (int i = 0; i < nodeCount; i++)
 			{
@@ -250,7 +281,7 @@ namespace Rhino.Raft.Tests
 				optionChangerFunc = options => options;
 
 			var raftNetwork = nodeNames
-				.Select(name => optionChangerFunc(CreateNodeOptions(name, transport, messageTimeout, nodeNames.ToArray())))
+				.Select(name => optionChangerFunc(CreateNodeOptions(name, messageTimeout, nodeNames.ToArray())))
 				.Select(nodeOptions => new RaftEngine(nodeOptions))
 				.ToList();
 
