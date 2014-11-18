@@ -413,7 +413,7 @@ namespace Rhino.Raft.Storage
 					// need to reset the topology
 					var prevTopology = metadata.Read<string[]>("previous-topology") ?? new string[0];
 					metadata.Add("current-topology", prevTopology);
-					metadata.Add("current-topology-index", EndianBitConverter.Little.GetBytes(0));
+					metadata.Add("current-topology-index", EndianBitConverter.Little.GetBytes(0L));
 					engine.RevertTopologyTo(prevTopology);
 
 				}
