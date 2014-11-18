@@ -117,7 +117,14 @@ namespace Rhino.Raft
 			AddToQueue(dest, resp);
 		}
 
-	    public void Send(string dest, AppendEntriesRequest req)
+		public void Send(string dest, TimeoutNowRequest req)
+		{
+			if (_disconnectedNodes.Contains(dest) || _disconnectedNodesFromSending.Contains(req.From))
+				return;
+			AddToQueue(dest, req);
+		}
+
+		public void Send(string dest, AppendEntriesRequest req)
 		{
 			if (_disconnectedNodes.Contains(req.LeaderId) || _disconnectedNodesFromSending.Contains(req.From))
 				return;

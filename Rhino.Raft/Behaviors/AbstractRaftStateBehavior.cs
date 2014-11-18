@@ -24,6 +24,7 @@ namespace Rhino.Raft.Behaviors
 			InstallSnapshotRequest installSnapshotRequest;
 			CanInstallSnapshotRequest canInstallSnapshotRequest;
 			CanInstallSnapshotResponse canInstallSnapshotResponse;
+			TimeoutNowRequest timeoutNowRequest;
 			Action action;
 
 			if (TryCastMessage(envelope.Message, out requestVoteRequest))
@@ -40,10 +41,30 @@ namespace Rhino.Raft.Behaviors
 				Handle(envelope.Destination, installSnapshotRequest, envelope.Stream);
 			else if (TryCastMessage(envelope.Message, out canInstallSnapshotResponse))
 				Handle(envelope.Destination, canInstallSnapshotResponse);
+			else if (TryCastMessage(envelope.Message, out timeoutNowRequest))
+				Handle(envelope.Destination, timeoutNowRequest);
 			else if (TryCastMessage(envelope.Message, out action))
 				action();
 
 			Engine.OnEventsProcessed();
+		}
+
+		public void Handle(string destination, TimeoutNowRequest req)
+		{
+			if (req.Term < Engine.PersistentState.CurrentTerm)
+			{
+				Engine.DebugLog.Write("Got timeout now request from an older term, ignoring");
+				return;
+			}
+			if (req.From != Engine.CurrentLeader)
+			{
+				Engine.DebugLog.Write("Got timeout now request from {0}, who isn't the current leader, ignoring.", 
+					req.From);
+				return;
+			}
+
+			Engine.DebugLog.Write("Got timeout now request from the leader, timing out and forcing immediate election");
+			Engine.SetState(RaftEngineState.CandidateByRequest);
 		}
 
 		public virtual void Handle(string destination, InstallSnapshotRequest req, Stream stream)
@@ -80,7 +101,7 @@ namespace Rhino.Raft.Behaviors
 			// candidate and leaders both generate their own heartbeat messages
 			var timeSinceLastHeartbeat = (int) (DateTime.UtcNow - LastHeartbeatTime).TotalMilliseconds;
 			
-		    if (State == RaftEngineState.Follower && 
+		    if (State == RaftEngineState.Follower && req.ForcedElection == false &&
 				(timeSinceLastHeartbeat < (Timeout/2)) && Engine.CurrentLeader != null)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");

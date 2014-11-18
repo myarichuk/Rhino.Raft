@@ -26,6 +26,7 @@ namespace Rhino.Raft
 	{
 		private readonly CancellationTokenSource _eventLoopCancellationTokenSource;
 		private readonly ManualResetEventSlim _leaderSelectedEvent = new ManualResetEventSlim();
+		private TaskCompletionSource<object> _steppingDownCompletionSource;
 
 		private Topology _currentTopology;
 
@@ -256,8 +257,9 @@ namespace Rhino.Raft
 					case RaftEngineState.Follower:
 						StateBehavior = new FollowerStateBehavior(this);
 						break;
+					case RaftEngineState.CandidateByRequest:
 					case RaftEngineState.Candidate:
-						StateBehavior = new CandidateStateBehavior(this);
+						StateBehavior = new CandidateStateBehavior(this, state == RaftEngineState.CandidateByRequest);
 						break;
 					case RaftEngineState.SnapshotInstallation:
 						StateBehavior = new SnapshotInstallationStateBehavior(this);
@@ -267,7 +269,13 @@ namespace Rhino.Raft
 						CurrentLeader = Name;
 						OnElectedAsLeader();
 						break;
+					case RaftEngineState.SteppingDown:
+						StateBehavior = new SteppingDownStateBehavior(this);
+						CurrentLeader = Name;
+						break;
 					case RaftEngineState.None:
+						if (_steppingDownCompletionSource != null)
+							_steppingDownCompletionSource.TrySetResult(null);
 						_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
 						break;
 					default:
@@ -280,12 +288,33 @@ namespace Rhino.Raft
 			}
 		}
 
+		public Task StepDownAsync()
+		{
+			if (State != RaftEngineState.Leader)
+				throw new InvalidOperationException("Not a leader, and only leaders can step down");
+
+			if (CurrentTopology.QuoromSize == 1)
+			{
+				SetState(RaftEngineState.None);
+				var tcs = new TaskCompletionSource<object>();
+				tcs.TrySetResult(null);
+				return tcs.Task;
+			}
+
+			_steppingDownCompletionSource = new TaskCompletionSource<object>();
+
+			SetState(RaftEngineState.SteppingDown);
+
+			return _steppingDownCompletionSource.Task;
+		}
+
 		public Task RemoveFromClusterAsync(string node)
 		{
 			if (_currentTopology.AllVotingNodes.Contains(node) == false)
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
-
+			if (string.Equals(node, Name, StringComparison.OrdinalIgnoreCase))
+				throw new InvalidOperationException("You cannot remove the current node from the cluster, step down this node and then remove it from the new leader");
 
 			var requestedTopology = _currentTopology.CloneAndRemove(node);
 			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
@@ -304,6 +333,10 @@ namespace Rhino.Raft
 
 		private Task ModifyTopology(Topology requested)
 		{
+			if (State != RaftEngineState.Leader)
+				throw new InvalidOperationException("Cannot modify topology from a non leader node, current leader is: " +
+				                                    (CurrentLeader ?? "no leader"));
+
 			var tcc = new TopologyChangeCommand
 				{
 					Completion = new TaskCompletionSource<object>(),
@@ -353,10 +386,13 @@ namespace Rhino.Raft
 			if (command == null) throw new ArgumentNullException("command");
 
 			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
-			if (leaderStateBehavior == null)
+			if (leaderStateBehavior== null)
 				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
 													(CurrentLeader ?? "(no node leader yet)") + ", node behavior type is " +
 													StateBehavior.GetType().Name);
+
+			if (leaderStateBehavior.State != RaftEngineState.Leader)
+				throw new InvalidOperationException("Command can be appended only on leader node. This node state is: " + leaderStateBehavior.State); 
 
 			leaderStateBehavior.AppendCommand(command);
 		}
@@ -459,43 +495,6 @@ namespace Rhino.Raft
 			OnTopologyChanged(tcc);
 		}
 
-		internal void AnnounceCandidacy(bool trialOnly)
-		{
-			var term = PersistentState.CurrentTerm;
-			PersistentState.RecordVoteFor(Name, term+1);
-
-			if (trialOnly == false)// only in the real election, we increment the current term
-				PersistentState.UpdateTermTo(PersistentState.CurrentTerm + 1);
-
-			CurrentLeader = null;
-
-			DebugLog.Write("Calling for {0} election in term {1}", 
-				trialOnly ? "a trial" : "an",
-				PersistentState.CurrentTerm);
-
-			var lastLogEntry = PersistentState.LastLogEntry();
-			var rvr = new RequestVoteRequest
-			{
-				CandidateId = Name,
-				LastLogIndex = lastLogEntry.Index,
-				LastLogTerm = lastLogEntry.Term,
-				Term = PersistentState.CurrentTerm,
-				From = Name,
-				TrialOnly = trialOnly
-			};
-
-			var allVotingNodes = AllVotingNodes;
-
-			//dont't send to yourself the message
-			foreach (var votingPeer in allVotingNodes.Where(node =>
-											!node.Equals(Name, StringComparison.InvariantCultureIgnoreCase)))
-			{
-				Transport.Send(votingPeer, rvr);
-			}
-
-			OnCandidacyAnnounced();
-		}
-
 		public void Dispose()
 		{
 			_eventLoopCancellationTokenSource.Cancel();
@@ -505,7 +504,7 @@ namespace Rhino.Raft
 
 		}
 
-		protected virtual void OnCandidacyAnnounced()
+		internal virtual void OnCandidacyAnnounced()
 		{
 			var handler = ElectionStarted;
 			if (handler != null)

@@ -14,15 +14,18 @@ namespace Rhino.Raft.Behaviors
 {
 	public class CandidateStateBehavior : AbstractRaftStateBehavior
     {
+		private readonly bool _forcedElection;
 		private readonly HashSet<string> _votesForMyLeadership = new HashSet<string>();
 		private readonly Random _random;
-		private bool wonTrialElection;
+		private bool _wonTrialElection;
 
-		public CandidateStateBehavior(RaftEngine engine) : base(engine)
+		public CandidateStateBehavior(RaftEngine engine, bool forcedElection) : base(engine)
 		{
+			_forcedElection = forcedElection;
+			_wonTrialElection = forcedElection; 
 			_random = new Random((int) (engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
 			Timeout = _random.Next(engine.MessageTimeout / 2, engine.MessageTimeout);
-			StartElection(runTrialElection: true);
+			StartElection();
 		}
 
 		private void VoteForSelf()
@@ -35,7 +38,7 @@ namespace Rhino.Raft.Behaviors
 					VoteGranted = true,
 					Message = String.Format("{0} -> Voting for myself", Engine.Name),
 					From = Engine.Name,
-					VoteTerm = Engine.PersistentState.CurrentTerm
+					VoteTerm = Engine.PersistentState.CurrentTerm,
 				});
 		}
 
@@ -45,15 +48,47 @@ namespace Rhino.Raft.Behaviors
 				  Timeout);
 
 			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout);
-			StartElection(runTrialElection: true);
+			_wonTrialElection = false;
+			StartElection();
 	    }
 
-		private void StartElection(bool runTrialElection)
+		private void StartElection()
 		{
 			LastHeartbeatTime = DateTime.UtcNow;
 			_votesForMyLeadership.Clear();
-			Engine.AnnounceCandidacy(runTrialElection);
-			wonTrialElection = runTrialElection == false;
+			var term = Engine.PersistentState.CurrentTerm;
+			Engine.PersistentState.RecordVoteFor(Engine.Name, term+1);
+
+			if (_wonTrialElection)// only in the real election, we increment the current term
+				Engine.PersistentState.UpdateTermTo(Engine.PersistentState.CurrentTerm + 1);
+
+			Engine.CurrentLeader = null;
+
+			Engine.DebugLog.Write("Calling for {0} election in term {1}",
+				_wonTrialElection ? "an" : "a trial", Engine.PersistentState.CurrentTerm);
+
+			var lastLogEntry = Engine.PersistentState.LastLogEntry();
+			var rvr = new RequestVoteRequest
+			{
+				CandidateId = Engine.Name,
+				LastLogIndex = lastLogEntry.Index,
+				LastLogTerm = lastLogEntry.Term,
+				Term = Engine.PersistentState.CurrentTerm,
+				From = Engine.Name,
+				TrialOnly = _wonTrialElection == false,
+				ForcedElection = _forcedElection
+			};
+
+			var allVotingNodes = Engine.AllVotingNodes;
+
+			//dont't send to yourself the message
+			foreach (var votingPeer in allVotingNodes.Where(node =>
+				!node.Equals(Engine.Name, StringComparison.InvariantCultureIgnoreCase)))
+			{
+				Engine.Transport.Send(votingPeer, rvr);
+			}
+
+			Engine.OnCandidacyAnnounced();
 			VoteForSelf();
 		}
 
@@ -88,7 +123,7 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			if (resp.TrialOnly && wonTrialElection) // note that we can't get a vote for real election when we get a trail, because the terms would be different
+			if (resp.TrialOnly && _wonTrialElection) // note that we can't get a vote for real election when we get a trail, because the terms would be different
 			{
 				Engine.DebugLog.Write("Got a vote for trial only from {0} but we already won the trial election for this round, ignoring", resp.From);
 				return;
@@ -103,11 +138,11 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			if (wonTrialElection == false)
+			if (_wonTrialElection == false)
 			{
-				wonTrialElection = true;
+				_wonTrialElection = true;
 				Engine.DebugLog.Write("Won trial election with {0} votes from {1}, now running for real", _votesForMyLeadership.Count, string.Join(", ", _votesForMyLeadership));
-				StartElection(runTrialElection: false);
+				StartElection();
 				return;
 			}
 			

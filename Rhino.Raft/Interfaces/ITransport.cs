@@ -17,6 +17,7 @@ namespace Rhino.Raft.Interfaces
 		void Send(string dest, CanInstallSnapshotRequest req);
 		void Send(string dest, CanInstallSnapshotResponse resp);
 		void Send(string dest, InstallSnapshotResponse resp);
+		void Send(string dest, TimeoutNowRequest req);
 		void Send(string dest, AppendEntriesRequest req);
 		void Send(string dest, RequestVoteRequest req);
 		void Send(string dest, AppendEntriesResponse resp);

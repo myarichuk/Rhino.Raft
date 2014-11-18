@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -142,6 +141,11 @@ namespace Rhino.Raft
 		public void Send(string dest, InstallSnapshotResponse resp)
 		{
 			Send<InstallSnapshotResponse>(dest, resp);
+		}
+
+		public void Send(string dest, TimeoutNowRequest req)
+		{
+			Send<TimeoutNowRequest>(dest, req);
 		}
 
 		public void Send(string dest, AppendEntriesRequest req)

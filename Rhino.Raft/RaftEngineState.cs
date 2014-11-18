@@ -6,6 +6,8 @@ namespace Rhino.Raft
 		Follower,
 		Leader,
 		Candidate,
-		SnapshotInstallation
+		CandidateByRequest,
+		SteppingDown,
+		SnapshotInstallation,
 	}
 }

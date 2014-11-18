@@ -12,7 +12,6 @@ namespace Rhino.Raft
 		/// </summary>
 
 		private string url;
-		private const string Http = "http";
 
 		public string Url
 		{
@@ -64,7 +63,7 @@ namespace Rhino.Raft
 		public Uri GetUriForMessageSending<TMessage>()
 			where TMessage : class 
 		{
-			return new Uri(String.Format("{0}://{1}:{2}/{3}", Http, Url, Port, typeof(TMessage).Name));
+			return new Uri(String.Format("http://{0}:{1}/{2}",  Url, Port, typeof(TMessage).Name));
 		}
 	}
 }

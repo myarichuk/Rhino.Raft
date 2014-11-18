@@ -8,5 +8,6 @@
 		public long LastLogTerm { get; set; }
 
 		public bool TrialOnly { get; set; }
+		public bool ForcedElection { get; set; }
 	}
 }

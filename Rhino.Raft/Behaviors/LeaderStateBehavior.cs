@@ -9,19 +9,17 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
-using Rhino.Raft.Storage;
 
 namespace Rhino.Raft.Behaviors
 {
 	public class LeaderStateBehavior : AbstractRaftStateBehavior
 	{
-		private readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+		protected readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 		private readonly ConcurrentDictionary<string, Task> _snapshotsPendingInstallation = new ConcurrentDictionary<string, Task>(StringComparer.OrdinalIgnoreCase);
 
@@ -311,7 +309,7 @@ namespace Rhino.Raft.Behaviors
 		/// Why? Because A has 4 (which implies that it has 3) and B has 3 as well.
 		/// So we have 2 nodes that have 3, so that is the quorom.
 		/// </summary>
-		private long GetMaxIndexOnQuorom()
+		protected long GetMaxIndexOnQuorom()
 		{
 			var topology = Engine.CurrentTopology;
 			var dic = new Dictionary<long, int>();
