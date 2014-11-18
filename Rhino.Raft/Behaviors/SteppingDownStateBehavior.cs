@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using Rhino.Raft.Messages;
 
@@ -12,11 +13,22 @@ namespace Rhino.Raft.Behaviors
 {
 	public class SteppingDownStateBehavior : LeaderStateBehavior
 	{
-		private DateTime _stepDownStart;
+		private readonly Stopwatch _stepdownDuration;
 
 		public SteppingDownStateBehavior(RaftEngine engine) : base(engine)
 		{
-			_stepDownStart = DateTime.UtcNow;
+			_stepdownDuration = Stopwatch.StartNew();
+			// we are sending this to ourselves because we want to make 
+			// sure that we immediately check if we can step down
+			Engine.Transport.Send(Engine.Name, new AppendEntriesResponse
+			{
+				CurrentTerm = Engine.PersistentState.CurrentTerm,
+				From = Engine.Name,
+				LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
+				LeaderId = Engine.Name,
+				Message = null,
+				Success = true
+			});
 		}
 
 		public override RaftEngineState State
@@ -34,15 +46,31 @@ namespace Rhino.Raft.Behaviors
 
 			if (maxIndexOnQuorom >= lastLogEntry.Index)
 			{
-				var bestMatch = _matchIndexes.OrderByDescending(x => x.Value).Select(x => x.Key).FirstOrDefault();
+				Engine.DebugLog.Write("Done sending all events to the cluster, can step down gracefully now");
+				TransferToBestMatch();
+			}
+		}
 
-				Engine.Transport.Send(bestMatch, new TimeoutNowRequest
-				{
-					Term = Engine.PersistentState.CurrentTerm,
-					From = Engine.Name
-				});
+		private void TransferToBestMatch()
+		{
+			var bestMatch = _matchIndexes.OrderByDescending(x => x.Value).Select(x => x.Key).FirstOrDefault();
 
-				Engine.SetState(RaftEngineState.None);
+			Engine.Transport.Send(bestMatch, new TimeoutNowRequest
+			{
+				Term = Engine.PersistentState.CurrentTerm,
+				From = Engine.Name
+			});
+			Engine.DebugLog.Write("Transfering cluster leadership to {0}", bestMatch);
+			Engine.SetState(RaftEngineState.None);
+		}
+
+		public override void HandleTimeout()
+		{
+			base.HandleTimeout();
+			if (_stepdownDuration.Elapsed > Engine.Options.MaxStepDownDrainTime)
+			{
+				Engine.DebugLog.Write("Step down has aborted after {0} because this is greater than the max step down time", _stepdownDuration.Elapsed);
+				TransferToBestMatch();
 			}
 		}
 	}
