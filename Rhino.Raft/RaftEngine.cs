@@ -457,14 +457,17 @@ namespace Rhino.Raft
 			OnTopologyChanged(tcc);
 		}
 
-		internal void AnnounceCandidacy()
+		internal void AnnounceCandidacy(bool firstTime)
 		{
-			PersistentState.IncrementTermAndVoteFor(Name);
+			var term = PersistentState.CurrentTerm;
+			if (firstTime)
+				term++; // we increment the term only for the trial election, then reuse the same term in the real election
+			PersistentState.UpdateTermAndVoteFor(Name, term);
 			CurrentLeader = null;
 
-			SetState(RaftEngineState.Candidate);
-
-			DebugLog.Write("Calling an election in term {0}", PersistentState.CurrentTerm);
+			DebugLog.Write("Calling for {0} election in term {1}", 
+				firstTime ? "a trial" : "an",
+				PersistentState.CurrentTerm);
 
 			var lastLogEntry = PersistentState.LastLogEntry();
 			var rvr = new RequestVoteRequest
@@ -473,7 +476,8 @@ namespace Rhino.Raft
 				LastLogIndex = lastLogEntry.Index,
 				LastLogTerm = lastLogEntry.Term,
 				Term = PersistentState.CurrentTerm,
-				From = Name
+				From = Name,
+				TrialOnly = firstTime
 			};
 
 			var allVotingNodes = AllVotingNodes;

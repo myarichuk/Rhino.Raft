@@ -25,7 +25,7 @@ namespace Rhino.Raft.Behaviors
 	    public override void HandleTimeout()
 	    {
 		    Engine.DebugLog.Write("Got timeout in follower mode in term {0}", Engine.PersistentState.CurrentTerm);
-			Engine.AnnounceCandidacy();
+			Engine.SetState(RaftEngineState.Candidate);
 		}
     }
 }

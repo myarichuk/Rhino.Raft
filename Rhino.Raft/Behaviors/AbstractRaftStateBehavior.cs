@@ -87,9 +87,11 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
-					Term = Engine.PersistentState.CurrentTerm,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					VoteTerm = req.Term,
 					Message = "I currently have a leader and I am receiving heartbeats within election timeout.",
-					From = Engine.Name
+					From = Engine.Name,
+					TrialOnly = req.TrialOnly
 				});
 				return;
 			}
@@ -100,9 +102,11 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
-					Term = Engine.PersistentState.CurrentTerm,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					VoteTerm = req.Term,
 					Message = "You are not a memeber in my cluster, and cannot be a leader",
-					From = Engine.Name
+					From = Engine.Name,
+					TrialOnly = req.TrialOnly
 				});
 				return;
 			}
@@ -117,14 +121,16 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
-					Term = Engine.PersistentState.CurrentTerm,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					VoteTerm = req.Term,
 					Message = msg,
-					From = Engine.Name
+					From = Engine.Name,
+					TrialOnly = req.TrialOnly
 				});
 				return;
 			}
 
-			if (req.Term > Engine.PersistentState.CurrentTerm)
+			if (req.Term > Engine.PersistentState.CurrentTerm && req.TrialOnly == false)
 			{
 				Engine.DebugLog.Write("{0} -> UpdateCurrentTerm() is called from Abstract Behavior", GetType().Name);
 				Engine.UpdateCurrentTerm(req.Term, null);
@@ -139,9 +145,11 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
-					Term = Engine.PersistentState.CurrentTerm,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					VoteTerm = req.Term,
 					Message = msg,
-					From = Engine.Name
+					From = Engine.Name,
+					TrialOnly = req.TrialOnly
 				});
 				return;
 			}
@@ -153,24 +161,36 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Send(req.From, new RequestVoteResponse
 				{
 					VoteGranted = false,
-					Term = Engine.PersistentState.CurrentTerm,
+					CurrentTerm = Engine.PersistentState.CurrentTerm,
+					VoteTerm = req.Term,
 					Message = msg,
-					From = Engine.Name
+					From = Engine.Name,
+					TrialOnly = req.TrialOnly
 				});
 				return;
 			}
-			// we are voting for this guy, so we can give it a full election timeout, by treating this
-			// as a heart beat
-			LastHeartbeatTime = DateTime.UtcNow; 
-			Engine.DebugLog.Write("Recording vote for candidate = {0}",req.CandidateId);
-			Engine.PersistentState.RecordVoteFor(req.CandidateId);
-			
+			// we said we would be voting for this guy, so we can give it a full election timeout, 
+			// by treating this as a heart beat. This means we won't be timing out ourselves and trying
+			// to become the leader
+			LastHeartbeatTime = DateTime.UtcNow;
+
+			if (req.TrialOnly == false)
+			{
+				Engine.DebugLog.Write("Recording vote for candidate = {0}", req.CandidateId);
+				Engine.PersistentState.RecordVoteFor(req.CandidateId);
+			}
+			else
+			{
+				Engine.DebugLog.Write("Voted for candidate = {0} in trial election for term {1}", req.CandidateId, req.Term);
+			}
 			Engine.Transport.Send(req.CandidateId, new RequestVoteResponse
 			{
 				VoteGranted = true,
-				Term = Engine.PersistentState.CurrentTerm,
+				CurrentTerm = Engine.PersistentState.CurrentTerm,
+				VoteTerm = req.Term,
 				Message = "Vote granted",
-				From = Engine.Name
+				From = Engine.Name,
+				TrialOnly = req.TrialOnly
 			});
 		}
 
