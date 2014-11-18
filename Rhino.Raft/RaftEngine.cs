@@ -133,14 +133,14 @@ namespace Rhino.Raft
 		public event Action<long, long> CommitIndexChanged;
 		public event Action ElectedAsLeader;
 
-		public event Action<TopologyChangeCommand> TopologyChangeFinished;
-		public event Action TopologyChangeStarted;
+		public event Action<TopologyChangeCommand> TopologyChanged;
+		public event Action TopologyChanging;
 
-		public event Action SnapshotCreationStarted;
-		public event Action SnapshotCreationEnded;
+		public event Action CreatingSnapshot;
+		public event Action CreatedSnapshot;
 
-		public event Action SnapshotInstallationStarted;
-		public event Action SnapshotInstallationEnded;
+		public event Action InstallingSnapshot;
+		public event Action SnapshotInstalled;
 
 		public event Action<Exception> SnapshotCreationError;
 
@@ -284,6 +284,8 @@ namespace Rhino.Raft
 		{
 			if (_currentTopology.AllVotingNodes.Contains(node) == false)
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
+
+
 
 			var requestedTopology = _currentTopology.CloneAndRemove(node);
 			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
@@ -457,16 +459,18 @@ namespace Rhino.Raft
 			OnTopologyChanged(tcc);
 		}
 
-		internal void AnnounceCandidacy(bool firstTime)
+		internal void AnnounceCandidacy(bool trialOnly)
 		{
 			var term = PersistentState.CurrentTerm;
-			if (firstTime)
-				term++; // we increment the term only for the trial election, then reuse the same term in the real election
-			PersistentState.UpdateTermAndVoteFor(Name, term);
+			PersistentState.RecordVoteFor(Name, term+1);
+
+			if (trialOnly == false)// only in the real election, we increment the current term
+				PersistentState.UpdateTermTo(PersistentState.CurrentTerm + 1);
+
 			CurrentLeader = null;
 
 			DebugLog.Write("Calling for {0} election in term {1}", 
-				firstTime ? "a trial" : "an",
+				trialOnly ? "a trial" : "an",
 				PersistentState.CurrentTerm);
 
 			var lastLogEntry = PersistentState.LastLogEntry();
@@ -477,7 +481,7 @@ namespace Rhino.Raft
 				LastLogTerm = lastLogEntry.Term,
 				Term = PersistentState.CurrentTerm,
 				From = Name,
-				TrialOnly = firstTime
+				TrialOnly = trialOnly
 			};
 
 			var allVotingNodes = AllVotingNodes;
@@ -599,7 +603,7 @@ namespace Rhino.Raft
 
 		protected virtual void OnTopologyChanged(TopologyChangeCommand cmd)
 		{
-			var handler = TopologyChangeFinished;
+			var handler = TopologyChanged;
 			if (handler != null)
 			{
 				try
@@ -608,7 +612,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on TopologyChangeFinished event: " + e);
+					DebugLog.Write("Error on TopologyChanged event: " + e);
 				}
 			}
 		}
@@ -631,7 +635,7 @@ namespace Rhino.Raft
 
 		internal virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
 		{
-			var handler = TopologyChangeStarted;
+			var handler = TopologyChanging;
 			if (handler != null)
 			{
 				try
@@ -640,14 +644,14 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on TopologyChangeStarted event: " + e);
+					DebugLog.Write("Error on TopologyChanging event: " + e);
 				}
 			}
 		}
 
 		protected virtual void OnSnapshotCreationStarted()
 		{
-			var handler = SnapshotCreationStarted;
+			var handler = CreatingSnapshot;
 			if (handler != null)
 			{
 				try
@@ -656,14 +660,14 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on SnapshotCreationStarted event: " + e);
+					DebugLog.Write("Error on CreatingSnapshot event: " + e);
 				}
 			}
 		}
 
 		protected virtual void OnSnapshotCreationEnded()
 		{
-			var handler = SnapshotCreationEnded;
+			var handler = CreatedSnapshot;
 			if (handler != null)
 			{
 				try
@@ -672,7 +676,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on SnapshotCreationEnded event: " + e);
+					DebugLog.Write("Error on CreatedSnapshot event: " + e);
 				}
 			}
 		}
@@ -711,7 +715,7 @@ namespace Rhino.Raft
 
 		internal virtual void OnSnapshotInstallationStarted()
 		{
-			var handler = SnapshotInstallationStarted;
+			var handler = InstallingSnapshot;
 			if (handler != null)
 			{
 				try
@@ -720,14 +724,14 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on SnapshotInstallationStarted event: " + e);
+					DebugLog.Write("Error on InstallingSnapshot event: " + e);
 				}
 			}
 		}
 
 		internal virtual void OnSnapshotInstallationEnded(long snapshotTerm)
 		{
-			var handler = SnapshotInstallationEnded;
+			var handler = SnapshotInstalled;
 			if (handler != null)
 			{
 				try
@@ -736,7 +740,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on SnapshotInstallationEnded event: " + e);
+					DebugLog.Write("Error on SnapshotInstalled event: " + e);
 				}
 			}
 		}
@@ -756,7 +760,7 @@ namespace Rhino.Raft
 		internal void RevertTopologyTo(string[] previousPeers)
 		{
 			Interlocked.Exchange(ref _changingTopology, null);
-			_currentTopology = new Topology(previousPeers);
+			Interlocked.Exchange(ref _currentTopology, new Topology(previousPeers));
 			OnTopologyChanged(new TopologyChangeCommand
 			{
 				Requested = new Topology(previousPeers)

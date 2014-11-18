@@ -136,7 +136,8 @@ namespace Rhino.Raft.Behaviors
 				Engine.UpdateCurrentTerm(req.Term, null);
 			}
 
-			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.CandidateId)
+			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.CandidateId && 
+				Engine.PersistentState.VotedForTerm <= req.Term)
 			{
 				var msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
 					Engine.PersistentState.VotedFor, req.Term);
@@ -177,7 +178,7 @@ namespace Rhino.Raft.Behaviors
 			if (req.TrialOnly == false)
 			{
 				Engine.DebugLog.Write("Recording vote for candidate = {0}", req.CandidateId);
-				Engine.PersistentState.RecordVoteFor(req.CandidateId);
+				Engine.PersistentState.RecordVoteFor(req.CandidateId, req.Term);
 			}
 			else
 			{

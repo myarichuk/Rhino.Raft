@@ -35,6 +35,7 @@ namespace Rhino.Raft.Storage
 
 		public Guid DbId { get; private set; }
 		public string VotedFor { get; private set; }
+		public long VotedForTerm { get; private set; }
 		public long CurrentTerm { get; private set; }
 
 		private readonly StorageEnvironment _env;
@@ -95,8 +96,9 @@ namespace Rhino.Raft.Storage
 					metadata.Add("version", Encoding.UTF8.GetBytes(CurrentVersion));
 					DbId = Guid.NewGuid();
 					metadata.Add("db-id", DbId.ToByteArray());
-					metadata.Add("current-term", BitConverter.GetBytes(0L));
+					metadata.Add("current-term", EndianBitConverter.Little.GetBytes(0L));
 					metadata.Add("voted-for", Encoding.UTF8.GetBytes(string.Empty));
+					metadata.Add("voted-for-term", EndianBitConverter.Little.GetBytes(-1L));
 				}
 				else
 				{
@@ -112,6 +114,9 @@ namespace Rhino.Raft.Storage
 					CurrentTerm = metadata.Read("current-term").Reader.ReadLittleEndianInt64();
 					var votedFor = metadata.Read("voted-for");
 					VotedFor = votedFor.Reader.Length == 0 ? null : votedFor.Reader.ToStringValue();
+
+					var votedForTerm = metadata.Read("voted-for-term");
+					VotedForTerm = votedForTerm.Reader.ReadLittleEndianInt64();
 				}
 
 				tx.Commit();
@@ -262,7 +267,7 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		public void RecordVoteFor(string candidateId)
+		public void RecordVoteFor(string candidateId, long voteTerm)
 		{
 			if (_isDisposed)
 				return;
@@ -275,27 +280,14 @@ namespace Rhino.Raft.Storage
 				VotedFor = candidateId;
 				var metadata = tx.ReadTree(MetadataTreeName);
 				metadata.Add("voted-for", Encoding.UTF8.GetBytes(candidateId));
-
+				metadata.Add("voted-for-term", EndianBitConverter.Little.GetBytes(voteTerm));
+				VotedFor = candidateId;
+				VotedForTerm = voteTerm;
 				tx.Commit();
 			}
 		}
 
-		public void UpdateTermAndVoteFor(string name, long newTerm)
-		{
-			if (newTerm < CurrentTerm)
-				throw new ArgumentException("THe new term cannot be smaller than the current term", "newTerm");
-
-			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
-			{
-				var metadata = tx.ReadTree(MetadataTreeName);
-				CurrentTerm = newTerm;
-				VotedFor = name;
-				metadata.Add("current-term", BitConverter.GetBytes(CurrentTerm));
-				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name));
-				tx.Commit();
-			}
-		}
-
+		
 		public void UpdateTermTo(long term)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
@@ -306,11 +298,13 @@ namespace Rhino.Raft.Storage
 				metadata.Add("voted-for", new byte[0]); // clearing who we voted for
 
 				VotedFor = null;
+				VotedForTerm = -1;
 				CurrentTerm = term;
 
 				tx.Commit();
 			}
 		}
+
 
 		public IEnumerable<LogEntry> LogEntriesAfter(long index, long stopAfter = long.MaxValue)
 		{

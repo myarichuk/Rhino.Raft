@@ -122,7 +122,7 @@ namespace Rhino.Raft.Tests
 			var leader = CreateNetworkAndWaitForLeader(3);
 
 			leader.MonitorEvents();
-			leader.SnapshotCreationEnded += snapshotCreationEndedEvent.Set;
+			leader.CreatedSnapshot += snapshotCreationEndedEvent.Set;
 			leader.CommitIndexChanged += (old, @new) => appliedAllCommandsEvent.Signal();
 
 			leader.MaxLogLengthBeforeCompaction = commandsCount - 3;
@@ -132,8 +132,8 @@ namespace Rhino.Raft.Tests
 			Assert.True(snapshotCreationEndedEvent.Wait(3000));
 
 			//should only raise the event once
-			leader.ShouldRaise("SnapshotCreationEnded");
-			leader.GetRecorderForEvent("SnapshotCreationEnded")
+			leader.ShouldRaise("CreatedSnapshot");
+			leader.GetRecorderForEvent("CreatedSnapshot")
 				  .Should().HaveCount(1);
 		}
 
@@ -157,7 +157,7 @@ namespace Rhino.Raft.Tests
 			Assert.NotNull(leader);
 
 			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
-			leader.SnapshotCreationEnded += snapshotCreationEndedEvent.Set;
+			leader.CreatedSnapshot += snapshotCreationEndedEvent.Set;
 
 			leader.CommitApplied += cmd =>
 			{

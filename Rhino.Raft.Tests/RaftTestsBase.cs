@@ -38,7 +38,7 @@ namespace Rhino.Raft.Tests
 		protected ManualResetEventSlim WaitForToplogyChange(RaftEngine node)
 		{
 			var mre = new ManualResetEventSlim();
-			node.TopologyChangeFinished += state => mre.Set();
+			node.TopologyChanged += state => mre.Set();
 			return mre;
 		}
 
@@ -50,7 +50,7 @@ namespace Rhino.Raft.Tests
 				if (predicate((DictionaryStateMachine)node.StateMachine))
 					cde.Set();
 			};
-			node.SnapshotInstallationEnded += () =>
+			node.SnapshotInstalled += () =>
 			{
 				var state = (DictionaryStateMachine)node.StateMachine;
 				if (predicate(state))
@@ -64,7 +64,7 @@ namespace Rhino.Raft.Tests
 		protected ManualResetEventSlim WaitForSnapshot(RaftEngine node)
 		{
 			var cde = new ManualResetEventSlim();
-			node.SnapshotCreationEnded += cde.Set;
+			node.CreatedSnapshot += cde.Set;
 			return cde;
 		}
 
@@ -84,7 +84,7 @@ namespace Rhino.Raft.Tests
 					if (n.CommitIndex == numberOfCommits && cde.CurrentCount > 0)
 						cde.Signal();
 				};
-				n.SnapshotInstallationEnded += () =>
+				n.SnapshotInstalled += () =>
 				{
 					if (n.CommitIndex == numberOfCommits && cde.CurrentCount > 0)
 						cde.Signal();
@@ -109,7 +109,7 @@ namespace Rhino.Raft.Tests
 						cde.Signal();
 					}
 				};
-				n.SnapshotInstallationEnded += () =>
+				n.SnapshotInstalled += () =>
 				{
 					var state = (DictionaryStateMachine) n.StateMachine;
 					if (predicate(state) && cde.CurrentCount > 0)
@@ -122,10 +122,29 @@ namespace Rhino.Raft.Tests
 			
 			return cde;
 		}
+
+
+		protected CountdownEvent WaitForToplogyChangeOnCluster()
+		{
+			var cde = new CountdownEvent(_nodes.Count);
+			foreach (var node in _nodes)
+			{
+				var n = node;
+				n.TopologyChanged += (a) =>
+				{
+					if (cde.CurrentCount > 0)
+					{
+						cde.Signal();
+					}
+				};
+			}
+
+			return cde;
+		}
 		protected ManualResetEventSlim WaitForSnapshotInstallation(RaftEngine node)
 		{
 			var cde = new ManualResetEventSlim();
-			node.SnapshotInstallationEnded += cde.Set;
+			node.SnapshotInstalled += cde.Set;
 			return cde;
 		}
 
