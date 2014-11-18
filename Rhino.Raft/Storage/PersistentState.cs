@@ -419,7 +419,6 @@ namespace Rhino.Raft.Storage
 					metadata.Add("current-topology", prevTopology);
 					metadata.Add("current-topology-index", EndianBitConverter.Little.GetBytes(0L));
 					engine.RevertTopologyTo(prevTopology);
-
 				}
 
 				using (var it = logs.Iterate())

@@ -209,8 +209,9 @@ namespace Rhino.Raft
 						OnStateTimeout();
 						continue;
 					}
-					DebugLog.Write("State {0} message {1}", State, 
-						message.Message is BaseMessage ? JsonConvert.SerializeObject(message.Message) : message.Message
+					DebugLog.Write("{0}: {1} {2}", State, 
+						message.Message.GetType().Name,
+						message.Message is BaseMessage ? JsonConvert.SerializeObject(message.Message) : string.Empty
 						);
 
 					behavior.HandleMessage(message);
@@ -237,6 +238,8 @@ namespace Rhino.Raft
 
 			if (State == RaftEngineState.Leader)
 				_leaderSelectedEvent.Reset();
+
+			DebugLog.Write("{0} ==> {1}", State, state);
 
 			var oldState = StateBehavior;
 			using (oldState)
@@ -617,7 +620,7 @@ namespace Rhino.Raft
 			}
 		}
 
-		internal virtual void OnTopologyChangeStarted(TopologyChangeCommand tcc)
+		internal virtual void OnTopologyChanging(TopologyChangeCommand tcc)
 		{
 			var handler = TopologyChanging;
 			if (handler != null)
@@ -738,7 +741,7 @@ namespace Rhino.Raft
 		{
 			Interlocked.Exchange(ref _currentTopology, tcc.Requested);
 			Interlocked.Exchange(ref _changingTopology, new TaskCompletionSource<object>().Task);
-			OnTopologyChangeStarted(tcc);
+			OnTopologyChanging(tcc);
 		}
 
 		internal void RevertTopologyTo(string[] previousPeers)
