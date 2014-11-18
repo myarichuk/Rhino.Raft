@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -185,28 +186,33 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
+		[InlineData(5)]
+		[InlineData(7)]
 		public void Non_leader_Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
-			var inMemoryTransport = new InMemoryTransport();
-			var raftNodes = CreateNodeNetwork(nodeCount, inMemoryTransport).ToList();
-			var topologyChangeTracker = new CountdownEvent(nodeCount - 1);
-			raftNodes.First().WaitForLeader();
+			var leader = CreateNetworkAndWaitForLeader(nodeCount);
 
-			var leader = raftNodes.First(n => n.State == RaftEngineState.Leader);
-			var nodeToRemove = raftNodes.First(n => n.State != RaftEngineState.Leader);
+			var nodeToRemove = Nodes.First(x => x.State != RaftEngineState.Leader);
 
-			var nodesThatShouldRemain = raftNodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
+			var nodesThatShouldRemain = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
 												 .Select(n => n.Name)
 												 .ToList();
 
-			raftNodes.Where(n => ReferenceEquals(n, nodeToRemove) == false).ToList()
-					 .ForEach(node => node.TopologyChanged += cmd => topologyChangeTracker.Signal());
+			var list = (
+				from engine in Nodes
+				where engine != nodeToRemove 
+				select WaitForToplogyChange(engine)
+			).ToList();
 
 			Trace.WriteLine("<--- started removing");
 			leader.RemoveFromClusterAsync(nodeToRemove.Name).Wait();
-			Assert.True(topologyChangeTracker.Wait(5000));
 
-			var nodePeerLists = raftNodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
+			foreach (var slim in list)
+			{
+				slim.Wait();
+			}
+
+			var nodePeerLists = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
 										 .Select(n => n.AllVotingNodes)
 										 .ToList();
 

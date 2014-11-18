@@ -316,9 +316,9 @@ namespace Rhino.Raft
 
 			try
 			{
-				AppendCommand(tcc);
 				DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
 				TopologyChangeStarting(tcc);
+				AppendCommand(tcc);
 				return tcc.Completion.Task;
 			}
 			catch (Exception)
@@ -363,7 +363,7 @@ namespace Rhino.Raft
 
 		public void ApplyCommits(long from, long to)
 		{
-			Debug.Assert(to >= from, String.Format("assert to ({0}) >= from ({1})", to.ToString(CultureInfo.InvariantCulture), from.ToString(CultureInfo.InvariantCulture)));
+			Debug.Assert(to >= from);
 			foreach (var entry in PersistentState.LogEntriesAfter(from, to))
 			{
 				try
@@ -752,7 +752,7 @@ namespace Rhino.Raft
 
 		internal void TopologyChangeStarting(TopologyChangeCommand tcc)
 		{
-			_currentTopology = tcc.Requested;
+			Interlocked.Exchange(ref _currentTopology, tcc.Requested);
 			Interlocked.Exchange(ref _changingTopology, new TaskCompletionSource<object>().Task);
 			OnTopologyChangeStarted(tcc);
 		}
