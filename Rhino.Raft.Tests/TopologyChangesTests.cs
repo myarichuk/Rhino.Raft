@@ -84,7 +84,7 @@ namespace Rhino.Raft.Tests
 
 				leaderNode.AddToClusterAsync(additionalNode.Name).Wait();
 
-				Thread.Sleep(additionalNode.MessageTimeout * 2);
+				Thread.Sleep(additionalNode.Options.MessageTimeout * 2);
 				transport.ReconnectNode(additionalNode.Name);
 
 				Assert.True(waitForTopologyChangeInLeader.Wait(3000));
@@ -325,7 +325,7 @@ namespace Rhino.Raft.Tests
 		public void Node_added_to_cluster_should_update_peers_list(int nodeCount)
 		{
 			var leader = CreateNetworkAndWaitForLeader(nodeCount);
-			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", leader.Transport, leader.MessageTimeout)))
+			using (var additionalNode = new RaftEngine(CreateNodeOptions("nada0", leader.Transport, leader.Options.MessageTimeout)))
 			{
 				var clusterChanged = WaitForToplogyChangeOnCluster();
 				var newNodeAdded = WaitForToplogyChange(additionalNode);

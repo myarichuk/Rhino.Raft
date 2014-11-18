@@ -206,7 +206,7 @@ namespace Rhino.Raft.Tests
 
 		protected RaftEngine NewNodeFor(RaftEngine leader)
 		{
-			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Transport, leader.MessageTimeout));
+			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Transport, leader.Options.MessageTimeout));
 			_nodes.Add(raftEngine);
 			return raftEngine;
 		}

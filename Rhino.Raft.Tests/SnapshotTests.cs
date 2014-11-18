@@ -63,7 +63,7 @@ namespace Rhino.Raft.Tests
 		public void AfterSnapshotInstalled_CanContinueGettingLogEntriesNormally(int amount)
 		{
 			var leader = CreateNetworkAndWaitForLeader(amount);
-			leader.MaxLogLengthBeforeCompaction = 5;
+			leader.Options.MaxLogLengthBeforeCompaction = 5;
 			var snapshot = WaitForSnapshot(leader);
 			var commits = WaitForCommitsOnCluster(
 				machine => machine.Data.Count == 5);
@@ -125,7 +125,7 @@ namespace Rhino.Raft.Tests
 			leader.CreatedSnapshot += snapshotCreationEndedEvent.Set;
 			leader.CommitIndexChanged += (old, @new) => appliedAllCommandsEvent.Signal();
 
-			leader.MaxLogLengthBeforeCompaction = commandsCount - 3;
+			leader.Options.MaxLogLengthBeforeCompaction = commandsCount - 3;
 			commands.ForEach(leader.AppendCommand);
 
 			Assert.True(appliedAllCommandsEvent.Wait(3000));
@@ -168,7 +168,7 @@ namespace Rhino.Raft.Tests
 				}
 			};
 
-			leader.MaxLogLengthBeforeCompaction = commandsCount - 4;
+			leader.Options.MaxLogLengthBeforeCompaction = commandsCount - 4;
 			Trace.WriteLine("<--- Started appending commands..");
 			commands.ForEach(leader.AppendCommand);
 			Trace.WriteLine("<--- Ended appending commands..");
@@ -178,8 +178,8 @@ namespace Rhino.Raft.Tests
 			Assert.True(appliedAllCommandsEvent.Wait(millisecondsTimeout), "Not all commands were applied, there are still " + appliedAllCommandsEvent.CurrentCount + " commands left");
 
 			var entriesAfterSnapshotCreation = leader.PersistentState.LogEntriesAfter(0).ToList();
-			entriesAfterSnapshotCreation.Should().HaveCount((commandsCount + 1 /*nop command */ ) - leader.MaxLogLengthBeforeCompaction);
-			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.MaxLogLengthBeforeCompaction);
+			entriesAfterSnapshotCreation.Should().HaveCount((commandsCount + 1 /*nop command */ ) - leader.Options.MaxLogLengthBeforeCompaction);
+			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.Options.MaxLogLengthBeforeCompaction);
 		}
 	}
 }

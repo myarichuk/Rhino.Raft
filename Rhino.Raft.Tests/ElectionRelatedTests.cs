@@ -149,7 +149,7 @@ namespace Rhino.Raft.Tests
 
 			commands.Skip(3).ToList().ForEach(leader.AppendCommand);
 			var formerLeader = leader;
-			Thread.Sleep(raftNodes.Max(x => x.MessageTimeout) + 5); // cause election while current leader is disconnected
+			Thread.Sleep(raftNodes.Max(x => x.Options.MessageTimeout) + 5); // cause election while current leader is disconnected
 
 			Trace.WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
 			transport.ReconnectNode(leader.Name);
@@ -218,7 +218,7 @@ namespace Rhino.Raft.Tests
 			transport.ReconnectNode(leader.Name);
 			Assert.Equal(RaftEngineState.Leader, leader.State);
 
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * nodeCount));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * nodeCount));
 
 			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																					.OfType<DictionaryCommand.Set>()

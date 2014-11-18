@@ -42,7 +42,7 @@ namespace Rhino.Raft.Tests
 
 			commands.ForEach(leader.AppendCommand);
 
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 2));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * 2));
 			commands.Should().OnlyContain(cmd => cmd.Completion.Task.Status == TaskStatus.RanToCompletion);
 		}
 
@@ -77,13 +77,13 @@ namespace Rhino.Raft.Tests
 			//don't append the last command yet
 			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
 			//make sure commands that were appended before network leader disconnection are replicated
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.MessageTimeout * 3));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * 3));
 
 			dataTransport.DisconnectNode(leader.Name);
 
 			var lastCommand = commands.Last();
 			var commandCompletionTask = lastCommand.Completion.Task;
-			var timeout = Task.Delay(leader.MessageTimeout);
+			var timeout = Task.Delay(leader.Options.MessageTimeout);
 
 			leader.AppendCommand(lastCommand);
 

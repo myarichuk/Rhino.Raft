@@ -10,7 +10,7 @@ namespace Rhino.Raft
 {
 	public class RaftEngineOptions
 	{
-		public RaftEngineOptions(string name, StorageEnvironmentOptions options, ITransport transport, IRaftStateMachine stateMachine, int messageTimeout, long commandCommitTimeout = 60000)
+		public RaftEngineOptions(string name, StorageEnvironmentOptions options, ITransport transport, IRaftStateMachine stateMachine, int messageTimeout)
 		{
 			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
 			if (options == null) throw new ArgumentNullException("options");
@@ -23,9 +23,11 @@ namespace Rhino.Raft
 			StateMachine = stateMachine;
 			MessageTimeout = messageTimeout;
 			Stopwatch = new Stopwatch();
-			CommandCommitTimeout = commandCommitTimeout;
 			MaxLogLengthBeforeCompaction = 32 * 1024;
+			MaxStepDownDrainTime = TimeSpan.FromSeconds(15);
 		}
+
+		public TimeSpan MaxStepDownDrainTime { get; set; }
 
 		public int MaxLogLengthBeforeCompaction { get; set; }
 
@@ -44,7 +46,5 @@ namespace Rhino.Raft
 		public IRaftStateMachine StateMachine { get; private set; }
 
 		public int MessageTimeout { get; set; }
-
-		public long CommandCommitTimeout { get; set; }
 	}
 }

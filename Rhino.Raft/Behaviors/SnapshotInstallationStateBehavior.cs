@@ -15,7 +15,7 @@ namespace Rhino.Raft.Behaviors
 		public SnapshotInstallationStateBehavior(RaftEngine engine) : base(engine)
 		{
 			_random = new Random((int)(engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
-			Timeout = _random.Next(engine.MessageTimeout / 2, engine.MessageTimeout);
+			Timeout = _random.Next(engine.Options.MessageTimeout / 2, engine.Options.MessageTimeout);
 		}
 
 		public override RaftEngineState State
@@ -121,7 +121,7 @@ namespace Rhino.Raft.Behaviors
 
 		public override void HandleTimeout()
 		{
-			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout);
+			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
 			LastHeartbeatTime = DateTime.UtcNow;// avoid busy loop while waiting for the snapshot
 			Engine.DebugLog.Write("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished

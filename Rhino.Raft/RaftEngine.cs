@@ -7,12 +7,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Rhino.Raft.Behaviors;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
@@ -24,6 +22,7 @@ namespace Rhino.Raft
 {
 	public class RaftEngine : IDisposable
 	{
+		private readonly RaftEngineOptions _raftEngineOptions;
 		private readonly CancellationTokenSource _eventLoopCancellationTokenSource;
 		private readonly ManualResetEventSlim _leaderSelectedEvent = new ManualResetEventSlim();
 		private TaskCompletionSource<object> _steppingDownCompletionSource;
@@ -31,8 +30,9 @@ namespace Rhino.Raft
 		private Topology _currentTopology;
 
 		public DebugWriter DebugLog { get; set; }
-		public ITransport Transport { get; set; }
-		public IRaftStateMachine StateMachine { get; set; }
+		public IRaftStateMachine StateMachine { get { return _raftEngineOptions.StateMachine; } }
+
+		public ITransport Transport { get { return _raftEngineOptions.Transport; } }
 
 		public IEnumerable<string> AllVotingNodes
 		{
@@ -47,12 +47,8 @@ namespace Rhino.Raft
 			return _currentTopology.AllVotingNodes.Contains(node);
 		}
 
-		public int MaxLogLengthBeforeCompaction { get; set; }
-
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
-
-		public long CommandCommitTimeout { get; private set; }
 
 		public string CurrentLeader
 		{
@@ -118,11 +114,6 @@ namespace Rhino.Raft
 
 		private AbstractRaftStateBehavior StateBehavior { get; set; }
 
-		/// <summary>
-		/// can be heartbeat timeout or election timeout - depends on the state behavior
-		/// </summary>
-		public int MessageTimeout { get; set; }
-
 		public CancellationToken CancellationToken { get { return _eventLoopCancellationTokenSource.Token; } }
 
 		public event Action<RaftEngineState> StateChanged;
@@ -152,11 +143,9 @@ namespace Rhino.Raft
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
+			_raftEngineOptions = raftEngineOptions;
 			Debug.Assert(raftEngineOptions.Stopwatch != null);
 			DebugLog = new DebugWriter(raftEngineOptions.Name, raftEngineOptions.Stopwatch);
-
-			CommandCommitTimeout = raftEngineOptions.CommandCommitTimeout;
-			MessageTimeout = raftEngineOptions.MessageTimeout;
 
 			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
@@ -176,13 +165,8 @@ namespace Rhino.Raft
 				PersistentState.SetCurrentTopology(_currentTopology, 0);
 			}
 
-			MaxLogLengthBeforeCompaction = raftEngineOptions.MaxLogLengthBeforeCompaction;
-
 			//warm up to make sure that the serializer don't take too long and force election timeout
 			PersistentState.CommandSerializer.Serialize(new NopCommand());
-
-			Transport = raftEngineOptions.Transport;
-			StateMachine = raftEngineOptions.StateMachine;
 
 			var thereAreOthersInTheCluster = AllVotingNodes.Any(n => !n.Equals(Name, StringComparison.OrdinalIgnoreCase));
 			if (thereAreOthersInTheCluster == false)
@@ -196,6 +180,11 @@ namespace Rhino.Raft
 			}
 
 			_eventLoopTask = Task.Run(() => EventLoop());
+		}
+
+		public RaftEngineOptions Options
+		{
+			get { return _raftEngineOptions; }
 		}
 
 		protected void EventLoop()
@@ -437,7 +426,7 @@ namespace Rhino.Raft
 				return;
 
 			var commitedEntriesCount = PersistentState.GetCommitedEntriesCount(to);
-			if (commitedEntriesCount >= MaxLogLengthBeforeCompaction)
+			if (commitedEntriesCount >= Options.MaxLogLengthBeforeCompaction)
 			{
 				SnapshotAndTruncateLog(to);
 			}
@@ -453,7 +442,7 @@ namespace Rhino.Raft
 					var currentTerm = PersistentState.CurrentTerm;
 					StateMachine.CreateSnapshot(to, currentTerm);
 					PersistentState.MarkSnapshotFor(to, currentTerm,
-						MaxLogLengthBeforeCompaction - (MaxLogLengthBeforeCompaction / 8));
+						Options.MaxLogLengthBeforeCompaction - (Options.MaxLogLengthBeforeCompaction / 8));
 
 					OnSnapshotCreationEnded();
 				}

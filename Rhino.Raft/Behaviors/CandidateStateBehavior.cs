@@ -24,7 +24,7 @@ namespace Rhino.Raft.Behaviors
 			_forcedElection = forcedElection;
 			_wonTrialElection = forcedElection; 
 			_random = new Random((int) (engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
-			Timeout = _random.Next(engine.MessageTimeout / 2, engine.MessageTimeout);
+			Timeout = _random.Next(engine.Options.MessageTimeout / 2, engine.Options.MessageTimeout);
 			StartElection();
 		}
 
@@ -47,7 +47,7 @@ namespace Rhino.Raft.Behaviors
 			Engine.DebugLog.Write("Timeout ({1:#,#;;0} ms) for elections in term {0}", Engine.PersistentState.CurrentTerm,
 				  Timeout);
 
-			Timeout = _random.Next(Engine.MessageTimeout / 2, Engine.MessageTimeout);
+			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
 			_wonTrialElection = false;
 			StartElection();
 	    }

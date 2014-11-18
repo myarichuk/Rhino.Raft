@@ -34,7 +34,7 @@ namespace Rhino.Raft.Behaviors
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
-			Timeout = engine.MessageTimeout;
+			Timeout = engine.Options.MessageTimeout;
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
@@ -58,7 +58,7 @@ namespace Rhino.Raft.Behaviors
 				SendEntriesToAllPeers();
 
 				OnHeartbeatSent();
-				Thread.Sleep(Math.Min(Engine.MessageTimeout / 6, 250));
+				Thread.Sleep(Math.Min(Engine.Options.MessageTimeout / 6, 250));
 			}
 		}
 
