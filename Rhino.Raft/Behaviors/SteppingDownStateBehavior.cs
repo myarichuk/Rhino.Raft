@@ -61,7 +61,7 @@ namespace Rhino.Raft.Behaviors
 				From = Engine.Name
 			});
 			Engine.DebugLog.Write("Transfering cluster leadership to {0}", bestMatch);
-			Engine.SetState(RaftEngineState.None);
+			Engine.SetState(RaftEngineState.Follower);
 		}
 
 		public override void HandleTimeout()
