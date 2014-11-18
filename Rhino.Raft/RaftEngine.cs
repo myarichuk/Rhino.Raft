@@ -11,6 +11,8 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Rhino.Raft.Behaviors;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
@@ -62,13 +64,16 @@ namespace Rhino.Raft
 				if (_currentLeader == value)
 					return;
 
+				DebugLog.Write("Setting CurrentLeader: {0}", value);
+				_currentLeader = value;
+
+
 				if (value == null)
 					_leaderSelectedEvent.Reset();
 				else
+				{
 					_leaderSelectedEvent.Set();
-
-				DebugLog.Write("Setting CurrentLeader: {0}", value);
-				_currentLeader = value;
+				}
 			}
 		}
 
@@ -201,7 +206,8 @@ namespace Rhino.Raft
 					MessageEnvelope message;
 					var behavior = StateBehavior;
 					var lastHeartBeat = (int)(DateTime.UtcNow - behavior.LastHeartbeatTime).TotalMilliseconds;
-					var hasMessage = Transport.TryReceiveMessage(Name, behavior.Timeout - lastHeartBeat, _eventLoopCancellationTokenSource.Token, out message);
+					var timeout = behavior.Timeout - lastHeartBeat;
+					var hasMessage = Transport.TryReceiveMessage(Name, timeout, _eventLoopCancellationTokenSource.Token, out message);
 					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
 						break;
 
@@ -213,7 +219,9 @@ namespace Rhino.Raft
 						OnStateTimeout();
 						continue;
 					}
-					DebugLog.Write("State {0} message {1}", State, message.Message);
+					DebugLog.Write("State {0} message {1}", State, 
+						message.Message is BaseMessage ? JsonConvert.SerializeObject(message.Message) : message.Message
+						);
 
 					behavior.HandleMessage(message);
 				}
@@ -258,7 +266,6 @@ namespace Rhino.Raft
 						StateBehavior = new LeaderStateBehavior(this);
 						CurrentLeader = Name;
 						OnElectedAsLeader();
-						_leaderSelectedEvent.Set();
 						break;
 					case RaftEngineState.None:
 						_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
@@ -359,20 +366,22 @@ namespace Rhino.Raft
 			{
 				try
 				{
-					var command = PersistentState.CommandSerializer.Deserialize(entry.Data);
-					if (command is NopCommand)
-						continue;
-
-					StateMachine.Apply(entry, command);
-
 					var oldCommitIndex = CommitIndex;
+					var command = PersistentState.CommandSerializer.Deserialize(entry.Data);
+
+					var sysCommand = command is NopCommand || command is TopologyChangeCommand;
+
+					if(sysCommand == false)
+						StateMachine.Apply(entry, command);
+
 					CommitIndex = entry.Index;
 					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", entry.Index);
 
 					var tcc = command as TopologyChangeCommand;
 					if (tcc != null)
 					{
-						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}", String.Join(",", tcc.Requested.AllVotingNodes), Name);
+						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}",
+							String.Join(",", tcc.Requested.AllVotingNodes), Name);
 						CommitTopologyChange(tcc);
 					}
 
@@ -451,6 +460,7 @@ namespace Rhino.Raft
 		internal void AnnounceCandidacy()
 		{
 			PersistentState.IncrementTermAndVoteFor(Name);
+			CurrentLeader = null;
 
 			SetState(RaftEngineState.Candidate);
 
