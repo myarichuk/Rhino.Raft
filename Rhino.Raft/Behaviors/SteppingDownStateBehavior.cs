@@ -15,7 +15,8 @@ namespace Rhino.Raft.Behaviors
 	{
 		private readonly Stopwatch _stepdownDuration;
 
-		public SteppingDownStateBehavior(RaftEngine engine) : base(engine)
+		public SteppingDownStateBehavior(RaftEngine engine)
+			: base(engine)
 		{
 			_stepdownDuration = Stopwatch.StartNew();
 			// we are sending this to ourselves because we want to make 
@@ -26,7 +27,7 @@ namespace Rhino.Raft.Behaviors
 				From = Engine.Name,
 				LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 				LeaderId = Engine.Name,
-				Message = null,
+				Message = "Forcing step down evaluation",
 				Success = true
 			});
 		}
@@ -53,15 +54,20 @@ namespace Rhino.Raft.Behaviors
 
 		private void TransferToBestMatch()
 		{
-			var bestMatch = _matchIndexes.OrderByDescending(x => x.Value).Select(x => x.Key).FirstOrDefault();
+			var bestMatch = _matchIndexes.OrderByDescending(x => x.Value)
+				.Select(x => x.Key).FirstOrDefault(x => x != Engine.Name);
 
-			Engine.Transport.Send(bestMatch, new TimeoutNowRequest
+			if (bestMatch != null) // this should always be the case, but...
 			{
-				Term = Engine.PersistentState.CurrentTerm,
-				From = Engine.Name
-			});
-			Engine.DebugLog.Write("Transfering cluster leadership to {0}", bestMatch);
-			Engine.SetState(RaftEngineState.Follower);
+				Engine.Transport.Send(bestMatch, new TimeoutNowRequest
+				{
+					Term = Engine.PersistentState.CurrentTerm,
+					From = Engine.Name
+				});
+				Engine.DebugLog.Write("Transfering cluster leadership to {0}", bestMatch);
+			}
+
+			Engine.SetState(RaftEngineState.FollowerAfterStepDown);
 		}
 
 		public override void HandleTimeout()

@@ -244,7 +244,8 @@ namespace Rhino.Raft
 				switch (state)
 				{
 					case RaftEngineState.Follower:
-						StateBehavior = new FollowerStateBehavior(this);
+					case RaftEngineState.FollowerAfterStepDown:
+						StateBehavior = new FollowerStateBehavior(this, state == RaftEngineState.FollowerAfterStepDown);
 						break;
 					case RaftEngineState.CandidateByRequest:
 					case RaftEngineState.Candidate:
@@ -286,7 +287,7 @@ namespace Rhino.Raft
 			}
 
 			_steppingDownCompletionSource = new TaskCompletionSource<object>();
-
+			DebugLog.Write("Got a request to step down from leadership position, personal reasons, you understand.");
 			SetState(RaftEngineState.SteppingDown);
 
 			return _steppingDownCompletionSource.Task;
