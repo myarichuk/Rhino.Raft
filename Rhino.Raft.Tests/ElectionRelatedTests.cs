@@ -45,6 +45,7 @@ namespace Rhino.Raft.Tests
 			using (var raftNode1 = new RaftEngine(node1Options))
 			using (var raftNode2 = new RaftEngine(node2Options))
 			{
+				transport.ForceTimeout("node1");
 				//less election timeout --> will send vote request sooner, and thus expected to become candidate first
 				raftNode1.WaitForLeader();
 
