@@ -65,10 +65,6 @@ namespace Rhino.Raft
 
 		public bool TryReceiveMessage(string dest, int timeout, CancellationToken cancellationToken, out MessageEnvelope messageEnvelope)
 		{
-			messageEnvelope = null;
-			if (_disconnectedNodes.Contains(dest))
-				return false;
-
 		    if (timeout < 0)
 		        timeout = 0;
 
@@ -76,12 +72,14 @@ namespace Rhino.Raft
 			var tryReceiveMessage = messageQueue.TryTake(out messageEnvelope, timeout, cancellationToken);
 			if (tryReceiveMessage)
 			{
-				if (messageEnvelope.Message is TimeoutException)
+				if (_disconnectedNodes.Contains(dest) ||
+					messageEnvelope.Message is TimeoutException)
 				{
 					messageEnvelope = null;
 					return false;
 				}
 			}
+
 			return tryReceiveMessage;
 		}
 
