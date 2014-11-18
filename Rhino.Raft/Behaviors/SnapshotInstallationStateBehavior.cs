@@ -88,6 +88,8 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Execute(Engine.Name, () =>
 				{
 					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+					Engine.CommitIndex = req.LastIncludedIndex;
+					Engine.DebugLog.Write("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
 					Engine.OnSnapshotInstallationEnded(req.Term);
 
 					Engine.Transport.Send(req.From, new InstallSnapshotResponse
@@ -112,7 +114,6 @@ namespace Rhino.Raft.Behaviors
 					LastLogIndex = lastLogEntry.Index,
 					LeaderId = Engine.CurrentLeader,
 					Message = "I am in the process of receiving a snapshot, so I cannot accept new entries at the moment",
-					Source = destination,
 					Success = false
 				});
 		}
@@ -124,11 +125,6 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow;// avoid busy loop while waiting for the snapshot
 			Engine.DebugLog.Write("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished
-		}
-
-		public override void Dispose()
-		{
-			base.Dispose();
 		}
 	}
 }
