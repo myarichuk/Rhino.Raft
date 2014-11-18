@@ -35,6 +35,13 @@ namespace Rhino.Raft.Tests
 			return mre;
 		}
 
+		protected ManualResetEventSlim WaitForToplogyChange(RaftEngine node)
+		{
+			var mre = new ManualResetEventSlim();
+			node.TopologyChangeFinished += state => mre.Set();
+			return mre;
+		}
+
 		protected ManualResetEventSlim WaitForCommit<T>(RaftEngine node, Func<DictionaryStateMachine, bool> predicate)
 		{
 			var cde = new ManualResetEventSlim();
@@ -93,9 +100,13 @@ namespace Rhino.Raft.Tests
 			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: messageTimeout).ToList();
 			var raftEngine = _nodes[new Random().Next(0, _nodes.Count)];
 
+			var nopCommit = WaitForCommitsOnCluster(x => true);
+
 			((InMemoryTransport) raftEngine.Transport).ForceTimeout(raftEngine.Name);
 
 			raftNodes.First().WaitForLeader();
+
+			nopCommit.Wait();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);

@@ -17,30 +17,31 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void CanRevertTopologyChange()
 		{
-			var leader = CreateNetworkAndWaitForLeader(2);
-			var nonLeader = Nodes.First(x => x != leader);
+			var leader = CreateNetworkAndWaitForLeader(3);
+			var nonLeaders = Nodes.Where(x => x != leader).ToList();
 			var inMemoryTransport = ((InMemoryTransport) leader.Transport);
-			inMemoryTransport.DisconnectNode(nonLeader.Name);
+			var topologyChnaged = WaitForToplogyChange(leader);
+			inMemoryTransport.DisconnectNodeSending(leader.Name);
 
-			leader.AddToClusterAsync("node2");
+			WriteLine("Initial leader is " + leader.Name);
+			leader.AddToClusterAsync("node3");
 
 			Assert.True(leader.ContainedInAllVotingNodes("node2"));
 
-			var steppedDown = WaitForStateChange(leader, RaftEngineState.Follower);
-
 			WriteLine("<-- should switch leaders now");
 
-			inMemoryTransport.ForceTimeout(nonLeader.Name);
+			nonLeaders.ForEach(engine => inMemoryTransport.ForceTimeout(engine.Name));
 
-			inMemoryTransport.ReconnectNode(nonLeader.Name);
+			inMemoryTransport.ForceTimeout(nonLeaders[0].Name);// force it to win
 
-			steppedDown.Wait();
+			topologyChnaged.Wait();
 
-			nonLeader.WaitForLeader();
-
-			Assert.Equal(RaftEngineState.Leader, nonLeader.State);
-			Assert.False(nonLeader.ContainedInAllVotingNodes("node2"));
-			Assert.False(leader.ContainedInAllVotingNodes("node2"));
+			Assert.True(nonLeaders.Any(x=>x.State==RaftEngineState.Leader));
+			foreach (var raftEngine in nonLeaders)
+			{
+				Assert.False(raftEngine.ContainedInAllVotingNodes("node3"));
+			}
+			Assert.False(leader.ContainedInAllVotingNodes("node3"));
 
 		}
 
