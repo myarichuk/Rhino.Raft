@@ -1,4 +1,5 @@
-﻿using System; 
+﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -46,7 +47,7 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		public Dictionary<string, int> Data = new Dictionary<string, int>();
+		public ConcurrentDictionary<string, int> Data = new ConcurrentDictionary<string, int>();
 		private SnapshotWriter _snapshot;
 
 		public void Apply(LogEntry entry, Command cmd)
@@ -84,7 +85,7 @@ namespace Rhino.Raft.Tests
 				stream.Position = 0;
 			
 			using (var streamReader = new StreamReader(stream))
-				Data = _serializer.Deserialize<Dictionary<string, int>>(new JsonTextReader(streamReader));
+				Data = new ConcurrentDictionary<string, int>(_serializer.Deserialize<Dictionary<string, int>>(new JsonTextReader(streamReader)));
 
 			_snapshot = new SnapshotWriter(this, new Dictionary<string, int>(Data))
 			{

@@ -73,5 +73,11 @@ namespace Rhino.Raft.Behaviors
 				TransferToBestMatch();
 			}
 		}
+
+		public override void Dispose()
+		{
+			base.Dispose();
+			Engine.FinishSteppingDown();
+		}
 	}
 }

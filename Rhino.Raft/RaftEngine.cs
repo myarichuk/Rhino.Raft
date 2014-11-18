@@ -118,7 +118,7 @@ namespace Rhino.Raft
 
 		public event Action<RaftEngineState> StateChanged;
 		public event Action<Command> CommitApplied;
-
+		public event Action<long> NewTerm;
 		public event Action ElectionStarted;
 		public event Action StateTimeout;
 		public event Action<LogEntry[]> EntriesAppended;
@@ -172,7 +172,7 @@ namespace Rhino.Raft
 			if (thereAreOthersInTheCluster == false)
 			{
 				SetState(RaftEngineState.Leader);
-				PersistentState.UpdateTermTo(PersistentState.CurrentTerm + 1);// restart means new term
+				PersistentState.UpdateTermTo(this, PersistentState.CurrentTerm + 1);// restart means new term
 			}
 			else
 			{
@@ -224,7 +224,7 @@ namespace Rhino.Raft
 
 		internal void UpdateCurrentTerm(long term, string leader)
 		{
-			PersistentState.UpdateTermTo(term);
+			PersistentState.UpdateTermTo(this, term);
 			SetState(RaftEngineState.Follower);
 			DebugLog.Write("UpdateCurrentTerm() setting new leader : {0}", leader ?? "no leader currently");
 			CurrentLeader = leader;
@@ -263,8 +263,6 @@ namespace Rhino.Raft
 						CurrentLeader = Name;
 						break;
 					case RaftEngineState.None:
-						if (_steppingDownCompletionSource != null)
-							_steppingDownCompletionSource.TrySetResult(null);
 						_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
 						break;
 					default:
@@ -284,10 +282,7 @@ namespace Rhino.Raft
 
 			if (CurrentTopology.QuoromSize == 1)
 			{
-				SetState(RaftEngineState.None);
-				var tcs = new TaskCompletionSource<object>();
-				tcs.TrySetResult(null);
-				return tcs.Task;
+				throw new InvalidOperationException("Cannot step down if I'm the only one in the cluster");
 			}
 
 			_steppingDownCompletionSource = new TaskCompletionSource<object>();
@@ -753,6 +748,31 @@ namespace Rhino.Raft
 			{
 				Requested = new Topology(previousPeers)
 			});
+		}
+
+		internal void FinishSteppingDown()
+		{
+			var steppingDownCompletionSource = _steppingDownCompletionSource;
+			if (steppingDownCompletionSource == null)
+				return;
+			_steppingDownCompletionSource = null;
+			steppingDownCompletionSource.TrySetResult(null);
+		}
+
+		internal void OnNewTerm(long term)
+		{
+			var handler = NewTerm;
+			if (handler != null)
+			{
+				try
+				{
+					handler(term);
+				}
+				catch (Exception e)
+				{
+					DebugLog.Write("Error on NewTerm event: " + e);
+				}
+			}
 		}
 	}
 }

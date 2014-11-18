@@ -133,30 +133,6 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
-		[InlineData(4)]
-		public async Task Leader_removed_from_cluster_will_cause_new_election(int nodeCount)
-		{
-			var electionStartedEvent = new ManualResetEventSlim();
-
-			var raftNodes = CreateNodeNetwork(nodeCount).ToList();
-			raftNodes.First().WaitForLeader();
-
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
-
-			raftNodes.ForEach(node =>
-			{
-				if (!ReferenceEquals(node, leader))
-					node.ElectionStarted += electionStartedEvent.Set;
-			});
-			await leader.RemoveFromClusterAsync(leader.Name);
-
-			Assert.True(electionStartedEvent.Wait(3000));
-		}
-
-		[Theory]
-		[InlineData(2)]
-		[InlineData(3)]
 		public void Node_added_to_cluster_will_not_cause_new_election(int nodeCount)
 		{
 			var electionStartedEvent = new ManualResetEventSlim();
@@ -342,7 +318,7 @@ namespace Rhino.Raft.Tests
 					if(containedInAllVotingNodes)
 						continue;
 					Assert.True(containedInAllVotingNodes,
-						string.Join(",", node.AllVotingNodes));
+						string.Join(", ", node.AllVotingNodes));
 				}
 
 				additionalNode.AllVotingNodes.Should().Contain(raftNodes.Select(node => node.Name));
@@ -353,9 +329,47 @@ namespace Rhino.Raft.Tests
 		[InlineData(2)]
 		[InlineData(3)]
 		[InlineData(4)]
+		public void Can_step_down(int nodeCount)
+		{
+			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+
+			var firstCommits = WaitForCommitsOnCluster(x => x.Data.ContainsKey("4"));
+			for (int i = 0; i < 5; i++)
+			{
+				leader.AppendCommand(new DictionaryCommand.Set
+				{
+					Key = i.ToString(),
+					Value = i
+				});
+			}
+			firstCommits.Wait();
+
+			var nextCommit = WaitForCommitsOnCluster(x => x.Data.ContainsKey("c"));
+
+			leader.AppendCommand(new DictionaryCommand.Set
+			{
+				Key = "c",
+				Value = 3
+			});
+
+			var newLeader = WaitForNewLeaderAsync();
+
+			leader.StepDownAsync().Wait();
+
+			nextCommit.Wait();
+
+			var dictionaryStateMachine = ((DictionaryStateMachine)newLeader.Result.StateMachine);
+			WriteLine("<-- have new leader state machine");
+
+			Assert.Equal(3, dictionaryStateMachine.Data["c"]);
+		}
+
+		[Theory]
+		[InlineData(2)]
+		[InlineData(3)]
+		[InlineData(4)]
 		public void Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
-			var topologyChangeComittedEvent = new CountdownEvent(nodeCount - 1);
 
 			var leader = CreateNetworkAndWaitForLeader(nodeCount);
 			var raftNodes = Nodes.ToList();
@@ -363,19 +377,17 @@ namespace Rhino.Raft.Tests
 			Assert.NotNull(leader);
 			Assert.NotNull(nonLeaderNode);
 
-			WriteLine(string.Format("<-- Leader chosen: {0} -->", leader.Name));
-			WriteLine(string.Format("<-- Non-leader node: {0} -->", nonLeaderNode.Name));
-
 			raftNodes.Remove(leader);
-			raftNodes.ForEach(node => node.TopologyChanged += cmd => topologyChangeComittedEvent.Signal());
-			leader.RemoveFromClusterAsync(leader.Name).Wait();
+			var waitForNewLeaderAsync = WaitForNewLeaderAsync();
 
-			Assert.True(topologyChangeComittedEvent.Wait(nodeCount * 1000));
+			leader.StepDownAsync().Wait();
+
+			waitForNewLeaderAsync.Result.RemoveFromClusterAsync(leader.Name).Wait();
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
-			WriteLine("<-- expectedNodeNameList:" + expectedNodeNameList.Aggregate(String.Empty, (all, curr) => all + ", " + curr));
-			raftNodes.ForEach(node => node.AllVotingNodes.Should().BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
-			leader.Dispose();
+
+			raftNodes.ForEach(node => node.AllVotingNodes.Should()
+				.BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
 		}
 
 		[Fact]

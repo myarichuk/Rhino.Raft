@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Utils;
@@ -42,7 +44,7 @@ namespace Rhino.Raft.Tests
 			return mre;
 		}
 
-		protected ManualResetEventSlim WaitForCommit<T>(RaftEngine node, Func<DictionaryStateMachine, bool> predicate)
+		protected ManualResetEventSlim WaitForCommit(RaftEngine node, Func<DictionaryStateMachine, bool> predicate)
 		{
 			var cde = new ManualResetEventSlim();
 			node.CommitApplied += command =>
@@ -97,6 +99,8 @@ namespace Rhino.Raft.Tests
 		protected CountdownEvent WaitForCommitsOnCluster(Func<DictionaryStateMachine, bool> predicate)
 		{
 			var cde = new CountdownEvent(_nodes.Count);
+			var votedAlready = new ConcurrentDictionary<RaftEngine, object>();
+			
 			foreach (var node in _nodes)
 			{
 				var n = node;
@@ -105,7 +109,10 @@ namespace Rhino.Raft.Tests
 					var state = (DictionaryStateMachine)n.StateMachine;
 					if (predicate(state) && cde.CurrentCount > 0)
 					{
-						n.DebugLog.Write("WaitForCommitsOnCluster match");
+						if (votedAlready.ContainsKey(n))
+							return;
+						votedAlready.TryAdd(n, n);
+						n.DebugLog.Write("WaitForCommitsOnCluster match " + n.Name + " " + state.Data.Count);
 						cde.Signal();
 					}
 				};
@@ -114,6 +121,10 @@ namespace Rhino.Raft.Tests
 					var state = (DictionaryStateMachine) n.StateMachine;
 					if (predicate(state) && cde.CurrentCount > 0)
 					{
+						if (votedAlready.ContainsKey(n))
+							return;
+						votedAlready.TryAdd(n, n);
+
 						n.DebugLog.Write("WaitForCommitsOnCluster match"); 
 						cde.Signal();
 					}
@@ -146,6 +157,19 @@ namespace Rhino.Raft.Tests
 			var cde = new ManualResetEventSlim();
 			node.SnapshotInstalled += cde.Set;
 			return cde;
+		}
+
+		protected Task<RaftEngine> WaitForNewLeaderAsync()
+		{
+			var rcs = new TaskCompletionSource<RaftEngine>();
+			foreach (var node in _nodes)
+			{
+				var n = node;
+
+				n.ElectedAsLeader += () => rcs.TrySetResult(n);
+			}
+
+			return rcs.Task;
 		}
 
 		protected RaftEngine CreateNetworkAndWaitForLeader(int nodeCount, int messageTimeout = -1)

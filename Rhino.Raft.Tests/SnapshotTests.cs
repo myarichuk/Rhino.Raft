@@ -29,7 +29,7 @@ namespace Rhino.Raft.Tests
 				CommandSerializer = new JsonCommandSerializer()
 			})
 			{
-				state.UpdateTermTo(1);
+				state.UpdateTermTo(null, 1);
 				state.AppendToLeaderLog(new NopCommand());
 				for (int i = 0; i < 5; i++)
 				{
@@ -88,7 +88,7 @@ namespace Rhino.Raft.Tests
 
 			Assert.Equal(newNode.CurrentLeader, leader.Name);
 
-			var commit = WaitForCommit<DictionaryCommand.Set>(newNode,
+			var commit = WaitForCommit(newNode,
 				machine => machine.Data.ContainsKey("c"));
 
 			leader.AppendCommand(new DictionaryCommand.Set

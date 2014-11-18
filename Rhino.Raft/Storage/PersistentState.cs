@@ -288,18 +288,22 @@ namespace Rhino.Raft.Storage
 		}
 
 		
-		public void UpdateTermTo(long term)
+		public void UpdateTermTo(RaftEngine engine, long term)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
 
-				metadata.Add("current-term", BitConverter.GetBytes(term));
+				metadata.Add("current-term", EndianBitConverter.Little.GetBytes(term));
 				metadata.Add("voted-for", new byte[0]); // clearing who we voted for
+				metadata.Add("voted-for-term", EndianBitConverter.Little.GetBytes(-1L)); // clearing who we voted for
 
 				VotedFor = null;
 				VotedForTerm = -1;
 				CurrentTerm = term;
+
+				if (engine != null)
+					engine.OnNewTerm(term);
 
 				tx.Commit();
 			}

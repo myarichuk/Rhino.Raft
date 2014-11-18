@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,7 +10,7 @@ namespace Rhino.Raft.Tests
 {
 	public abstract class DictionaryCommand : Command
 	{
-		public abstract void Apply(Dictionary<string, int> data);
+		public abstract void Apply(ConcurrentDictionary<string, int> data);
 
 		public string Key { get; set; }
 
@@ -17,7 +18,7 @@ namespace Rhino.Raft.Tests
 		{
 			public int Value { get; set; }
 
-			public override void Apply(Dictionary<string, int> data)
+			public override void Apply(ConcurrentDictionary<string, int> data)
 			{
 				data[Key] = Value;
 			}
@@ -27,7 +28,7 @@ namespace Rhino.Raft.Tests
 		{
 			public int Value { get; set; }
 
-			public override void Apply(Dictionary<string, int> data)
+			public override void Apply(ConcurrentDictionary<string, int> data)
 			{
 				int value;
 				data.TryGetValue(Key, out value);
@@ -38,9 +39,10 @@ namespace Rhino.Raft.Tests
 
 		public class Del : DictionaryCommand
 		{
-			public override void Apply(Dictionary<string, int> data)
+			public override void Apply(ConcurrentDictionary<string, int> data)
 			{
-				data.Remove(Key);
+				int value;
+				data.TryRemove(Key, out value);
 			}
 		}
 	}

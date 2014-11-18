@@ -60,7 +60,7 @@ namespace Rhino.Raft.Behaviors
 			Engine.PersistentState.RecordVoteFor(Engine.Name, term+1);
 
 			if (_wonTrialElection)// only in the real election, we increment the current term
-				Engine.PersistentState.UpdateTermTo(Engine.PersistentState.CurrentTerm + 1);
+				Engine.PersistentState.UpdateTermTo(Engine, Engine.PersistentState.CurrentTerm + 1);
 
 			Engine.CurrentLeader = null;
 
