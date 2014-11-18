@@ -7,7 +7,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -97,7 +96,7 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.Candidate; }
 		}
 
-		public override void Handle(string source,RequestVoteResponse resp)
+		public override void Handle(string source, RequestVoteResponse resp)
 		{
 			if (resp.VoteTerm != Engine.PersistentState.CurrentTerm)
 			{

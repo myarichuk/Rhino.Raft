@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
 using Rhino.Raft.Messages;
 
@@ -23,28 +22,26 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.SnapshotInstallation; }
 		}
 
-		public override void Handle(string destination, CanInstallSnapshotRequest req)
+		public override CanInstallSnapshotResponse Handle(string destination, CanInstallSnapshotRequest req)
 		{
 			if (_installingSnapshot == null)
 			{
-				base.Handle(destination, req);
-				return;
+				return base.Handle(destination, req);
 			}
-			Engine.Transport.Send(req.From, new CanInstallSnapshotResponse
+			return new CanInstallSnapshotResponse
 			{
 				From = Engine.Name,
 				IsCurrentlyInstalling = true,
 				Message = "The node is in the process of installing a snapshot",
 				Success = false
-			});			
+			};
 		}
 
-		public override void Handle(string destination, InstallSnapshotRequest req, Stream stream)
+		public override InstallSnapshotResponse Handle(MessageContext context, InstallSnapshotRequest req, Stream stream)
 		{
 			if (_installingSnapshot != null)
 			{
-				base.Handle(destination, req, stream);
-				return;
+				return base.Handle(context, req, stream);
 			}
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
@@ -52,15 +49,14 @@ namespace Rhino.Raft.Behaviors
 			{
 				stream.Dispose();
 
-				Engine.Transport.Send(req.From, new InstallSnapshotResponse
+				return new InstallSnapshotResponse
 				{
 					From = Engine.Name,
 					CurrentTerm = lastLogEntry.Term,
 					LastLogIndex = lastLogEntry.Index,
 					Message = "Term " + req.Term + " is older than last term in the log " + lastLogEntry.Term + " so the snapshot was rejected",
 					Success = false
-				});
-				return;
+				};
 			}
 				
 			Engine.DebugLog.Write("Received InstallSnapshotRequest from {0} until term {1} / {2}", req.From, req.LastIncludedTerm, req.LastIncludedIndex);
@@ -78,21 +74,21 @@ namespace Rhino.Raft.Behaviors
 				catch (Exception e)
 				{
 					Engine.DebugLog.Write("Failed to install snapshot because {0}", e);
-					Engine.Transport.Execute(Engine.Name, () =>
+					context.ExecuteInEventLoop(() =>
 					{
 						_installingSnapshot = null;
 					});
 				}
 
 				// we are doing it this way to ensure that we are single threaded
-				Engine.Transport.Execute(Engine.Name, () =>
+				context.ExecuteInEventLoop(() =>
 				{
 					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
 					Engine.CommitIndex = req.LastIncludedIndex;
 					Engine.DebugLog.Write("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
 					Engine.OnSnapshotInstallationEnded(req.Term);
 
-					Engine.Transport.Send(req.From, new InstallSnapshotResponse
+					context.Reply(new InstallSnapshotResponse
 					{
 						From = Engine.Name,
 						CurrentTerm = lastLogEntry.Term,
@@ -101,12 +97,14 @@ namespace Rhino.Raft.Behaviors
 					});
 				});
 			});
+
+			return null;
 		}
 
-		public override void Handle(string destination, AppendEntriesRequest req)
+		public override AppendEntriesResponse Handle(string destination, AppendEntriesRequest req)
 		{
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-			Engine.Transport.Send(req.From,
+			return
 				new AppendEntriesResponse
 				{
 					From = Engine.Name,
@@ -115,7 +113,7 @@ namespace Rhino.Raft.Behaviors
 					LeaderId = Engine.CurrentLeader,
 					Message = "I am in the process of receiving a snapshot, so I cannot accept new entries at the moment",
 					Success = false
-				});
+				};
 		}
 
 

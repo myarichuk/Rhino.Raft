@@ -63,7 +63,7 @@
     <Compile Include="Messages\CanInstallSnapshotRequest.cs" />
     <Compile Include="Messages\CanInstallSnapshotResponse.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
-    <Compile Include="InMemoryTransport.cs" />
+    <Compile Include="InMemoryTransportHub.cs" />
     <Compile Include="Interfaces\IRaftStateMachine.cs" />
     <Compile Include="Interfaces\ITransport.cs" />
     <Compile Include="JsonCommandSerializer.cs" />
@@ -72,7 +72,7 @@
     <Compile Include="Messages\BaseMessage.cs" />
     <Compile Include="Messages\InstallSnapshotRequest.cs" />
     <Compile Include="Messages\LogEntry.cs" />
-    <Compile Include="Messages\MessageEnvelope.cs" />
+    <Compile Include="Messages\MessageContext.cs" />
     <Compile Include="Messages\RequestVoteRequest.cs" />
     <Compile Include="Messages\RequestVoteResponse.cs" />
     <Compile Include="Messages\TimeoutNow.cs" />

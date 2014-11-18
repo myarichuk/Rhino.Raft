@@ -193,11 +193,11 @@ namespace Rhino.Raft
 			{
 				try
 				{
-					MessageEnvelope message;
+					MessageContext message;
 					var behavior = StateBehavior;
 					var lastHeartBeat = (int)(DateTime.UtcNow - behavior.LastHeartbeatTime).TotalMilliseconds;
 					var timeout = behavior.Timeout - lastHeartBeat;
-					var hasMessage = Transport.TryReceiveMessage(Name, timeout, _eventLoopCancellationTokenSource.Token, out message);
+					var hasMessage = Transport.TryReceiveMessage(timeout, _eventLoopCancellationTokenSource.Token, out message);
 					if (_eventLoopCancellationTokenSource.IsCancellationRequested)
 						break;
 

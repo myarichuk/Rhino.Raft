@@ -21,7 +21,7 @@ namespace Rhino.Raft.Behaviors
 			_stepdownDuration = Stopwatch.StartNew();
 			// we are sending this to ourselves because we want to make 
 			// sure that we immediately check if we can step down
-			Engine.Transport.Send(Engine.Name, new AppendEntriesResponse
+			Engine.Transport.SendToSelf(new AppendEntriesResponse
 			{
 				CurrentTerm = Engine.PersistentState.CurrentTerm,
 				From = Engine.Name,
