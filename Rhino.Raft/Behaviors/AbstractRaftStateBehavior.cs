@@ -288,7 +288,7 @@ namespace Rhino.Raft.Behaviors
 			if (Engine.CurrentLeader == null || req.LeaderId.Equals(Engine.CurrentLeader) == false)
 			{
 				Engine.CurrentLeader = req.LeaderId;
-				Engine.DebugLog.Write("Set current leader to {0}", req.LeaderId);
+				Engine.SetState(RaftEngineState.Follower);
 			}
 
 			var prevTerm = Engine.PersistentState.TermFor(req.PrevLogIndex) ?? 0;
@@ -331,11 +331,10 @@ namespace Rhino.Raft.Behaviors
 						throw new InvalidOperationException(@"Log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand.
 															Instead, it is of type: " + command.GetType() +". It is probably a bug!");
 
-					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log): {0}", string.Join(", ", topologyChangeCommand.Requested));
+					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log): {0}", 
+						string.Join(", ", topologyChangeCommand.Requested.AllVotingNodes));
 					Engine.PersistentState.SetCurrentTopology(topologyChangeCommand.Requested, topologyChange.Index);
 					Engine.TopologyChangeStarting(topologyChangeCommand);
-
-					Engine.OnTopologyChangeStarted(topologyChangeCommand);
 				}
 			}
 
