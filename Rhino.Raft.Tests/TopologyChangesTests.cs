@@ -21,11 +21,13 @@ namespace Rhino.Raft.Tests
 			var leader = CreateNetworkAndWaitForLeader(3);
 			var nonLeaders = Nodes.Where(x => x != leader).ToList();
 			var inMemoryTransport = ((InMemoryTransport) leader.Transport);
-			var topologyChnaged = WaitForToplogyChange(leader);
+
 			inMemoryTransport.DisconnectNodeSending(leader.Name);
 
 			WriteLine("Initial leader is " + leader.Name);
 			leader.AddToClusterAsync("node3");
+
+			var topologyChnaged = WaitForToplogyChange(leader);
 
 			Assert.True(leader.ContainedInAllVotingNodes("node2"));
 
