@@ -243,7 +243,7 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(string destination, AppendEntriesResponse resp)
 		{
-			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.Source);
+			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.From);
 
 			// there is a new leader in town, time to step down
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm)
@@ -252,15 +252,15 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			Debug.Assert(resp.Source != null);
-			_nextIndexes[resp.Source] = resp.LastLogIndex + 1;
-			_matchIndexes[resp.Source] = resp.LastLogIndex;
-			Engine.DebugLog.Write("follower (name={0}) has LastLogIndex = {1}", resp.Source, resp.LastLogIndex);
+			Debug.Assert(resp.From != null);
+			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
+			_matchIndexes[resp.From] = resp.LastLogIndex;
+			Engine.DebugLog.Write("Follower ({0}) has LastLogIndex = {1}", resp.From, resp.LastLogIndex);
 
 			if (resp.Success == false)
 			{
-				Engine.DebugLog.Write("received Success = false in AppendEntriesResponse. Now _nextIndexes[{1}] = {0}.",
-					_nextIndexes[resp.Source], resp.Source);
+				Engine.DebugLog.Write("Received Success = false in AppendEntriesResponse from {1}. Now _nextIndexes[{1}] = {0}. Reason: {2}",
+					_nextIndexes[resp.From], resp.From, resp.Message);
 				return;
 			}
 

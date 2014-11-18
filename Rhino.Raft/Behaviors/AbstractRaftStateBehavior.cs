@@ -253,7 +253,7 @@ namespace Rhino.Raft.Behaviors
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					LeaderId = Engine.CurrentLeader,
 					Message = msg,
-					Source = Engine.Name
+					From = Engine.Name,
 				});
 				return;
 			}
@@ -283,7 +283,7 @@ namespace Rhino.Raft.Behaviors
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = msg,
 					LeaderId = req.LeaderId,
-					Source = Engine.Name
+					From = Engine.Name
 				});
 				return;
 			}
@@ -340,7 +340,6 @@ namespace Rhino.Raft.Behaviors
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = "Failed to apply new entries. Reason: " + e,
-					Source = Engine.Name,
 					From = Engine.Name
 				});
 				
@@ -353,7 +352,6 @@ namespace Rhino.Raft.Behaviors
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = message,
-					Source = Engine.Name,
 					From = Engine.Name
 				});				
 			}
