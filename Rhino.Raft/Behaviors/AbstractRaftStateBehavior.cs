@@ -315,7 +315,25 @@ namespace Rhino.Raft.Behaviors
 			{
 				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
-				Engine.PersistentState.AppendToLog(Engine, req.Entries, req.PrevLogIndex);
+
+				// if is possible that we'll get the same event multiple times (for example, if we took longer than a heartbeat
+				// to process a message). In this case, our log already have the entries in question, and it would be a waste to
+				// truncate the log and re-add them all the time. What we are doing here is to find the next match for index/term
+				// values in our log and in the entries, and then skip over the duplicates.
+
+				var skip = 0;
+
+				for (int i = 0; i < req.Entries.Length; i++)
+				{
+					var termForEntry = Engine.PersistentState.TermFor(req.Entries[i].Index) ?? -1;
+					if (termForEntry != req.Entries[i].Term)
+						break;
+					skip++;
+				}
+
+				if(skip != req.Entries.Length)
+					Engine.PersistentState.AppendToLog(Engine, req.Entries.Skip(skip), req.PrevLogIndex + skip);
+
 				var topologyChange = req.Entries.LastOrDefault(x=>x.IsTopologyChange == true);
 				
 				// we consider the latest topology change to be in effect as soon as we see it, even before the 
