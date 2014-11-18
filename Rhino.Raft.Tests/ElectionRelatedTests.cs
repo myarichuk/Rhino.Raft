@@ -38,9 +38,9 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void On_two_node_network_first_to_become_candidate_becomes_leader()
 		{
-			var nodeNetwork = CreateNodeNetwork(2);
+			CreateNodeNetwork(2);
 
-			ForceTimeout("node1");
+			ForceTimeout("node0");
 			//less election timeout --> will send vote request sooner, and thus expected to become candidate first
 			Nodes.First().WaitForLeader();
 
