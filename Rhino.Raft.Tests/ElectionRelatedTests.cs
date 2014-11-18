@@ -235,27 +235,13 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		public void On_many_node_network_after_leader_establishment_all_nodes_know_who_is_leader(int nodeCount)
 		{
-			var followerEvent = new CountdownEvent(nodeCount);
-
-			List<RaftEngine> raftNodes = null;
-			raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 250).ToList();
-			raftNodes.ForEach(node => node.StateChanged += state =>
-			{
-				if (state == RaftEngineState.Follower && followerEvent.CurrentCount > 0)
-					followerEvent.Signal();
-			});
-
-			raftNodes.First().WaitForLeader();
-
-			var leaderNode = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leaderNode);
-			var currentLeader = leaderNode.CurrentLeader;
-
-			followerEvent.Wait(15000); //wait until all other nodes become followers		
+			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var raftNodes = Nodes.ToList();
+			
 			var leadersOfNodes = raftNodes.Select(x => x.CurrentLeader).ToList();
 
 			leadersOfNodes.Should().NotContainNulls("After leader is established, all nodes should know that leader exists");
-			leadersOfNodes.Should().OnlyContain(l => l.Equals(currentLeader, StringComparison.InvariantCultureIgnoreCase),
+			leadersOfNodes.Should().OnlyContain(l => l.Equals(leader.Name, StringComparison.InvariantCultureIgnoreCase),
 				"after leader establishment, all nodes should know only one, selected leader");
 		}
 
@@ -264,7 +250,8 @@ namespace Rhino.Raft.Tests
 		{
 			var transport = new InMemoryTransport();
 			var nodeOptions = CreateNodeOptions("realNode", transport, 100, "fakeNode1", "fakeNode2",
-				"fakeNode3");
+				"fakeNode3",
+				"realNode");
 
 			using (var node = new RaftEngine(nodeOptions))
 			{
@@ -274,13 +261,28 @@ namespace Rhino.Raft.Tests
 				stateChangeEvent.Wait(); //wait for elections to start
 
 				stateChangeEvent.Reset();
+				// trial election 
 				for (int i = 0; i < 3; i++)
 				{
 					transport.Send("realNode", new RequestVoteResponse
 					{
-						Term = 1,
+						CurrentTerm = 1,
+						VoteTerm = 1,
 						VoteGranted = true,
-						From = "fakeNode" + i
+						From = "fakeNode" + i,
+						TrialOnly = true
+					});
+				}
+				// real election
+				for (int i = 0; i < 3; i++)
+				{
+					transport.Send("realNode", new RequestVoteResponse
+					{
+						CurrentTerm = 1,
+						VoteTerm = 1,
+						VoteGranted = true,
+						From = "fakeNode" + i,
+						TrialOnly = false
 					});
 				}
 
@@ -348,9 +350,22 @@ namespace Rhino.Raft.Tests
 				{
 					transport.Send("realNode", new RequestVoteResponse
 					{
-						Term = 1,
+						CurrentTerm = 1,
 						VoteGranted = true,
-						From = "fakeNode" + i
+						From = "fakeNode" + i,
+						VoteTerm = 1,
+						TrialOnly = true
+					});
+				}
+				for (int i = 1; i <= 3; i++)
+				{
+					transport.Send("realNode", new RequestVoteResponse
+					{
+						CurrentTerm = 1,
+						VoteGranted = true,
+						From = "fakeNode" + i,
+						VoteTerm = 1,
+						TrialOnly = false
 					});
 				}
 
@@ -464,27 +479,12 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Request_vote_when_leader_exists_will_be_rejected()
 		{
-			var transport = new InMemoryTransport();
-			var node = CreateNodeWithVirtualNetworkAndMakeItLeader("node",transport, "other_node1", "other_node2");
+			var node = CreateNetworkAndWaitForLeader(3);
 
 			node.State.Should().Be(RaftEngineState.Leader);
 
-			var waitForEventLoopToProcess = node.WaitForEventTask((n, handler) => n.EventsProcessed += handler);
 
-			transport.Send("node", new RequestVoteRequest
-			{
-				CandidateId = "other_node1",
-				From = "other_node1",
-				LastLogIndex = 0,
-				Term = 0,
-				LastLogTerm = 0
-			});
-
-			waitForEventLoopToProcess.Wait();
-
-			transport.MessageQueue["other_node1"].Should().Contain(envelope => envelope.Message is RequestVoteResponse &&
-																		((RequestVoteResponse)envelope.Message).VoteGranted == false &&
-																		((RequestVoteResponse)envelope.Message).Message.Contains("I currently have a leader and I am receiving"));
+			
 		}
 	}
 }

@@ -69,7 +69,7 @@ namespace Rhino.Raft.Storage
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
-				var allVotingPeers = metadata.Read<string[]>("all-voting-peers") ?? new string[0];
+				var allVotingPeers = metadata.Read<string[]>("current-topology") ?? new string[0];
 				return new Topology(allVotingPeers);
 			}
 		}
@@ -264,12 +264,15 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		public void IncrementTermAndVoteFor(string name)
+		public void UpdateTermAndVoteFor(string name, long newTerm)
 		{
+			if (newTerm < CurrentTerm)
+				throw new ArgumentException("THe new term cannot be smaller than the current term", "newTerm");
+
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
-				CurrentTerm++;
+				CurrentTerm = newTerm;
 				VotedFor = name;
 				metadata.Add("current-term", BitConverter.GetBytes(CurrentTerm));
 				metadata.Add("voted-for", Encoding.UTF8.GetBytes(name));
