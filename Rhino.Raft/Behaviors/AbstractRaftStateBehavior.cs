@@ -76,10 +76,12 @@ namespace Rhino.Raft.Behaviors
 		public void Handle(string destination, RequestVoteRequest req)
 		{
 			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
-			// Raft paper section 6 (cluster membership changes)
+			// Raft paper section 6 (cluster membership changes), this apply only if we are a follower, because
+			// candidate and leaders both generate their own heartbeat messages
 			var timeSinceLastHeartbeat = (int) (DateTime.UtcNow - LastHeartbeatTime).TotalMilliseconds;
 			
-		    if ((timeSinceLastHeartbeat < (Timeout/2)) && Engine.CurrentLeader != null)
+		    if (State == RaftEngineState.Follower && 
+				(timeSinceLastHeartbeat < (Timeout/2)) && Engine.CurrentLeader != null)
 			{
 				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
 				Engine.Transport.Send(req.From, new RequestVoteResponse
