@@ -9,7 +9,10 @@ using FizzWare.NBuilder;
 using FluentAssertions;
 using FluentAssertions.Events;
 using Newtonsoft.Json;
+using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
+using Voron;
 using Xunit;
 using Xunit.Extensions;
 
@@ -18,12 +21,45 @@ namespace Rhino.Raft.Tests
 	public class SnapshotTests : RaftTestsBase
 	{
 
+		[Fact]
+		public void CanProperlySnapshot()
+		{
+			using (var state = new PersistentState(StorageEnvironmentOptions.CreateMemoryOnly(), CancellationToken.None)
+			{
+				CommandSerializer = new JsonCommandSerializer()
+			})
+			{
+				state.UpdateTermTo(1);
+				state.AppendToLeaderLog(new NopCommand());
+				for (int i = 0; i < 5; i++)
+				{
+					state.AppendToLeaderLog(new DictionaryCommand.Set
+					{
+						Key = i.ToString(),
+						Value = i
+					});
+				}
+
+				state.MarkSnapshotFor(6, 1, 5);
+
+				state.AppendToLeaderLog(new DictionaryCommand.Set
+				{
+					Key = "1",
+					Value = 4
+				});
+
+				var lastLogEntry = state.LastLogEntry();
+
+				Assert.Equal(7, lastLogEntry.Index);
+			}
+		}
+
 		[Theory]
-		//[InlineData(1)]
+		[InlineData(1)]
 		[InlineData(2)]
-		//[InlineData(3)]
-		//[InlineData(5)]
-		//[InlineData(7)]
+		[InlineData(3)]
+		[InlineData(5)]
+		[InlineData(7)]
 		public void AfterSnapshotInstalled_CanContinueGettingLogEntriesNormally(int amount)
 		{
 			var leader = CreateNetworkAndWaitForLeader(amount);
@@ -45,7 +81,7 @@ namespace Rhino.Raft.Tests
 			Assert.NotNull(leader.StateMachine.GetSnapshotWriter());
 
 			var newNode = NewNodeFor(leader);
-
+			WriteLine("<-- adding node");
 			leader.AddToClusterAsync(newNode.Name).Wait();
 
 			WaitForSnapshotInstallation(newNode).Wait();

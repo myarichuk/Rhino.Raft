@@ -50,6 +50,14 @@ namespace Rhino.Raft.Tests
 				if (predicate((DictionaryStateMachine)node.StateMachine))
 					cde.Set();
 			};
+			node.SnapshotInstallationEnded += () =>
+			{
+				var state = (DictionaryStateMachine)node.StateMachine;
+				if (predicate(state))
+				{
+					cde.Set();
+				}
+			};
 			return cde;
 		}
 
@@ -57,6 +65,32 @@ namespace Rhino.Raft.Tests
 		{
 			var cde = new ManualResetEventSlim();
 			node.SnapshotCreationEnded += cde.Set;
+			return cde;
+		}
+
+		protected CountdownEvent WaitForCommitsOnCluster(int numberOfCommits)
+		{
+			var cde = new CountdownEvent(_nodes.Count);
+			foreach (var node in _nodes)
+			{
+				var n = node;
+				if (n.CommitIndex == numberOfCommits && cde.CurrentCount > 0)
+				{
+					cde.Signal();
+					continue;
+				}
+				n.CommitApplied += command =>
+				{
+					if (n.CommitIndex == numberOfCommits && cde.CurrentCount > 0)
+						cde.Signal();
+				};
+				n.SnapshotInstallationEnded += () =>
+				{
+					if (n.CommitIndex == numberOfCommits && cde.CurrentCount > 0)
+						cde.Signal();
+				};
+			}
+
 			return cde;
 		}
 
@@ -100,7 +134,7 @@ namespace Rhino.Raft.Tests
 			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: messageTimeout).ToList();
 			var raftEngine = _nodes[new Random().Next(0, _nodes.Count)];
 
-			var nopCommit = WaitForCommitsOnCluster(x => true);
+			var nopCommit = WaitForCommitsOnCluster(1); // nop commit
 
 			((InMemoryTransport) raftEngine.Transport).ForceTimeout(raftEngine.Name);
 
