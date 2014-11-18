@@ -125,12 +125,7 @@ namespace Rhino.Raft.Storage
 				var logs = tx.ReadTree(LogsTreeName);
 				var terms = tx.ReadTree(EntryTermsTreeName);
 
-				var lastEntry = 0L;
-				var lastKey = logs.LastKeyOrDefault();
-				if (lastKey != null)
-					lastEntry = lastKey.CreateReader().ReadBigEndianInt64();
-
-				var nextEntryId = lastEntry + 1;
+				var nextEntryId = GetLastEntryNumber(logs, tx) + 1;
 				var key = new Slice(EndianBitConverter.Big.GetBytes(nextEntryId));
 
 				command.AssignedIndex = nextEntryId;
@@ -148,6 +143,27 @@ namespace Rhino.Raft.Storage
 
 				return nextEntryId;
 			}
+		}
+
+		private static long GetLastEntryNumber(Tree logs, Transaction tx)
+		{
+			long lastEntry;
+			var lastKey = logs.LastKeyOrDefault();
+			if (lastKey != null)
+			{
+				lastEntry = lastKey.CreateReader().ReadBigEndianInt64();
+			}
+			else
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+				// maybe there is a snapshot?
+				var snapshotIndex = metadata.Read("snapshot-index");
+				if (snapshotIndex != null)
+					lastEntry = snapshotIndex.Reader.ReadLittleEndianInt64();
+				else
+					lastEntry = 0;
+			}
+			return lastEntry;
 		}
 
 
@@ -188,11 +204,11 @@ namespace Rhino.Raft.Storage
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
 				var logs = tx.ReadTree(LogsTreeName);
-				var metadata = tx.ReadTree(MetadataTreeName);
 
 				var lastKey = logs.LastKeyOrDefault();
 				if (lastKey == null)
 				{
+					var metadata = tx.ReadTree(MetadataTreeName);
 					// maybe there is a snapshot?
 					var snapshotTerm = metadata.Read("snapshot-term");
 					var snapshotIndex = metadata.Read("snapshot-index");
