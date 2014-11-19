@@ -379,14 +379,14 @@ namespace Rhino.Raft
 			if (command == null) throw new ArgumentNullException("command");
 
 			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
-			if (leaderStateBehavior== null)
-				throw new InvalidOperationException("Command can be appended only on leader node. Leader node name is " +
-													(CurrentLeader ?? "(no node leader yet)") + ", node behavior type is " +
-													StateBehavior.GetType().Name);
+			if (leaderStateBehavior== null || leaderStateBehavior.State != RaftEngineState.Leader)
+				throw new NotLeadingException("Command can be appended only on leader node. This node behavior type is " +
+													StateBehavior.GetType().Name)
+				{
+					CurrentLeader = CurrentLeader
+				};
 
-			if (leaderStateBehavior.State != RaftEngineState.Leader)
-				throw new InvalidOperationException("Command can be appended only on leader node. This node state is: " + leaderStateBehavior.State); 
-
+		
 			leaderStateBehavior.AppendCommand(command);
 		}
 
