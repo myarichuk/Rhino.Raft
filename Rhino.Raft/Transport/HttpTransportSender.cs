@@ -52,6 +52,7 @@ namespace Rhino.Raft.Transport
 						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&from={3}",
 							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
+					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
 					var installSnapshotResponse = JsonConvert.DeserializeObject<InstallSnapshotResponse>(reply);
 					SendToSelf(installSnapshotResponse);
@@ -93,6 +94,7 @@ namespace Rhino.Raft.Transport
 						req.Term, req.LeaderCommit, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
+					httpResponseMessage.EnsureSuccessStatusCode();
 					var appendEntriesResponse = JsonConvert.DeserializeObject<AppendEntriesResponse>(reply);
 					SendToSelf(appendEntriesResponse);
 				});
@@ -169,6 +171,7 @@ namespace Rhino.Raft.Transport
 					var requestUri = string.Format("raft/canInstallSnapshot?term={0}&=index{1}&from={2}", req.Term, req.Index,
 						req.From);
 					var httpResponseMessage = await client.GetAsync(requestUri);
+					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
 					var canInstallSnapshotResponse = JsonConvert.DeserializeObject<CanInstallSnapshotResponse>(reply);
 					SendToSelf(canInstallSnapshotResponse);
@@ -186,6 +189,7 @@ namespace Rhino.Raft.Transport
 					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}", 
 						req.Term, req.LastLogIndex, req.LastLogTerm, req.TrialOnly, req.ForcedElection, req.From);
 					var httpResponseMessage = await client.GetAsync(requestUri);
+					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
 					var requestVoteResponse = JsonConvert.DeserializeObject<RequestVoteResponse>(reply);
 					SendToSelf(requestVoteResponse);
@@ -206,16 +210,23 @@ namespace Rhino.Raft.Transport
 				LogStatus("timeout to " + dest, async () =>
 				{
 					var message = await client.GetAsync(string.Format("raft/timeoutNow?term={0}&from={1}", req.Term, req.From));
+					message.EnsureSuccessStatusCode();
 					SendToSelf(new NothingToDo());
 				});
 			}
 		}
 
+		private ConcurrentDictionary<Task, object> _runningOps = new ConcurrentDictionary<Task, object>();
+
 		private void LogStatus(string details, Func<Task> operation)
 		{
-			operation()
+			var op = operation();
+			_runningOps.TryAdd(op, op);
+			op
 				.ContinueWith(task =>
 				{
+					object value;
+					_runningOps.TryRemove(op, out value);
 					if (task.Exception != null)
 					{
 						_log.Warn("Failed to send  " + details, task.Exception);
@@ -237,6 +248,9 @@ namespace Rhino.Raft.Transport
 				}
 			}
 			_httpClientsCache.Clear();
+			var array = _runningOps.Keys.ToArray();
+			_runningOps.Clear();
+			Task.WaitAll(array);
 		}
 
 
