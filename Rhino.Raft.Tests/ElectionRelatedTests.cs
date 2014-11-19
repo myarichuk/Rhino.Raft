@@ -124,12 +124,9 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500).ToList();
-			raftNodes.First().WaitForLeader();
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
+			var leader = CreateNetworkAndWaitForLeader(nodeCount);
 
-			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
 			{
@@ -145,14 +142,14 @@ namespace Rhino.Raft.Tests
 
 			commands.Skip(3).ToList().ForEach(leader.AppendCommand);
 			var formerLeader = leader;
-			Thread.Sleep(raftNodes.Max(x => x.Options.MessageTimeout) + 5); // cause election while current leader is disconnected
+			Thread.Sleep(Nodes.Max(x => x.Options.MessageTimeout) + 5); // cause election while current leader is disconnected
 
 			WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
 			ReconnectNode(leader.Name);
 
 			//other leader was selected
-			raftNodes.First().WaitForLeader();
-			leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Nodes.First().WaitForLeader();
+			leader = Nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
 			//former leader that is now a follower, should get the first 3 entries it distributed
