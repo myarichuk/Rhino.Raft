@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using Newtonsoft.Json.Linq;
+using NLog;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
@@ -43,6 +44,7 @@ namespace Rhino.Raft.Storage
 
 		private readonly StorageEnvironment _env;
 
+		private readonly string _name;
 		private readonly CancellationToken _cancellationToken;
 		private bool _isDisposed;
 
@@ -78,8 +80,11 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		public PersistentState(StorageEnvironmentOptions options, CancellationToken cancellationToken)
+		private readonly Logger _log;
+		public PersistentState(string name, StorageEnvironmentOptions options, CancellationToken cancellationToken)
 		{
+			_name = name;
+			_log = LogManager.GetLogger(GetType().Name + "." + name);
 			_cancellationToken = cancellationToken;
 			_env = new StorageEnvironment(options);
 			InitializeDatabase();
@@ -87,7 +92,7 @@ namespace Rhino.Raft.Storage
 
 		public static void ClusterBootstrap(StorageEnvironmentOptions options)
 		{
-			using (var ps = new PersistentState(options, CancellationToken.None))
+			using (var ps = new PersistentState("ClusterBootstrap",options, CancellationToken.None))
 			{
 				ps.MarkAsLeaderPotential();
 			}
@@ -104,7 +109,7 @@ namespace Rhino.Raft.Storage
 				metadata.Add("is-leader-potential", EndianBitConverter.Little.GetBytes(1));
 				tx.Commit();
 			}
-
+			_log.Info("Leadership potential reached, we can now become leaders");
 			IsLeaderPotential = true;
 		}
 

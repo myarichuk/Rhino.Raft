@@ -20,7 +20,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void CanRevertTopologyChange()
 		{
-			var leader = CreateNetworkAndWaitForLeader(3);
+			var leader = CreateNetworkAndGetLeader(3);
 			var nonLeaders = Nodes.Where(x => x != leader).ToList();
 			var inMemoryTransport = ((InMemoryTransportHub.InMemoryTransport) leader.Transport);
 
@@ -56,7 +56,7 @@ namespace Rhino.Raft.Tests
 			const int nodeCount = 3;
 
 			var topologyChangeFinishedOnAllNodes = new CountdownEvent(nodeCount);
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 
 			Nodes.ToList().ForEach(n => n.TopologyChanged += cmd => topologyChangeFinishedOnAllNodes.Signal());
 
@@ -71,7 +71,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Adding_additional_node_that_goes_offline_and_then_online_should_still_work()
 		{
-			var leaderNode = CreateNetworkAndWaitForLeader(3);
+			var leaderNode = CreateNetworkAndGetLeader(3);
 
 			using (var additionalNode = NewNodeFor(leaderNode))
 			{
@@ -90,7 +90,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Adding_already_existing_node_should_throw()
 		{
-			var leader = CreateNetworkAndWaitForLeader(2);
+			var leader = CreateNetworkAndGetLeader(2);
 			leader.Invoking(x => x.AddToClusterAsync(Nodes.First(a => a != leader).Name))
 				.ShouldThrow<InvalidOperationException>();
 		}
@@ -98,7 +98,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Removal_of_non_existing_node_should_throw()
 		{
-			var leader = CreateNetworkAndWaitForLeader(2);
+			var leader = CreateNetworkAndGetLeader(2);
 			leader.Invoking(x => x.RemoveFromClusterAsync("santa"))
 				.ShouldThrow<InvalidOperationException>();
 
@@ -107,7 +107,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Cluster_cannot_have_two_concurrent_node_removals()
 		{
-			var leader = CreateNetworkAndWaitForLeader(4, messageTimeout: 1500);
+			var leader = CreateNetworkAndGetLeader(4, messageTimeout: 1500);
 
 			var nonLeader = Nodes.FirstOrDefault(x => x.State != RaftEngineState.Leader);
 			Assert.NotNull(nonLeader);
@@ -125,7 +125,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(7)]
 		public void Non_leader_Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 
 			var nodeToRemove = Nodes.First(x => x.State != RaftEngineState.Leader);
 
@@ -158,7 +158,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change()
 		{
-			var leader = CreateNetworkAndWaitForLeader(2);
+			var leader = CreateNetworkAndGetLeader(2);
 			var nonLeader = Nodes.First(x => x != leader);
 			var topologyChangeStarted = new ManualResetEventSlim();
 			nonLeader.TopologyChanging += () =>
@@ -187,7 +187,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Cluster_cannot_have_two_concurrent_node_additions()
 		{
-			var leader = CreateNetworkAndWaitForLeader(4, messageTimeout: 1500);
+			var leader = CreateNetworkAndGetLeader(4, messageTimeout: 1500);
 
 			leader.AddToClusterAsync("extra1");
 
@@ -201,7 +201,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(4)]
 		public void Node_added_to_cluster_should_update_peers_list(int nodeCount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 			using (var additionalNode = NewNodeFor(leader))
 			{
 				var clusterChanged = WaitForToplogyChangeOnCluster();
@@ -232,7 +232,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(4)]
 		public void Can_step_down(int nodeCount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 
 			var firstCommits = WaitForCommitsOnCluster(x => x.Data.ContainsKey("4"));
 			for (int i = 0; i < 5; i++)
@@ -272,7 +272,7 @@ namespace Rhino.Raft.Tests
 		public void Leader_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
 
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 			var raftNodes = Nodes.ToList();
 			var nonLeaderNode = raftNodes.FirstOrDefault(n => n.State != RaftEngineState.Leader);
 			Assert.NotNull(leader);
@@ -304,7 +304,7 @@ namespace Rhino.Raft.Tests
 						.Build()
 						.ToList();
 
-			var leader = CreateNetworkAndWaitForLeader(4, messageTimeout: 1500);
+			var leader = CreateNetworkAndGetLeader(4, messageTimeout: 1500);
 
 			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var someCommitsAppliedEvent = new ManualResetEventSlim();
@@ -361,7 +361,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		public void Follower_removed_from_cluster_modifies_member_lists_on_remaining_nodes(int nodeCount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 			var raftNodes = Nodes.ToList();
 			var removedNode = raftNodes.FirstOrDefault(n => n.State != RaftEngineState.Leader);
 			var nonLeaderNode = raftNodes.FirstOrDefault(n => n.State != RaftEngineState.Leader && !ReferenceEquals(n, removedNode));

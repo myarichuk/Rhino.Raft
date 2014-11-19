@@ -220,7 +220,7 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		protected RaftEngine CreateNetworkAndWaitForLeader(int nodeCount, int messageTimeout = -1)
+		protected RaftEngine CreateNetworkAndGetLeader(int nodeCount, int messageTimeout = -1, bool waitForLeader = true)
 		{
 			var leaderIndex = new Random().Next(0, nodeCount);
 			if (messageTimeout == -1)
@@ -251,14 +251,16 @@ namespace Rhino.Raft.Tests
 
 			var transport = (InMemoryTransportHub.InMemoryTransport)_inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
 			transport.ForceTimeout();
+			if (waitForLeader)
+			{
+				Assert.True(_nodes[leaderIndex].WaitForLeader());
 
-			_nodes[leaderIndex].WaitForLeader();
+				nopCommit.Wait();
+				var leader = _nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+				Assert.NotNull(leader);
+			}
 
-			nopCommit.Wait();
-
-			var leader = _nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
-			return leader;
+			return _nodes[leaderIndex];
 		}
 
 		private RaftEngineOptions CreateNodeOptions(string nodeName,int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)

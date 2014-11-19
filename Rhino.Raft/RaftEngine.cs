@@ -151,7 +151,7 @@ namespace Rhino.Raft
 			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
 			Name = raftEngineOptions.Name;
-			PersistentState = new PersistentState(raftEngineOptions.StorageOptions, _eventLoopCancellationTokenSource.Token)
+			PersistentState = new PersistentState(raftEngineOptions.Name, raftEngineOptions.StorageOptions, _eventLoopCancellationTokenSource.Token)
 			{
 				CommandSerializer = new JsonCommandSerializer()
 			};
@@ -371,9 +371,9 @@ namespace Rhino.Raft
 			return lastLogEntry.Index <= lastLogIndex;
 		}
 
-		public void WaitForLeader()
+		public bool WaitForLeader(int timeout = 3000)
 		{
-			_leaderSelectedEvent.Wait(CancellationToken);
+			return _leaderSelectedEvent.Wait(timeout, CancellationToken);
 		}
 
 		public void AppendCommand(Command command)

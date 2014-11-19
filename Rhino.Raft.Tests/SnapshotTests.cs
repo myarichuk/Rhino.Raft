@@ -24,7 +24,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void CanProperlySnapshot()
 		{
-			using (var state = new PersistentState(StorageEnvironmentOptions.CreateMemoryOnly(), CancellationToken.None)
+			using (var state = new PersistentState("self", StorageEnvironmentOptions.CreateMemoryOnly(), CancellationToken.None)
 			{
 				CommandSerializer = new JsonCommandSerializer()
 			})
@@ -62,7 +62,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(7)]
 		public void AfterSnapshotInstalled_CanContinueGettingLogEntriesNormally(int amount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(amount);
+			var leader = CreateNetworkAndGetLeader(amount);
 			leader.Options.MaxLogLengthBeforeCompaction = 5;
 			var snapshot = WaitForSnapshot(leader);
 			var commits = WaitForCommitsOnCluster(
@@ -121,7 +121,7 @@ namespace Rhino.Raft.Tests
 				.ToList();
 			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
 
-			var leader = CreateNetworkAndWaitForLeader(3);
+			var leader = CreateNetworkAndGetLeader(3);
 
 			leader.MonitorEvents();
 			leader.CreatedSnapshot += snapshotCreationEndedEvent.Set;
@@ -151,7 +151,7 @@ namespace Rhino.Raft.Tests
 						.Build()
 						.ToList();
 
-			var leader = CreateNetworkAndWaitForLeader(3);
+			var leader = CreateNetworkAndGetLeader(3);
 			Nodes.ToList().ForEach(entry => entry.Options.MaxEntriesPerRequest = 1);
 
 			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);

@@ -33,7 +33,7 @@ namespace Rhino.Raft.Behaviors
 
 		    if (Engine.PersistentState.IsLeaderPotential == false)
 		    {
-			    _log.Info("Not a leader material, can't become a candidate. (This will change the first time we'll get a append entries request.");
+			    _log.Info("Not a leader material, can't become a candidate. (This will change the first time we'll get a append entries request).");
 			    return;
 		    }
 

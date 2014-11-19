@@ -47,14 +47,15 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Network_partition_should_cause_message_resend()
 		{
-
-			DisconnectNode("node1");
-			DisconnectNodeSending("node1");
-			DisconnectNode("node2");
-			DisconnectNodeSending("node2");
-			var raftNodes = CreateNetworkAndWaitForLeader(3, messageTimeout: 300);
+			for (int i = 0; i < 3; i++)
+			{
+				DisconnectNode("node"+i);
+				DisconnectNodeSending("node"+i);
+			}
+			
+			var leader = CreateNetworkAndGetLeader(3, messageTimeout: 300, waitForLeader: false);
 			var countdown = new CountdownEvent(2);
-			Nodes.First().ElectionStarted += () =>
+			leader.ElectionStarted += () =>
 			{
 				if (countdown.CurrentCount > 0)
 					countdown.Signal();
@@ -62,12 +63,13 @@ namespace Rhino.Raft.Tests
 
 			Assert.True(countdown.Wait(1500));
 
-			ReconnectNode("node1");
-			ReconnectNodeSending("node2");
-			ReconnectNode("node2");
-			ReconnectNodeSending("node2");
+			for (int i = 0; i < 3; i++)
+			{
+				ReconnectNode("node" + i);
+				ReconnectNodeSending("node" + i);
+			}
 
-			Nodes.First().WaitForLeader();
+			Assert.True(Nodes.First().WaitForLeader());
 		}
 
 		/*
@@ -90,7 +92,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 
 			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
@@ -114,7 +116,7 @@ namespace Rhino.Raft.Tests
 			ReconnectNode(leader.Name);
 
 			//other leader was selected
-			Nodes.First().WaitForLeader();
+			Assert.True(Nodes.First().WaitForLeader());
 			leader = Nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
@@ -148,7 +150,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var leader = CreateNetworkAndWaitForLeader(nodeCount, messageTimeout: 1500);
+			var leader = CreateNetworkAndGetLeader(nodeCount, messageTimeout: 1500);
 
 			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
@@ -189,7 +191,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(3)]
 		public void On_many_node_network_after_leader_establishment_all_nodes_know_who_is_leader(int nodeCount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 			var raftNodes = Nodes.ToList();
 
 			var leadersOfNodes = raftNodes.Select(x => x.CurrentLeader).ToList();
@@ -206,7 +208,10 @@ namespace Rhino.Raft.Tests
 			storageEnvironmentOptions.OwnsPagers = false;
 			PersistentState.ClusterBootstrap(storageEnvironmentOptions);
 			storageEnvironmentOptions.OwnsPagers = true;
-			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
+			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine())
+			{
+				AllVotingNodes = new[] { "u2", "pj"}
+			};
 
 			using (var node = new RaftEngine(nodeOptions))
 			{
@@ -232,7 +237,7 @@ namespace Rhino.Raft.Tests
 
 				using (var options = StorageEnvironmentOptions.ForPath(path))
 				{
-					using (var persistentState = new PersistentState(options, cancellationTokenSource.Token)
+					using (var persistentState = new PersistentState("self",options, cancellationTokenSource.Token)
 					{
 						CommandSerializer = new JsonCommandSerializer()
 					})
@@ -245,7 +250,7 @@ namespace Rhino.Raft.Tests
 				}
 				using (var options = StorageEnvironmentOptions.ForPath(path))
 				{
-					using (var persistentState = new PersistentState(options, cancellationTokenSource.Token)
+					using (var persistentState = new PersistentState("self", options, cancellationTokenSource.Token)
 					{
 						CommandSerializer = new JsonCommandSerializer()
 					})
@@ -264,7 +269,7 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Request_vote_when_leader_exists_will_be_rejected()
 		{
-			var node = CreateNetworkAndWaitForLeader(3);
+			var node = CreateNetworkAndGetLeader(3);
 
 			node.State.Should().Be(RaftEngineState.Leader);
 

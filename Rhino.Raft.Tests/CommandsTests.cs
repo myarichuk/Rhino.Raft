@@ -17,7 +17,7 @@ namespace Rhino.Raft.Tests
 		public void When_command_committed_CompletionTaskSource_is_notified()
 		{
 			const int CommandCount = 5;
-			var leader = CreateNetworkAndWaitForLeader(3);
+			var leader = CreateNetworkAndGetLeader(3);
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -47,7 +47,7 @@ namespace Rhino.Raft.Tests
 		public void While_command_not_committed_CompletionTaskSource_is_not_notified()
 		{
 			const int CommandCount = 5;
-			var leader = CreateNetworkAndWaitForLeader(3);
+			var leader = CreateNetworkAndGetLeader(3);
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -96,7 +96,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var leader = CreateNetworkAndWaitForLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
 			Nodes.ToList().ForEach(node =>
 			{
@@ -135,7 +135,7 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var leader = CreateNetworkAndWaitForLeader(nodeCount, messageTimeout: 10000);
+			var leader = CreateNetworkAndGetLeader(nodeCount, messageTimeout: 10000);
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
 			Nodes.ToList().ForEach(node =>
 			{

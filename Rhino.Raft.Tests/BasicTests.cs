@@ -12,7 +12,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(7)]
 		public void CanApplyCommitAcrossAllCluster(int amount)
 		{
-			var leader = CreateNetworkAndWaitForLeader(amount);
+			var leader = CreateNetworkAndGetLeader(amount);
 			var commits = WaitForCommitsOnCluster(machine => 
 				machine.Data.ContainsKey("4"));
 			for (int i = 0; i < 5; i++)
