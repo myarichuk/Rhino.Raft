@@ -25,8 +25,9 @@ namespace Rhino.Raft.Transport
 		}
 
 
+		[HttpPost]
 		[Route("raft/installSnapshot")]
-		public async Task<HttpResponseMessage> InstallSnapshot(InstallSnapshotRequest request)
+		public async Task<HttpResponseMessage> InstallSnapshot([FromUri]InstallSnapshotRequest request)
 		{
 			var stream = await Request.Content.ReadAsStreamAsync();
 			var taskCompletionSource = new TaskCompletionSource<HttpResponseMessage>();
@@ -34,8 +35,9 @@ namespace Rhino.Raft.Transport
 			return await taskCompletionSource.Task;
 		}
 
+		[HttpPost]
 		[Route("raft/appendEntries")]
-		public async Task<HttpResponseMessage> AppendEntries(AppendEntriesRequest request, int entriesCount)
+		public async Task<HttpResponseMessage> AppendEntries([FromUri]AppendEntriesRequest request, [FromUri]int entriesCount)
 		{
 			var stream = await Request.Content.ReadAsStreamAsync();
 			request.Entries = new LogEntry[entriesCount];
@@ -87,24 +89,27 @@ namespace Rhino.Raft.Transport
 			return count;
 		}
 
+		[HttpGet]
 		[Route("raft/requestVote")]
-		public Task<HttpResponseMessage> RequestVote(RequestVoteRequest request)
+		public Task<HttpResponseMessage> RequestVote([FromUri]RequestVoteRequest request)
 		{
 			var taskCompletionSource = new TaskCompletionSource<HttpResponseMessage>();
 			_bus.Publish(request, taskCompletionSource);
 			return taskCompletionSource.Task;
 		}
 
+		[HttpGet]
 		[Route("raft/timeoutNow")]
-		public Task<HttpResponseMessage> TimeoutNow(TimeoutNowRequest request)
+		public Task<HttpResponseMessage> TimeoutNow([FromUri]TimeoutNowRequest request)
 		{
 			var taskCompletionSource = new TaskCompletionSource<HttpResponseMessage>();
 			_bus.Publish(request, taskCompletionSource);
 			return taskCompletionSource.Task;
 		}
 
+		[HttpGet]
 		[Route("raft/canInstallSnapshot")]
-		public Task<HttpResponseMessage> CanInstallSnapshot(CanInstallSnapshotRequest request)
+		public Task<HttpResponseMessage> CanInstallSnapshot([FromUri]CanInstallSnapshotRequest request)
 		{
 			var taskCompletionSource = new TaskCompletionSource<HttpResponseMessage>();
 			_bus.Publish(request, taskCompletionSource);

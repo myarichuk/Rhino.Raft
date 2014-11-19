@@ -12,10 +12,10 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var options = new StartOptions();
-			options.Urls.Add("http://+:8080/");
-			
-			using (WebApp.Start(options, builder =>
+			using (WebApp.Start(new StartOptions
+			{
+				Urls = { "http://+:9079/"}
+			}, builder =>
 			{
 				var httpConfiguration = new HttpConfiguration();
 				RaftWebApiConfig.Register(httpConfiguration);
