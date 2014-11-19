@@ -168,10 +168,11 @@ namespace Rhino.Raft.Tests
 		}
 
 
-		protected CountdownEvent WaitForToplogyChangeOnCluster()
+		protected CountdownEvent WaitForToplogyChangeOnCluster(List<RaftEngine> raftNodes = null)
 		{
-			var cde = new CountdownEvent(_nodes.Count);
-			foreach (var node in _nodes)
+			raftNodes = raftNodes ?? _nodes;
+			var cde = new CountdownEvent(raftNodes.Count);
+			foreach (var node in raftNodes)
 			{
 				var n = node;
 				n.TopologyChanged += (a) =>

@@ -378,7 +378,11 @@ namespace Rhino.Raft.Tests
 
 			leader.StepDownAsync().Wait();
 
+			var waitForToplogyChangeOnCluster = WaitForToplogyChangeOnCluster(raftNodes);
+
 			waitForNewLeaderAsync.Result.RemoveFromClusterAsync(leader.Name).Wait();
+
+			Assert.True(waitForToplogyChangeOnCluster.Wait(300));
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
 
