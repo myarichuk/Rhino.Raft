@@ -4,6 +4,7 @@ using System.IO;
 using System.Security.Cryptography;
 using Newtonsoft.Json;
 using Rhino.Raft.Commands;
+using Rhino.Raft.Interfaces;
 
 namespace Rhino.Raft
 {

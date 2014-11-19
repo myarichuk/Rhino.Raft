@@ -1,6 +1,6 @@
 ﻿using Rhino.Raft.Commands;
 
-namespace Rhino.Raft
+namespace Rhino.Raft.Interfaces
 {
 	public interface ICommandSerializer
 	{

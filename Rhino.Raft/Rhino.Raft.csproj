@@ -82,7 +82,6 @@
     <Compile Include="Storage\Topology.cs" />
     <Compile Include="Storage\PersistentState.cs" />
     <Compile Include="Utils\DebugWriter.cs" />
-    <Compile Include="Utils\GenericExtensions.cs" />
     <Compile Include="Utils\VoronExtensions.cs" />
   </ItemGroup>
   <ItemGroup>

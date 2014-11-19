@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Transport;
 using Rhino.Raft.Utils;
 using Voron;
 using Xunit;

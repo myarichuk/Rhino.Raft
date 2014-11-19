@@ -7,6 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using FizzWare.NBuilder;
 using FluentAssertions;
+using Rhino.Raft.Transport;
+using Rhino.Raft.Utils;
 using Voron;
 using Xunit;
 using Xunit.Extensions;
@@ -77,8 +79,7 @@ namespace Rhino.Raft.Tests
 			using (var additionalNode = new RaftEngine(CreateNodeOptions("additional_node", 1500)))
 			{
 				additionalNode.TopologyChanging += () => DisconnectNode("additional_node");
-				var waitForTopologyChangeInLeader =
-					leaderNode.WaitForEventTask((n, handler) => n.TopologyChanged += cmd => handler());
+				var waitForTopologyChangeInLeader = WaitForToplogyChange(leaderNode);
 
 				leaderNode.AddToClusterAsync(additionalNode.Name).Wait();
 

@@ -6,7 +6,7 @@ using System.Threading;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
-namespace Rhino.Raft
+namespace Rhino.Raft.Transport
 {
 	public class InMemoryTransportHub
 	{

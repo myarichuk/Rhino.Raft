@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using Newtonsoft.Json.Linq;
 using Rhino.Raft.Commands;
+using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Voron;
 using Voron.Impl;

@@ -11,6 +11,7 @@ using FizzWare.NBuilder;
 using FluentAssertions;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
+using Rhino.Raft.Transport;
 using Voron;
 using Xunit;
 using Xunit.Extensions;
