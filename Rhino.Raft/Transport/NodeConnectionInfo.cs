@@ -4,11 +4,13 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
+using System;
+
 namespace Rhino.Raft.Transport
 {
 	public class NodeConnectionInfo
 	{
-		public string Url { get; set; }
+		public Uri Url { get; set; }
 
 		public string Name { get; set; }
 
