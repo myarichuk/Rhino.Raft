@@ -169,7 +169,7 @@ namespace Rhino.Raft
 			PersistentState.CommandSerializer.Serialize(new NopCommand());
 
 			var thereAreOthersInTheCluster = AllVotingNodes.Any(n => !n.Equals(Name, StringComparison.OrdinalIgnoreCase));
-			if (thereAreOthersInTheCluster == false)
+			if (thereAreOthersInTheCluster == false && PersistentState.IsLeaderPotential)
 			{
 				SetState(RaftEngineState.Leader);
 				PersistentState.UpdateTermTo(this, PersistentState.CurrentTerm + 1);// restart means new term

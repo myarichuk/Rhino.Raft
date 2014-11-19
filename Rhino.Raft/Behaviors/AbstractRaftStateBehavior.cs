@@ -359,6 +359,10 @@ namespace Rhino.Raft.Behaviors
 				_log.Debug("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
 
+				// if we get an append entries, we are good, because that means that there is a leader (one has to be manually seeded)
+				// and now that we go that notice from him, we can now also become leaders
+				Engine.PersistentState.MarkAsLeaderPotential();
+
 				// if is possible that we'll get the same event multiple times (for example, if we took longer than a heartbeat
 				// to process a message). In this case, our log already have the entries in question, and it would be a waste to
 				// truncate the log and re-add them all the time. What we are doing here is to find the next match for index/term

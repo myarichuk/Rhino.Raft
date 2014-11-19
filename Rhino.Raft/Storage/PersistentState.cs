@@ -39,10 +39,12 @@ namespace Rhino.Raft.Storage
 		public long VotedForTerm { get; private set; }
 		public long CurrentTerm { get; private set; }
 
+		public bool IsLeaderPotential { get; private set; }
+
 		private readonly StorageEnvironment _env;
 
 		private readonly CancellationToken _cancellationToken;
-		private bool _isDisposed = false;
+		private bool _isDisposed;
 
 		public ICommandSerializer CommandSerializer { get; set; }
 
@@ -83,6 +85,29 @@ namespace Rhino.Raft.Storage
 			InitializeDatabase();
 		}
 
+		public static void ClusterBootstrap(StorageEnvironmentOptions options)
+		{
+			using (var ps = new PersistentState(options, CancellationToken.None))
+			{
+				ps.MarkAsLeaderPotential();
+			}
+		}
+
+		public void MarkAsLeaderPotential()
+		{
+			if (IsLeaderPotential)
+				return;
+
+			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
+			{
+				var metadata = tx.ReadTree(MetadataTreeName);
+				metadata.Add("is-leader-potential", new []{1});
+				tx.Commit();
+			}
+
+			IsLeaderPotential = true;
+		}
+
 		private void InitializeDatabase()
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
@@ -100,6 +125,7 @@ namespace Rhino.Raft.Storage
 					metadata.Add("current-term", EndianBitConverter.Little.GetBytes(0L));
 					metadata.Add("voted-for", Encoding.UTF8.GetBytes(string.Empty));
 					metadata.Add("voted-for-term", EndianBitConverter.Little.GetBytes(-1L));
+					metadata.Add("is-leader-potential", new byte[]{0});
 				}
 				else
 				{
@@ -111,6 +137,8 @@ namespace Rhino.Raft.Storage
 					int used;
 					var bytes = metadata.Read("db-id").Reader.ReadBytes(16, out used).Take(16).ToArray();
 					DbId = new Guid(bytes);
+
+					IsLeaderPotential = metadata.Read("is-leader-potential").Reader.ReadByte() == 1;
 
 					CurrentTerm = metadata.Read("current-term").Reader.ReadLittleEndianInt64();
 					var votedFor = metadata.Read("voted-for");
@@ -245,13 +273,9 @@ namespace Rhino.Raft.Storage
 
 		public LogEntry GetLogEntry(long index)
 		{
-			if (_isDisposed)
-				return null;
-
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var terms = tx.ReadTree(EntryTermsTreeName);
-				var metadata = tx.ReadTree(MetadataTreeName);
 
 				var key = new Slice(EndianBitConverter.Big.GetBytes(index));
 				var result = terms.Read(key);
@@ -270,9 +294,6 @@ namespace Rhino.Raft.Storage
 
 		public void RecordVoteFor(string candidateId, long voteTerm)
 		{
-			if (_isDisposed)
-				return;
-
 			if (string.IsNullOrEmpty(candidateId))
 				throw new ArgumentNullException("candidateId");
 
