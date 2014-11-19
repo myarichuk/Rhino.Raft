@@ -59,11 +59,10 @@
     <Compile Include="Commands\Command.cs" />
     <Compile Include="Commands\NopCommand.cs" />
     <Compile Include="Commands\TopologyChangeCommand.cs" />
-    <Compile Include="Default.cs" />
     <Compile Include="Messages\CanInstallSnapshotRequest.cs" />
     <Compile Include="Messages\CanInstallSnapshotResponse.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
-    <Compile Include="InMemoryTransportHub.cs" />
+    <Compile Include="Transport\InMemoryTransportHub.cs" />
     <Compile Include="Interfaces\IRaftStateMachine.cs" />
     <Compile Include="Interfaces\ITransport.cs" />
     <Compile Include="JsonCommandSerializer.cs" />
@@ -76,7 +75,6 @@
     <Compile Include="Messages\RequestVoteRequest.cs" />
     <Compile Include="Messages\RequestVoteResponse.cs" />
     <Compile Include="Messages\TimeoutNow.cs" />
-    <Compile Include="NodeConnectionInfo.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftEngine.cs" />
     <Compile Include="RaftEngineOptions.cs" />

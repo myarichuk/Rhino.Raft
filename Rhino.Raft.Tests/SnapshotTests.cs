@@ -152,7 +152,7 @@ namespace Rhino.Raft.Tests
 						.ToList();
 
 			var raftNodes = CreateNodeNetwork(3).ToList();
-			raftNodes.ForEach(entry => entry.MaxEntriesPerRequest = 1);
+			raftNodes.ForEach(entry => entry.Options.MaxEntriesPerRequest = 1);
 			raftNodes.First().WaitForLeader();
 
 			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);

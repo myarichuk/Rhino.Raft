@@ -27,8 +27,11 @@ namespace Rhino.Raft.Tests
 				"node1",
 				StorageEnvironmentOptions.CreateMemoryOnly(),
 				hub.CreateTransportFor("node1"),
-				new DictionaryStateMachine(),
-				1000);
+				new DictionaryStateMachine()
+				)
+			{
+				MessageTimeout = 1000
+			};
 			using (var raftNode = new RaftEngine(raftEngineOptions))
 			{
 				Assert.Equal(RaftEngineState.Leader, raftNode.State);

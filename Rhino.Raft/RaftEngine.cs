@@ -102,8 +102,6 @@ namespace Rhino.Raft
 
 		}
 
-		public int MaxEntriesPerRequest { get; set; }
-
 		private readonly Task _eventLoopTask;
 
 		private long _commitIndex;
@@ -149,7 +147,6 @@ namespace Rhino.Raft
 
 			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
-			MaxEntriesPerRequest = Default.MaxEntriesPerRequest;
 			Name = raftEngineOptions.Name;
 			PersistentState = new PersistentState(raftEngineOptions.Options, _eventLoopCancellationTokenSource.Token)
 			{

@@ -228,9 +228,9 @@ namespace Rhino.Raft.Tests
 			var nodeOptions = new RaftEngineOptions(nodeName,
 				StorageEnvironmentOptions.CreateMemoryOnly(),
 				_inMemoryTransportHub.CreateTransportFor(nodeName),
-				new DictionaryStateMachine(), 
-				messageTimeout)
+				new DictionaryStateMachine())
 			{
+				MessageTimeout = messageTimeout,
 				AllVotingNodes = peers,
 				Stopwatch = Stopwatch.StartNew()
 			};
@@ -242,9 +242,9 @@ namespace Rhino.Raft.Tests
 			var nodeOptions = new RaftEngineOptions(nodeName,
 				storageOptions,
 				_inMemoryTransportHub.CreateTransportFor(nodeName),
-				new DictionaryStateMachine(),
-				messageTimeout)
+				new DictionaryStateMachine())
 			{
+				MessageTimeout = messageTimeout,
 				AllVotingNodes = peers,
 				Stopwatch = Stopwatch.StartNew()
 			};

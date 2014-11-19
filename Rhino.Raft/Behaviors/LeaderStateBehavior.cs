@@ -108,7 +108,7 @@ namespace Rhino.Raft.Behaviors
 			try
 			{
 				entries = Engine.PersistentState.LogEntriesAfter(nextIndex)
-					.Take(Engine.MaxEntriesPerRequest)
+					.Take(Engine.Options.MaxEntriesPerRequest)
 					.ToArray();
 
 				prevLogEntry = entries.Length == 0
