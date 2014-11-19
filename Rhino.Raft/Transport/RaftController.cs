@@ -20,7 +20,7 @@ namespace Rhino.Raft.Transport
 
 		public override Task<HttpResponseMessage> ExecuteAsync(HttpControllerContext controllerContext, CancellationToken cancellationToken)
 		{
-			_bus = (HttpTransportBus)controllerContext.Configuration.Services.GetService(typeof(HttpTransportBus));
+			_bus = (HttpTransportBus) controllerContext.Configuration.Properties[typeof (HttpTransportBus)];
 			return base.ExecuteAsync(controllerContext, cancellationToken);
 		}
 

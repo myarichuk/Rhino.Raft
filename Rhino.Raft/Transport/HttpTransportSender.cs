@@ -41,7 +41,7 @@ namespace Rhino.Raft.Transport
 				LogStatus("install snapshot to " + dest, async () =>
 				{
 					var requestUri =
-						string.Format("/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&leaderId={3}&from={4}",
+						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&leaderId={3}&from={4}",
 							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.LeaderId, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -81,7 +81,7 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("append entries to " + dest, async () =>
 				{
-					var requestUri = string.Format("/appendEntries?term={0}&=leaderCommit{1}&leaderId={2}&prevLogTerm={3}&prevLogIndex={4}&entriesCount={5}&from={6}",
+					var requestUri = string.Format("raft/appendEntries?term={0}&=leaderCommit{1}&leaderId={2}&prevLogTerm={3}&prevLogIndex={4}&entriesCount={5}&from={6}",
 						req.Term, req.LeaderCommit, req.LeaderId, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -158,7 +158,7 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("can install snapshot to " + dest, async () =>
 				{
-					var requestUri = string.Format("/canInstallSnapshot?term={0}&=index{1}&leaderId={2}&from={3}", req.Term, req.Index,
+					var requestUri = string.Format("raft/canInstallSnapshot?term={0}&=index{1}&leaderId={2}&from={3}", req.Term, req.Index,
 						req.LeaderId, req.From);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -175,7 +175,7 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("request vote from " + dest, async () =>
 				{
-					var requestUri = string.Format("/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&candidateId={3}&trialOnly={4}&forcedElection={5}&from={6}", 
+					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&candidateId={3}&trialOnly={4}&forcedElection={5}&from={6}", 
 						req.Term, req.LastLogIndex, req.LastLogTerm, req.CandidateId, req.TrialOnly, req.ForcedElection, req.From);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -195,8 +195,8 @@ namespace Rhino.Raft.Transport
 			HttpClient client;
 			using (GetConnection(dest, out client))
 			{
-				LogStatus("timeout to " + dest, 
-					client.GetAsync(string.Format("/timeoutNow?term={0}&from={1}", req.Term, req.From)));
+				LogStatus("timeout to " + dest,
+					client.GetAsync(string.Format("raft/timeoutNow?term={0}&from={1}", req.Term, req.From)));
 			}
 		}
 

@@ -1,5 +1,8 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Web.Http;
+using Microsoft.Owin.Hosting;
+using Owin;
 using Rhino.Raft.Tests;
 using Rhino.Raft.Transport;
 
@@ -9,12 +12,21 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var config = new HttpConfiguration();
-			RaftWebApiConfig.Register(config);
+			var options = new StartOptions();
+			options.Urls.Add("http://+:8080/");
+			
+			using (WebApp.Start(options, builder =>
+			{
+				var httpConfiguration = new HttpConfiguration();
+				RaftWebApiConfig.Register(httpConfiguration);
+				httpConfiguration.Properties[typeof (HttpTransportBus)] = new HttpTransportBus();
+				builder.UseWebApi(httpConfiguration);
+			}))
+			{
+				Console.ReadLine();
+			}
 
-			var _httpServer = new HttpServer(config);
-
-			Console.ReadLine();
 		}
 	}
+
 }
