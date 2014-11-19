@@ -101,7 +101,6 @@ namespace Rhino.Raft.Behaviors
 							From = Engine.Name,
 							Index = snapshotWriter.Index,
 							Term = snapshotWriter.Term,
-							LeaderId = Engine.Name
 						});
 					}
 					return;
@@ -163,7 +162,6 @@ namespace Rhino.Raft.Behaviors
 						LastIncludedIndex = snapshotWriter.Index,
 						LastIncludedTerm = snapshotWriter.Term,
 						From = Engine.Name,
-						LeaderId = Engine.Name,
 					}, stream => snapshotWriter.WriteSnapshot(stream));
 
 					_log.Info("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,

@@ -7,6 +7,5 @@
 		public long LastIncludedIndex { get; set; }
 
 		public long LastIncludedTerm { get; set; }
-		public string LeaderId { get; set; }
 	}
 }

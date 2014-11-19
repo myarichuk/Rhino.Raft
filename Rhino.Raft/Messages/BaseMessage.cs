@@ -4,4 +4,6 @@ namespace Rhino.Raft.Messages
 	{
 		public string From { get; set; }
 	}
+
+	public class NothingToDo { }
 }

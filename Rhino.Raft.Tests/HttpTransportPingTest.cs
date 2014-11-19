@@ -5,9 +5,13 @@
 // -----------------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Web.Http;
 using Microsoft.Owin.Hosting;
+using Newtonsoft.Json;
 using Owin;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Transport;
@@ -20,6 +24,7 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly IDisposable _server;
 		private readonly RaftEngine _raftEngine;
+		private int _timeout = Debugger.IsAttached ? 50*1000 : 2500;
 
 		public HttpTransportPingTest()
 		{
@@ -67,7 +72,7 @@ namespace Rhino.Raft.Tests
 			});
 
 			MessageContext context;
-			var gotIt = node2Transport.TryReceiveMessage(2500, CancellationToken.None, out context);
+			var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
 
 			Assert.True(gotIt);
 
@@ -76,7 +81,7 @@ namespace Rhino.Raft.Tests
 
 
 		[Fact]
-		public void CanSendEntries()
+		public void CanSendTimeoutNow()
 		{
 			var node2Transport = new Transport.HttpTransport("node2");
 			node2Transport.Register(new NodeConnectionInfo
@@ -87,16 +92,172 @@ namespace Rhino.Raft.Tests
 
 			node2Transport.Send("node1", new AppendEntriesRequest
 			{
+				From = "node2",
+				Term = 2,
+				PrevLogIndex = 0,
+				PrevLogTerm = 0,
+				LeaderCommit = 1,
+				Entries = new[]
+				{
+					new LogEntry
+					{
+						Term = 2,
+						Index = 1,
+						Data = new JsonCommandSerializer().Serialize(new DictionaryCommand.Set
+						{
+							Key = "a",
+							Value = 2
+						})
+					}, 
+				}
+			});
+			MessageContext context;
+			var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
+
+			Assert.True(gotIt);
+			Assert.True(((AppendEntriesResponse)context.Message).Success);
+
+			var mres = new ManualResetEventSlim();
+			_raftEngine.StateChanged += state =>
+			{
+				if (state == RaftEngineState.CandidateByRequest)
+					mres.Set();
+			};
+
+			node2Transport.Send("node1", new TimeoutNowRequest
+			{
+				Term = 4,
 				From = "node2"
+			});
+
+			gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
+
+			Assert.True(gotIt);
+
+			Assert.True(context.Message is NothingToDo);
+
+			Assert.True(mres.Wait(_timeout));
+		}
+
+
+		[Fact]
+		public void CanAskIfCanInstallSnapshot()
+		{
+			var node2Transport = new HttpTransport("node2");
+			node2Transport.Register(new NodeConnectionInfo
+			{
+				Name = "node1",
+				Url = new Uri("http://localhost:9079")
+			});
+
+			node2Transport.Send("node1", new CanInstallSnapshotRequest
+			{
+				From = "node2",
+				Term = 2,
+				Index = 3,
 			});
 			
 
 			MessageContext context;
-			var gotIt = node2Transport.TryReceiveMessage(2500, CancellationToken.None, out context);
+			var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
+
+			Assert.True(gotIt);
+			var msg = (CanInstallSnapshotResponse) context.Message;
+			Assert.True(msg.Success);
+		}
+
+
+
+
+		[Fact]
+		public void CanSendEntries()
+		{
+			var node2Transport = new HttpTransport("node2");
+			node2Transport.Register(new NodeConnectionInfo
+			{
+				Name = "node1",
+				Url = new Uri("http://localhost:9079")
+			});
+
+			node2Transport.Send("node1", new AppendEntriesRequest
+			{
+				From = "node2",
+				Term = 2,
+				PrevLogIndex = 0,
+				PrevLogTerm = 0,
+				LeaderCommit = 1,
+				Entries = new LogEntry[]
+				{
+					new LogEntry
+					{
+						Term = 2,
+						Index = 1,
+						Data = new JsonCommandSerializer().Serialize(new DictionaryCommand.Set
+						{
+							Key = "a",
+							Value = 2
+						})
+					}, 
+				}
+			});
+			
+
+			MessageContext context;
+			var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
 
 			Assert.True(gotIt);
 
-			Assert.True(context.Message is RequestVoteResponse);
+			var appendEntriesResponse = (AppendEntriesResponse)context.Message;
+			Assert.True(appendEntriesResponse.Success);
+
+			Assert.Equal(2, ((DictionaryStateMachine)_raftEngine.StateMachine).Data["a"]);
+		}
+
+		[Fact]
+		public void CanInstallSnapshot()
+		{
+			var node2Transport = new HttpTransport("node2");
+			node2Transport.Register(new NodeConnectionInfo
+			{
+				Name = "node1",
+				Url = new Uri("http://localhost:9079")
+			});
+
+			node2Transport.Send("node1", new CanInstallSnapshotRequest
+			{
+				From = "node2",
+				Term = 2,
+				Index = 3,
+			});
+
+			MessageContext context;
+			var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
+			Assert.True(gotIt);
+			Assert.True(context.Message is CanInstallSnapshotResponse);
+
+			node2Transport.Stream("node1", new InstallSnapshotRequest
+			{
+				From = "node2",
+				Term = 2,
+				LastIncludedIndex = 2,
+				LastIncludedTerm = 2,
+			}, stream =>
+			{
+				var streamWriter = new StreamWriter(stream);
+				var data = new Dictionary<string, int> {{"a", 2}};
+				new JsonSerializer().Serialize(streamWriter, data);
+				streamWriter.Flush();
+			});
+
+
+			 gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
+
+			Assert.True(gotIt);
+
+			var appendEntriesResponse = (InstallSnapshotResponse)context.Message;
+			Assert.True(appendEntriesResponse.Success);
+
+			Assert.Equal(2, ((DictionaryStateMachine)_raftEngine.StateMachine).Data["a"]);
 		}
 
 		public void Dispose()

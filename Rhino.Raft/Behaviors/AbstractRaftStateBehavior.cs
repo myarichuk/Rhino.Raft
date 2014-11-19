@@ -31,6 +31,9 @@ namespace Rhino.Raft.Behaviors
 				TimeoutNowRequest timeoutNowRequest;
 				Action action;
 
+				if (context.Message is NothingToDo)
+					return;
+
 				if (TryCastMessage(context.Message, out requestVoteRequest))
 				{
 					var reply = Handle(requestVoteRequest);
@@ -83,7 +86,8 @@ namespace Rhino.Raft.Behaviors
 			}
 			finally
 			{
-				context.Done();
+				if (asyncMessageHandling == false)
+					context.Done();
 			}
 		}
 

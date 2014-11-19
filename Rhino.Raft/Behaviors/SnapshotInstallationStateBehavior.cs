@@ -83,7 +83,7 @@ namespace Rhino.Raft.Behaviors
 				// we are doing it this way to ensure that we are single threaded
 				context.ExecuteInEventLoop(() =>
 				{
-					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+					Engine.UpdateCurrentTerm(req.Term, req.From);
 					Engine.CommitIndex = req.LastIncludedIndex;
 					_log.Info("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
 					Engine.OnSnapshotInstallationEnded(req.Term);

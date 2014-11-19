@@ -5,7 +5,5 @@ namespace Rhino.Raft.Messages
 		public long Index { get; set; }
 
 		public long Term { get; set; }
-
-		public string LeaderId { get; set; }
 	}
 }
