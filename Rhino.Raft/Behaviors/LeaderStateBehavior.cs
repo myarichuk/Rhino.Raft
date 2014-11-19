@@ -35,7 +35,7 @@ namespace Rhino.Raft.Behaviors
 			: base(engine)
 		{
 			Timeout = engine.Options.MessageTimeout;
-
+			engine.TopologyChanged += OnTopologyChanged;
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
 			foreach (var peer in Engine.AllVotingNodes)
@@ -48,6 +48,32 @@ namespace Rhino.Raft.Behaviors
 			_stopHeartbeatCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(Engine.CancellationToken, _disposedCancellationTokenSource.Token);
 
 			_heartbeatTask = Task.Run(() => Heartbeat(), _stopHeartbeatCancellationTokenSource.Token);
+		}
+
+		private void OnTopologyChanged(TopologyChangeCommand tcc)
+		{
+			// if we have any removed servers, we need to know let them know that they have
+			// been removed, we do that by committing the current entry (hopefully they already
+			// have topology change command, so they know they are being removed from the cluster).
+			// This is mostly us being nice neigbours, this isn't required, and the cluster will reject
+			// messages from nodes not considered to be in the cluster.
+
+			var removedNodes = tcc.Previous.AllVotingNodes.Except(tcc.Requested.AllVotingNodes).ToList();
+			foreach (var removedNode in removedNodes)
+			{
+				var prevLogEntry = Engine.PersistentState.LastLogEntry();
+				var aer = new AppendEntriesRequest
+				{
+					Entries = new LogEntry[0],
+					LeaderCommit = Engine.CommitIndex,
+					PrevLogIndex = prevLogEntry.Index,
+					PrevLogTerm = prevLogEntry.Term,
+					Term = Engine.PersistentState.CurrentTerm,
+					From = Engine.Name
+				};
+
+				Engine.Transport.Send(removedNode, aer);
+			}
 		}
 
 		private void Heartbeat()
@@ -74,6 +100,7 @@ namespace Rhino.Raft.Behaviors
 					continue;// we don't need to send to ourselves
 
 				_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
+				
 				SendEntriesToPeer(peer);
 			}
 		}
@@ -348,6 +375,7 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Dispose()
 		{
+			Engine.TopologyChanged -= OnTopologyChanged;
 			_disposedCancellationTokenSource.Cancel();
 			try
 			{

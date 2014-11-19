@@ -209,7 +209,7 @@ namespace Rhino.Raft
 						OnStateTimeout();
 						continue;
 					}
-					_log.Debug("{0}: {1} {2}", State, 
+					_log.Debug("{0}: {1} {2}", State,
 						message.Message.GetType().Name,
 						message.Message is BaseMessage ? JsonConvert.SerializeObject(message.Message) : string.Empty
 						);
@@ -328,12 +328,13 @@ namespace Rhino.Raft
 		{
 			if (State != RaftEngineState.Leader)
 				throw new InvalidOperationException("Cannot modify topology from a non leader node, current leader is: " +
-				                                    (CurrentLeader ?? "no leader"));
+													(CurrentLeader ?? "no leader"));
 
 			var tcc = new TopologyChangeCommand
 				{
 					Completion = new TaskCompletionSource<object>(),
 					Requested = requested,
+					Previous = _currentTopology,
 					BufferCommand = false,
 				};
 
@@ -379,14 +380,14 @@ namespace Rhino.Raft
 			if (command == null) throw new ArgumentNullException("command");
 
 			var leaderStateBehavior = StateBehavior as LeaderStateBehavior;
-			if (leaderStateBehavior== null || leaderStateBehavior.State != RaftEngineState.Leader)
+			if (leaderStateBehavior == null || leaderStateBehavior.State != RaftEngineState.Leader)
 				throw new NotLeadingException("Command can be appended only on leader node. This node behavior type is " +
 													StateBehavior.GetType().Name)
 				{
-					CurrentLeader = CurrentLeader 
+					CurrentLeader = CurrentLeader
 				};
 
-		
+
 			leaderStateBehavior.AppendCommand(command);
 		}
 
@@ -402,7 +403,7 @@ namespace Rhino.Raft
 
 					var sysCommand = command is NopCommand || command is TopologyChangeCommand;
 
-					if(sysCommand == false)
+					if (sysCommand == false)
 						StateMachine.Apply(entry, command);
 
 					CommitIndex = entry.Index;
@@ -472,23 +473,19 @@ namespace Rhino.Raft
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
-				_log.Debug("This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
+				_log.Debug(
+					"This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
 				Interlocked.Exchange(ref _changingTopology, null);
 				CurrentLeader = null;
 
 				SetState(RaftEngineState.None);
+				return;
 			}
-			else
-			{
-				if (_currentTopology.AllVotingNodes.Contains(CurrentLeader) == false)
-				{
-					CurrentLeader = null;
-				}
 
-				if (_log.IsInfoEnabled)
-				{
-					_log.Info("Finished applying new topology. New AllVotingNodes: {0}", string.Join(",", _currentTopology.AllVotingNodes));
-				}
+			if (_log.IsInfoEnabled)
+			{
+				_log.Info("Finished applying new topology. New AllVotingNodes: {0}",
+					string.Join(",", _currentTopology.AllVotingNodes));
 			}
 
 			OnTopologyChanged(tcc);
