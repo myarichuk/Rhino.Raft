@@ -1,12 +1,10 @@
 ﻿// -----------------------------------------------------------------------
-//  <copyright file="PingTest.cs" company="Hibernating Rhinos LTD">
+//  <copyright file="HttpTransportPingTest.cs" company="Hibernating Rhinos LTD">
 //      Copyright (c) Hibernating Rhinos LTD. All rights reserved.
 //  </copyright>
 // -----------------------------------------------------------------------
 
 using System;
-using System.Net;
-using System.Text;
 using System.Threading;
 using System.Web.Http;
 using Microsoft.Owin.Hosting;
@@ -16,16 +14,16 @@ using Rhino.Raft.Transport;
 using Voron;
 using Xunit;
 
-namespace Rhino.Raft.Tests.HttpTransport
+namespace Rhino.Raft.Tests
 {
-	public class PingTest : IDisposable
+	public class HttpTransportPingTest : IDisposable
 	{
 		private readonly IDisposable _server;
 		private readonly RaftEngine _raftEngine;
 
-		public PingTest()
+		public HttpTransportPingTest()
 		{
-			var node1Transport = new Transport.HttpTransport("node1");
+			var node1Transport = new HttpTransport("node1");
 			node1Transport.Register(new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") });
 			node1Transport.Register(new NodeConnectionInfo { Name = "node2", Url = new Uri("http://localhost:9078") });
 			node1Transport.Register(new NodeConnectionInfo { Name = "node3", Url = new Uri("http://localhost:9077") });
@@ -61,13 +59,37 @@ namespace Rhino.Raft.Tests.HttpTransport
 
 			node2Transport.Send("node1", new RequestVoteRequest
 			{
-				CandidateId = "node2",
 				TrialOnly = true,
 				From = "node2",
 				Term = 3,
 				LastLogIndex = 2,
 				LastLogTerm = 2,
 			});
+
+			MessageContext context;
+			var gotIt = node2Transport.TryReceiveMessage(2500, CancellationToken.None, out context);
+
+			Assert.True(gotIt);
+
+			Assert.True(context.Message is RequestVoteResponse);
+		}
+
+
+		[Fact]
+		public void CanSendEntries()
+		{
+			var node2Transport = new Transport.HttpTransport("node2");
+			node2Transport.Register(new NodeConnectionInfo
+			{
+				Name = "node1",
+				Url = new Uri("http://localhost:9079")
+			});
+
+			node2Transport.Send("node1", new AppendEntriesRequest
+			{
+				From = "node2"
+			});
+			
 
 			MessageContext context;
 			var gotIt = node2Transport.TryReceiveMessage(2500, CancellationToken.None, out context);

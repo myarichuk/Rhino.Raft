@@ -67,7 +67,6 @@ namespace Rhino.Raft.Behaviors
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 			var rvr = new RequestVoteRequest
 			{
-				CandidateId = Engine.Name,
 				LastLogIndex = lastLogEntry.Index,
 				LastLogTerm = lastLogEntry.Term,
 				Term = Engine.PersistentState.CurrentTerm,

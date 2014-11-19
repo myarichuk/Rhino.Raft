@@ -13,6 +13,7 @@ namespace Rhino.Raft.Utils
 	public class NotLeadingException : Exception
 	{
 		public string CurrentLeader { get; set; }
+
 		public NotLeadingException()
 		{
 		}
@@ -31,3 +32,4 @@ namespace Rhino.Raft.Utils
 		{
 		}
 	}
+}

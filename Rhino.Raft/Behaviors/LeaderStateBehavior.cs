@@ -135,7 +135,6 @@ namespace Rhino.Raft.Behaviors
 			{
 				Entries = entries,
 				LeaderCommit = Engine.CommitIndex,
-				LeaderId = Engine.Name,
 				PrevLogIndex = prevLogEntry.Index,
 				PrevLogTerm = prevLogEntry.Term,
 				Term = Engine.PersistentState.CurrentTerm,

@@ -383,7 +383,7 @@ namespace Rhino.Raft
 				throw new NotLeadingException("Command can be appended only on leader node. This node behavior type is " +
 													StateBehavior.GetType().Name)
 				{
-					CurrentLeader = CurrentLeader
+					CurrentLeader = CurrentLeader 
 				};
 
 		

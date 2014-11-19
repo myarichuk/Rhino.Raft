@@ -165,7 +165,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.ContainedInAllVotingNodes(req.From) == false)
 			{
-				_log.Info("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.CandidateId);
+				_log.Info("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.From);
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -177,7 +177,7 @@ namespace Rhino.Raft.Behaviors
 				};
 			}
 
-			_log.Debug("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
+			_log.Debug("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.From, req.Term);
 
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
@@ -200,7 +200,7 @@ namespace Rhino.Raft.Behaviors
 				Engine.UpdateCurrentTerm(req.Term, null);
 			}
 
-			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.CandidateId &&
+			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.From &&
 				Engine.PersistentState.VotedForTerm <= req.Term)
 			{
 				var msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
@@ -220,7 +220,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.LogIsUpToDate(req.LastLogTerm, req.LastLogIndex) == false)
 			{
-				var msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.", req.CandidateId);
+				var msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.", req.From);
 				_log.Info(msg);
 				return new RequestVoteResponse
 
@@ -240,12 +240,12 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.TrialOnly == false)
 			{
-				_log.Info("Recording vote for candidate = {0}", req.CandidateId);
-				Engine.PersistentState.RecordVoteFor(req.CandidateId, req.Term);
+				_log.Info("Recording vote for candidate = {0}", req.From);
+				Engine.PersistentState.RecordVoteFor(req.From, req.Term);
 			}
 			else
 			{
-				_log.Info("Voted for candidate = {0} in trial election for term {1}", req.CandidateId, req.Term);
+				_log.Info("Voted for candidate = {0} in trial election for term {1}", req.From, req.Term);
 			}
 			return new RequestVoteResponse
 			{
@@ -322,12 +322,12 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.Term > Engine.PersistentState.CurrentTerm)
 			{
-				Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
+				Engine.UpdateCurrentTerm(req.Term, req.From);
 			}
 
-			if (Engine.CurrentLeader == null || req.LeaderId.Equals(Engine.CurrentLeader) == false)
+			if (Engine.CurrentLeader == null || req.From.Equals(Engine.CurrentLeader) == false)
 			{
-				Engine.CurrentLeader = req.LeaderId;
+				Engine.CurrentLeader = req.From;
 				Engine.SetState(RaftEngineState.Follower);
 			}
 
@@ -344,7 +344,7 @@ namespace Rhino.Raft.Behaviors
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = msg,
-					LeaderId = req.LeaderId,
+					LeaderId = Engine.CurrentLeader,
 					From = Engine.Name
 				};
 			}

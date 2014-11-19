@@ -89,8 +89,8 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("append entries to " + dest, async () =>
 				{
-					var requestUri = string.Format("raft/appendEntries?term={0}&=leaderCommit{1}&leaderId={2}&prevLogTerm={3}&prevLogIndex={4}&entriesCount={5}&from={6}",
-						req.Term, req.LeaderCommit, req.LeaderId, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
+					var requestUri = string.Format("raft/appendEntries?term={0}&=leaderCommit{1}&prevLogTerm={2}&prevLogIndex={3}&entriesCount={4}&from={5}",
+						req.Term, req.LeaderCommit, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
 					var appendEntriesResponse = JsonConvert.DeserializeObject<AppendEntriesResponse>(reply);
@@ -183,8 +183,8 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("request vote from " + dest, async () =>
 				{
-					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&candidateId={3}&trialOnly={4}&forcedElection={5}&from={6}", 
-						req.Term, req.LastLogIndex, req.LastLogTerm, req.CandidateId, req.TrialOnly, req.ForcedElection, req.From);
+					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}", 
+						req.Term, req.LastLogIndex, req.LastLogTerm, req.TrialOnly, req.ForcedElection, req.From);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
 					var requestVoteResponse = JsonConvert.DeserializeObject<RequestVoteResponse>(reply);
