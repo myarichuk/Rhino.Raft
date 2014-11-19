@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using NLog;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 
@@ -76,17 +77,17 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
-				Engine.DebugLog.Write("Got timeout now request from an older term, ignoring");
+				_log.Info("Got timeout now request from an older term, ignoring");
 				return;
 			}
 			if (req.From != Engine.CurrentLeader)
 			{
-				Engine.DebugLog.Write("Got timeout now request from {0}, who isn't the current leader, ignoring.",
+				_log.Info("Got timeout now request from {0}, who isn't the current leader, ignoring.",
 					req.From);
 				return;
 			}
 
-			Engine.DebugLog.Write("Got timeout now request from the leader, timing out and forcing immediate election");
+			_log.Info("Got timeout now request from the leader, timing out and forcing immediate election");
 			Engine.SetState(RaftEngineState.CandidateByRequest);
 		}
 
@@ -117,11 +118,13 @@ namespace Rhino.Raft.Behaviors
 
 		public abstract void HandleTimeout();
 
+		protected Logger _log;
+
 		protected AbstractRaftStateBehavior(RaftEngine engine)
 		{
 			Engine = engine;
 			LastHeartbeatTime = DateTime.UtcNow;
-
+			_log = LogManager.GetLogger(GetType().Name + "." + engine.Name);
 		}
 
 		public RequestVoteResponse Handle(string destination, RequestVoteRequest req)
@@ -134,7 +137,7 @@ namespace Rhino.Raft.Behaviors
 			if (State == RaftEngineState.Follower && req.ForcedElection == false &&
 				(timeSinceLastHeartbeat < (Timeout / 2)) && Engine.CurrentLeader != null)
 			{
-				Engine.DebugLog.Write("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
+				_log.Info("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -148,7 +151,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (Engine.ContainedInAllVotingNodes(req.From) == false)
 			{
-				Engine.DebugLog.Write("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.CandidateId);
+				_log.Info("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.CandidateId);
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -160,13 +163,13 @@ namespace Rhino.Raft.Behaviors
 				};
 			}
 
-			Engine.DebugLog.Write("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
+			_log.Debug("Received RequestVoteRequest, req.CandidateId = {0}, term = {1}", req.CandidateId, req.Term);
 
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				var msg = string.Format("Rejecting request vote because term {0} is lower than current term {1}",
 					req.Term, Engine.PersistentState.CurrentTerm);
-				Engine.DebugLog.Write(msg);
+				_log.Info(msg);
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -180,7 +183,6 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.Term > Engine.PersistentState.CurrentTerm && req.TrialOnly == false)
 			{
-				Engine.DebugLog.Write("{0} -> UpdateCurrentTerm() is called from Abstract Behavior", GetType().Name);
 				Engine.UpdateCurrentTerm(req.Term, null);
 			}
 
@@ -190,7 +192,7 @@ namespace Rhino.Raft.Behaviors
 				var msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
 					Engine.PersistentState.VotedFor, req.Term);
 
-				Engine.DebugLog.Write(msg);
+				_log.Info(msg);
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -205,7 +207,7 @@ namespace Rhino.Raft.Behaviors
 			if (Engine.LogIsUpToDate(req.LastLogTerm, req.LastLogIndex) == false)
 			{
 				var msg = string.Format("Rejecting request vote because remote log for {0} in not up to date.", req.CandidateId);
-				Engine.DebugLog.Write(msg);
+				_log.Info(msg);
 				return new RequestVoteResponse
 
 				{
@@ -224,12 +226,12 @@ namespace Rhino.Raft.Behaviors
 
 			if (req.TrialOnly == false)
 			{
-				Engine.DebugLog.Write("Recording vote for candidate = {0}", req.CandidateId);
+				_log.Info("Recording vote for candidate = {0}", req.CandidateId);
 				Engine.PersistentState.RecordVoteFor(req.CandidateId, req.Term);
 			}
 			else
 			{
-				Engine.DebugLog.Write("Voted for candidate = {0} in trial election for term {1}", req.CandidateId, req.Term);
+				_log.Info("Voted for candidate = {0} in trial election for term {1}", req.CandidateId, req.Term);
 			}
 			return new RequestVoteResponse
 			{
@@ -291,7 +293,7 @@ namespace Rhino.Raft.Behaviors
 					"Rejecting append entries because msg term {0} is lower then current term: {1}",
 					req.Term, Engine.PersistentState.CurrentTerm);
 
-				Engine.DebugLog.Write(msg);
+				_log.Info(msg);
 
 				return new AppendEntriesResponse
 				{
@@ -321,7 +323,7 @@ namespace Rhino.Raft.Behaviors
 				var msg = string.Format(
 					"Rejecting append entries because msg previous term {0} is not the same as the persisted current term {1} at log index {2}",
 					req.PrevLogTerm, prevTerm, req.PrevLogIndex);
-				Engine.DebugLog.Write(msg);
+				_log.Info(msg);
 				return new AppendEntriesResponse
 				{
 					Success = false,
@@ -336,7 +338,7 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow;
 			if (req.Entries.Length > 0)
 			{
-				Engine.DebugLog.Write("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
+				_log.Debug("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
 
 				// if is possible that we'll get the same event multiple times (for example, if we took longer than a heartbeat
@@ -372,8 +374,8 @@ namespace Rhino.Raft.Behaviors
 						throw new InvalidOperationException(@"Log entry that is marked with IsTopologyChange should be of type TopologyChangeCommand.
 															Instead, it is of type: " + command.GetType() + ". It is probably a bug!");
 
-					Engine.DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log): {0}",
-						string.Join(", ", topologyChangeCommand.Requested.AllVotingNodes));
+					_log.Info("Topology change started (TopologyChangeCommand committed to the log): {0}",
+						topologyChangeCommand.Requested.AllVotingNodes);
 					Engine.PersistentState.SetCurrentTopology(topologyChangeCommand.Requested, topologyChange.Index);
 					Engine.TopologyChangeStarting(topologyChangeCommand);
 				}

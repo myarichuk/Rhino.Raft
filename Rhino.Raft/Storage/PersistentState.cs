@@ -414,7 +414,6 @@ namespace Rhino.Raft.Storage
 				var changed = ReadIsTopologyChanged(metadata);
 				if (changed > removeAllAfter)
 				{
-					engine.DebugLog.Write("Reverting topology because the topology change command was reverted");
 					// need to reset the topology
 					var prevTopology = metadata.Read<string[]>("previous-topology") ?? new string[0];
 					metadata.Add("current-topology", prevTopology);

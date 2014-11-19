@@ -29,7 +29,7 @@ namespace Rhino.Raft.Behaviors
 
 		private void VoteForSelf()
 		{
-			Engine.DebugLog.Write("Voting for myself in term {0}", Engine.PersistentState.CurrentTerm);
+			_log.Info("Voting for myself in term {0}", Engine.PersistentState.CurrentTerm);
 			Handle(Engine.Name,
 				new RequestVoteResponse
 				{
@@ -43,7 +43,7 @@ namespace Rhino.Raft.Behaviors
 
 		public override void HandleTimeout()
 	    {
-			Engine.DebugLog.Write("Timeout ({1:#,#;;0} ms) for elections in term {0}", Engine.PersistentState.CurrentTerm,
+			_log.Info("Timeout ({1:#,#;;0} ms) for elections in term {0}", Engine.PersistentState.CurrentTerm,
 				  Timeout);
 
 			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
@@ -56,14 +56,13 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow;
 			_votesForMyLeadership.Clear();
 			var term = Engine.PersistentState.CurrentTerm;
-			Engine.PersistentState.RecordVoteFor(Engine.Name, term+1);
+			Engine.PersistentState.RecordVoteFor(Engine.Name, term + 1);
 
-			if (_wonTrialElection)// only in the real election, we increment the current term
+			if (_wonTrialElection) // only in the real election, we increment the current term
 				Engine.PersistentState.UpdateTermTo(Engine, Engine.PersistentState.CurrentTerm + 1);
 
 			Engine.CurrentLeader = null;
-
-			Engine.DebugLog.Write("Calling for {0} election in term {1}",
+			_log.Info("Calling for {0} election in term {1}",
 				_wonTrialElection ? "an" : "a trial", Engine.PersistentState.CurrentTerm);
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
@@ -100,53 +99,53 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (resp.VoteTerm != Engine.PersistentState.CurrentTerm)
 			{
-				Engine.DebugLog.Write("Got a vote for election term {0} but current term is {1}, ignoring", resp.VoteTerm, Engine.PersistentState.CurrentTerm);
+				_log.Info("Got a vote for election term {0} but current term is {1}, ignoring", resp.VoteTerm, Engine.PersistentState.CurrentTerm);
 				return;
 			}
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm )
 			{
-				Engine.DebugLog.Write("CandidateStateBehavior -> UpdateCurrentTerm called, there is a new leader, moving to follower state");
+				_log.Info("CandidateStateBehavior -> UpdateCurrentTerm called, there is a new leader, moving to follower state");
 				Engine.UpdateCurrentTerm(resp.CurrentTerm, null); 
 				return;
 			}
 
 			if (resp.VoteGranted == false)
 			{
-				Engine.DebugLog.Write("Vote rejected from {0} trial: {1}", resp.From, resp.TrialOnly);
+				_log.Info("Vote rejected from {0} trial: {1}", resp.From, resp.TrialOnly);
 				return;
 			}
 
 			if(Engine.ContainedInAllVotingNodes(resp.From) == false) //precaution
 			{
-				Engine.DebugLog.Write("Vote acepted from {0}, which isn't in our topology", resp.From);
+				_log.Info("Vote acepted from {0}, which isn't in our topology", resp.From);
 				return;
 			}
 
 			if (resp.TrialOnly && _wonTrialElection) // note that we can't get a vote for real election when we get a trail, because the terms would be different
 			{
-				Engine.DebugLog.Write("Got a vote for trial only from {0} but we already won the trial election for this round, ignoring", resp.From);
+				_log.Info("Got a vote for trial only from {0} but we already won the trial election for this round, ignoring", resp.From);
 				return;
 			}
 
 			_votesForMyLeadership.Add(resp.From);
-			Engine.DebugLog.Write("Adding to my votes: {0} (current votes: {1})", resp.From, string.Join(", ", _votesForMyLeadership));
+			_log.Info("Adding to my votes: {0} (current votes: {1})", resp.From, string.Join(", ", _votesForMyLeadership));
 
 			if (Engine.CurrentTopology.HasQuorum(_votesForMyLeadership) == false)
 			{
-				Engine.DebugLog.Write("Not enough votes for leadership, votes = {0}", _votesForMyLeadership.Any() ? string.Join(", ", _votesForMyLeadership) : "empty");
+				_log.Info("Not enough votes for leadership, votes = {0}", _votesForMyLeadership.Any() ? string.Join(", ", _votesForMyLeadership) : "empty");
 				return;
 			}
 
 			if (_wonTrialElection == false)
 			{
 				_wonTrialElection = true;
-				Engine.DebugLog.Write("Won trial election with {0} votes from {1}, now running for real", _votesForMyLeadership.Count, string.Join(", ", _votesForMyLeadership));
+				_log.Info("Won trial election with {0} votes from {1}, now running for real", _votesForMyLeadership.Count, string.Join(", ", _votesForMyLeadership));
 				StartElection();
 				return;
 			}
 			
 			Engine.SetState(RaftEngineState.Leader);
-			Engine.DebugLog.Write("Selected as leader, term = {0}", resp.CurrentTerm);
+			_log.Info("Selected as leader, term = {0}", resp.CurrentTerm);
 		}
 
     }

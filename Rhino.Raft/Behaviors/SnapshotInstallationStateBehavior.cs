@@ -58,8 +58,8 @@ namespace Rhino.Raft.Behaviors
 					Success = false
 				};
 			}
-				
-			Engine.DebugLog.Write("Received InstallSnapshotRequest from {0} until term {1} / {2}", req.From, req.LastIncludedTerm, req.LastIncludedIndex);
+
+			_log.Info("Received InstallSnapshotRequest from {0} until term {1} / {2}", req.From, req.LastIncludedTerm, req.LastIncludedIndex);
 
 			Engine.OnSnapshotInstallationStarted();
 			
@@ -73,7 +73,7 @@ namespace Rhino.Raft.Behaviors
 				}
 				catch (Exception e)
 				{
-					Engine.DebugLog.Write("Failed to install snapshot because {0}", e);
+					_log.Info("Failed to install snapshot because {0}", e);
 					context.ExecuteInEventLoop(() =>
 					{
 						_installingSnapshot = null;
@@ -85,7 +85,7 @@ namespace Rhino.Raft.Behaviors
 				{
 					Engine.UpdateCurrentTerm(req.Term, req.LeaderId);
 					Engine.CommitIndex = req.LastIncludedIndex;
-					Engine.DebugLog.Write("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
+					_log.Info("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
 					Engine.OnSnapshotInstallationEnded(req.Term);
 
 					context.Reply(new InstallSnapshotResponse
@@ -121,7 +121,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
 			LastHeartbeatTime = DateTime.UtcNow;// avoid busy loop while waiting for the snapshot
-			Engine.DebugLog.Write("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
+			_log.Info("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished
 		}
 	}

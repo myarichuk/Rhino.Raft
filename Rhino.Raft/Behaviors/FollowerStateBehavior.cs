@@ -30,14 +30,14 @@ namespace Rhino.Raft.Behaviors
 	    public override void HandleTimeout()
 	    {
 			if (_avoidLeadership && _currentTermWhenWeBecameFollowers >= Engine.PersistentState.CurrentTerm)
-		    {
-				Engine.DebugLog.Write("Got timeout in follower mode in term {0}, but we are in avoid leadership mode following a step down, so we'll let this one slide. Next time, I'm going to be the leader again!", 
+			{
+				_log.Info("Got timeout in follower mode in term {0}, but we are in avoid leadership mode following a step down, so we'll let this one slide. Next time, I'm going to be the leader again!", 
 					Engine.PersistentState.CurrentTerm);
 				LastHeartbeatTime = DateTime.UtcNow;
 			    _avoidLeadership = false;
 			    return;
 		    }
-		    Engine.DebugLog.Write("Got timeout in follower mode in term {0}", Engine.PersistentState.CurrentTerm);
+			_log.Info("Got timeout in follower mode in term {0}", Engine.PersistentState.CurrentTerm);
 			Engine.SetState(RaftEngineState.Candidate);
 		}
     }

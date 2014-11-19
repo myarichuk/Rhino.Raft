@@ -54,7 +54,10 @@ namespace Rhino.Raft.Behaviors
 		{
 			while (_stopHeartbeatCancellationTokenSource.IsCancellationRequested == false)
 			{
-				Engine.DebugLog.Write("Starting sending Leader heartbeats to: {0}", string.Join(", ", Engine.CurrentTopology.AllVotingNodes));
+				if (_log.IsDebugEnabled)
+				{
+					_log.Debug("Starting sending Leader heartbeats to: {0}", Engine.CurrentTopology);
+				}
 				SendEntriesToAllPeers();
 
 				OnHeartbeatSent();
@@ -117,18 +120,16 @@ namespace Rhino.Raft.Behaviors
 			}
 			catch (Exception e)
 			{
-				Engine.DebugLog.Write("Error while fetching entries from persistent state. Reason : {0}", e);
+				_log.Error("Error while fetching entries from persistent state.", e);
 				throw;
 			}
 
 			prevLogEntry = prevLogEntry ?? new LogEntry();
-			
-			if (entries.Length> 0)
-				Engine.DebugLog.Write("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: {3}). Entry indexes: {2}", entries.Length, peer, String.Join(",", entries.Select(x => x.Index)),
-					prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
-			else
-				Engine.DebugLog.Write("Sending empty heartbeat to {0} (PrevLogEntry: {1})", peer,
-					prevLogEntry.Index.ToString(CultureInfo.InvariantCulture));
+
+			if (_log.IsDebugEnabled)
+			{
+				_log.Debug("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: {2}).", entries.Length, peer, prevLogEntry);
+			}
 
 			var aer = new AppendEntriesRequest
 			{
@@ -153,7 +154,7 @@ namespace Rhino.Raft.Behaviors
 				var sp = Stopwatch.StartNew();
 				using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
 				{
-					Engine.DebugLog.Write("Streaming snapshot to {0} - term {1}, index {2}", peer,
+					_log.Info("Streaming snapshot to {0} - term {1}, index {2}", peer,
 						snapshotWriter.Term,
 						snapshotWriter.Index);
 
@@ -166,14 +167,14 @@ namespace Rhino.Raft.Behaviors
 						LeaderId = Engine.Name,
 					}, stream => snapshotWriter.WriteSnapshot(stream));
 
-					Engine.DebugLog.Write("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,
+					_log.Info("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,
 						snapshotWriter.Term, sp.Elapsed);
 				}
 
 			}
 			catch (Exception e)
 			{
-				Engine.DebugLog.Write("Failed to send snapshot to {0} because:\r\n{1}", peer, e);
+				_log.Error("Failed to send snapshot to " + peer, e);
 			}
 		}
 
@@ -195,7 +196,7 @@ namespace Rhino.Raft.Behaviors
 			Task snapshotInstallationTask;
 			if (resp.Success == false)
 			{
-				Engine.DebugLog.Write("Received CanInstallSnapshotResponse(Success=false) from {0}, Term = {1}, Index = {2}, updating and will try again", 
+				_log.Debug("Received CanInstallSnapshotResponse(Success=false) from {0}, Term = {1}, Index = {2}, updating and will try again", 
 					resp.From,
 					resp.Term,
 					resp.Index);
@@ -206,7 +207,7 @@ namespace Rhino.Raft.Behaviors
 			}
 			if (resp.IsCurrentlyInstalling)
 			{
-				Engine.DebugLog.Write("Received CanInstallSnapshotResponse(IsCurrentlyInstalling=false) from {0}, Term = {1}, Index = {2}, will retry when it is done",
+				_log.Debug("Received CanInstallSnapshotResponse(IsCurrentlyInstalling=false) from {0}, Term = {1}, Index = {2}, will retry when it is done",
 					resp.From,
 					resp.Term,
 					resp.Index);
@@ -214,7 +215,7 @@ namespace Rhino.Raft.Behaviors
 				_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
 				return;
 			}
-			Engine.DebugLog.Write("Received CanInstallSnapshotResponse from {0}, starting snapshot streaming task", resp.From);
+			_log.Debug("Received CanInstallSnapshotResponse from {0}, starting snapshot streaming task", resp.From);
 
 
 			// problem, we can't just send the log entries, we have to send
@@ -243,11 +244,11 @@ namespace Rhino.Raft.Behaviors
 		{
 			if (Engine.ContainedInAllVotingNodes(resp.From) == false)
 			{
-				Engine.DebugLog.Write("Rejecting append entries response from {0} because it is not in my cluster", resp.From);
+				_log.Info("Rejecting append entries response from {0} because it is not in my cluster", resp.From);
 				return;
 			}
 
-			Engine.DebugLog.Write("Handling AppendEntriesResponse from {0}", resp.From);
+			_log.Debug("Handling AppendEntriesResponse from {0}", resp.From);
 
 			// there is a new leader in town, time to step down
 			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm)
@@ -259,30 +260,24 @@ namespace Rhino.Raft.Behaviors
 			Debug.Assert(resp.From != null);
 			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
 			_matchIndexes[resp.From] = resp.LastLogIndex;
-			Engine.DebugLog.Write("Follower ({0}) has LastLogIndex = {1}", resp.From, resp.LastLogIndex);
+			_log.Debug("Follower ({0}) has LastLogIndex = {1}", resp.From, resp.LastLogIndex);
 
 			if (resp.Success == false)
 			{
-				Engine.DebugLog.Write("Received Success = false in AppendEntriesResponse from {1}. Now _nextIndexes[{1}] = {0}. Reason: {2}",
+				_log.Debug("Received Success = false in AppendEntriesResponse from {1}. Now _nextIndexes[{1}] = {0}. Reason: {2}",
 					_nextIndexes[resp.From], resp.From, resp.Message);
 				return;
 			}
 
 			var maxIndexOnCurrentQuorom = GetMaxIndexOnQuorom();
-			if (maxIndexOnCurrentQuorom == -1)
-			{
-				Engine.DebugLog.Write("Not enough followers committed, not applying commits yet");
-				return;
-			}
-
 			if (maxIndexOnCurrentQuorom <= Engine.CommitIndex)
 			{
-				Engine.DebugLog.Write("maxIndexOnQuorom = {0} <= Engine.CommitIndex = {1} --> no need to apply commits",
+				_log.Debug("maxIndexOnQuorom = {0} <= Engine.CommitIndex = {1}.",
 					maxIndexOnCurrentQuorom, Engine.CommitIndex);
 				return;
 			}
 
-			Engine.DebugLog.Write(
+			_log.Debug(
 				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnCurrentQuorom,
 				Engine.CommitIndex);
 			Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnCurrentQuorom);

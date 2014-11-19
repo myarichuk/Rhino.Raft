@@ -55,6 +55,7 @@
     <Compile Include="Behaviors\FollowerStateBehavior.cs" />
     <Compile Include="Behaviors\LeaderStateBehavior.cs" />
     <Compile Include="Behaviors\SteppingDownStateBehavior.cs" />
+    <Compile Include="Interfaces\ISnapshotWriter.cs" />
     <Compile Include="MessageAbsolutePath.cs" />
     <Compile Include="Commands\Command.cs" />
     <Compile Include="Commands\NopCommand.cs" />
@@ -62,6 +63,8 @@
     <Compile Include="Messages\CanInstallSnapshotRequest.cs" />
     <Compile Include="Messages\CanInstallSnapshotResponse.cs" />
     <Compile Include="Interfaces\ICommandSerializer.cs" />
+    <Compile Include="Messages\InstallSnapshotResponse.cs" />
+    <Compile Include="Transport\HttpTransportSender.cs" />
     <Compile Include="Transport\InMemoryTransportHub.cs" />
     <Compile Include="Interfaces\IRaftStateMachine.cs" />
     <Compile Include="Interfaces\ITransport.cs" />
@@ -74,14 +77,14 @@
     <Compile Include="Messages\MessageContext.cs" />
     <Compile Include="Messages\RequestVoteRequest.cs" />
     <Compile Include="Messages\RequestVoteResponse.cs" />
-    <Compile Include="Messages\TimeoutNow.cs" />
+    <Compile Include="Messages\TimeoutNowRequest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RaftEngine.cs" />
     <Compile Include="RaftEngineOptions.cs" />
     <Compile Include="RaftEngineState.cs" />
     <Compile Include="Storage\Topology.cs" />
     <Compile Include="Storage\PersistentState.cs" />
-    <Compile Include="Utils\DebugWriter.cs" />
+    <Compile Include="Transport\NodeConnectionInfo.cs" />
     <Compile Include="Utils\VoronExtensions.cs" />
   </ItemGroup>
   <ItemGroup>

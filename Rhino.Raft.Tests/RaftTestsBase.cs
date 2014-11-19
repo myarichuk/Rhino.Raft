@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using NLog;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Transport;
@@ -18,7 +19,7 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly List<RaftEngine> _nodes = new List<RaftEngine>();
 
-		private readonly DebugWriter _writer = new DebugWriter("Test", Stopwatch.StartNew());
+		private readonly Logger _log = LogManager.GetCurrentClassLogger();
 		private readonly InMemoryTransportHub _inMemoryTransportHub;
 
 		protected void ForceTimeout(string name)
@@ -53,7 +54,7 @@ namespace Rhino.Raft.Tests
 
 		protected void WriteLine(string format, params object[] args)
 		{
-			_writer.Write(format, args);
+			_log.Debug(format, args);
 		}
 
 		public IEnumerable<RaftEngine> Nodes { get { return _nodes; } }
@@ -144,7 +145,7 @@ namespace Rhino.Raft.Tests
 						if (votedAlready.ContainsKey(n))
 							return;
 						votedAlready.TryAdd(n, n);
-						n.DebugLog.Write("WaitForCommitsOnCluster match " + n.Name + " " + state.Data.Count);
+						_log.Debug("WaitForCommitsOnCluster match " + n.Name + " " + state.Data.Count);
 						cde.Signal();
 					}
 				};
@@ -157,7 +158,7 @@ namespace Rhino.Raft.Tests
 							return;
 						votedAlready.TryAdd(n, n);
 
-						n.DebugLog.Write("WaitForCommitsOnCluster match"); 
+						_log.Debug("WaitForCommitsOnCluster match"); 
 						cde.Signal();
 					}
 				};

@@ -47,7 +47,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (maxIndexOnQuorom >= lastLogEntry.Index)
 			{
-				Engine.DebugLog.Write("Done sending all events to the cluster, can step down gracefully now");
+				_log.Info("Done sending all events to the cluster, can step down gracefully now");
 				TransferToBestMatch();
 			}
 		}
@@ -64,7 +64,7 @@ namespace Rhino.Raft.Behaviors
 					Term = Engine.PersistentState.CurrentTerm,
 					From = Engine.Name
 				});
-				Engine.DebugLog.Write("Transfering cluster leadership to {0}", bestMatch);
+				_log.Info("Transfering cluster leadership to {0}", bestMatch);
 			}
 
 			Engine.SetState(RaftEngineState.FollowerAfterStepDown);
@@ -75,7 +75,7 @@ namespace Rhino.Raft.Behaviors
 			base.HandleTimeout();
 			if (_stepdownDuration.Elapsed > Engine.Options.MaxStepDownDrainTime)
 			{
-				Engine.DebugLog.Write("Step down has aborted after {0} because this is greater than the max step down time", _stepdownDuration.Elapsed);
+				_log.Info("Step down has aborted after {0} because this is greater than the max step down time", _stepdownDuration.Elapsed);
 				TransferToBestMatch();
 			}
 		}

@@ -7,7 +7,8 @@ namespace Rhino.Raft.Storage
 	public class Topology
 	{
 		public HashSet<string> AllVotingNodes { get; private set; }
-
+		private string topologyString = string.Empty;
+		private int topologyStringCount = -1;
 		public int QuoromSize
 		{
 			get { return (AllVotingNodes.Count / 2) + 1; }
@@ -39,6 +40,16 @@ namespace Rhino.Raft.Storage
 		{
 			var sum = AllVotingNodes.Count(votes.Contains);
 			return sum >= QuoromSize;
+		}
+
+		public override string ToString()
+		{
+			if (topologyStringCount != AllVotingNodes.Count)
+			{
+				topologyString = string.Join(", ", AllVotingNodes);
+				topologyStringCount = AllVotingNodes.Count;
+			}
+			return topologyString;
 		}
 	}
 }

@@ -11,6 +11,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using NLog;
 using Rhino.Raft.Behaviors;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
@@ -29,7 +30,8 @@ namespace Rhino.Raft
 
 		private Topology _currentTopology;
 
-		public DebugWriter DebugLog { get; set; }
+		internal Logger _log;
+
 		public IRaftStateMachine StateMachine { get { return _raftEngineOptions.StateMachine; } }
 
 		public ITransport Transport { get { return _raftEngineOptions.Transport; } }
@@ -61,7 +63,7 @@ namespace Rhino.Raft
 				if (_currentLeader == value)
 					return;
 
-				DebugLog.Write("Setting CurrentLeader: {0}", value);
+				_log.Debug("Setting CurrentLeader: {0}", value);
 				_currentLeader = value;
 
 
@@ -143,7 +145,8 @@ namespace Rhino.Raft
 		{
 			_raftEngineOptions = raftEngineOptions;
 			Debug.Assert(raftEngineOptions.Stopwatch != null);
-			DebugLog = new DebugWriter(raftEngineOptions.Name, raftEngineOptions.Stopwatch);
+
+			_log = LogManager.GetLogger(GetType().FullName + "." + raftEngineOptions.Name);
 
 			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
@@ -201,12 +204,12 @@ namespace Rhino.Raft
 					if (hasMessage == false)
 					{
 						if (State != RaftEngineState.Leader)
-							DebugLog.Write("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
+							_log.Debug("State {0} timeout ({1:#,#;;0} ms).", State, behavior.Timeout);
 						behavior.HandleTimeout();
 						OnStateTimeout();
 						continue;
 					}
-					DebugLog.Write("{0}: {1} {2}", State, 
+					_log.Debug("{0}: {1} {2}", State, 
 						message.Message.GetType().Name,
 						message.Message is BaseMessage ? JsonConvert.SerializeObject(message.Message) : string.Empty
 						);
@@ -224,7 +227,7 @@ namespace Rhino.Raft
 		{
 			PersistentState.UpdateTermTo(this, term);
 			SetState(RaftEngineState.Follower);
-			DebugLog.Write("UpdateCurrentTerm() setting new leader : {0}", leader ?? "no leader currently");
+			_log.Debug("UpdateCurrentTerm() setting new leader : {0}", leader ?? "no leader currently");
 			CurrentLeader = leader;
 		}
 
@@ -236,7 +239,7 @@ namespace Rhino.Raft
 			if (State == RaftEngineState.Leader)
 				_leaderSelectedEvent.Reset();
 
-			DebugLog.Write("{0} ==> {1}", State, state);
+			_log.Debug("{0} ==> {1}", State, state);
 
 			var oldState = StateBehavior;
 			using (oldState)
@@ -287,7 +290,7 @@ namespace Rhino.Raft
 			}
 
 			_steppingDownCompletionSource = new TaskCompletionSource<object>();
-			DebugLog.Write("Got a request to step down from leadership position, personal reasons, you understand.");
+			_log.Debug("Got a request to step down from leadership position, personal reasons, you understand.");
 			SetState(RaftEngineState.SteppingDown);
 
 			return _steppingDownCompletionSource.Task;
@@ -302,7 +305,10 @@ namespace Rhino.Raft
 				throw new InvalidOperationException("You cannot remove the current node from the cluster, step down this node and then remove it from the new leader");
 
 			var requestedTopology = _currentTopology.CloneAndRemove(node);
-			DebugLog.Write("RemoveFromClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
+			if (_log.IsInfoEnabled)
+			{
+				_log.Info("RemoveFromClusterAsync, requestedTopology: {0}", requestedTopology.AllVotingNodes);
+			}
 			return ModifyTopology(requestedTopology);
 		}
 
@@ -312,8 +318,10 @@ namespace Rhino.Raft
 				throw new InvalidOperationException("Node " + node + " is already in the cluster");
 
 			var requestedTopology = _currentTopology.CloneAndAdd(node);
-			DebugLog.Write("AddToClusterClusterAsync, requestedTopology:{0}", requestedTopology.AllVotingNodes.Aggregate(String.Empty, (total, curr) => total + ", " + curr));
-			return ModifyTopology(requestedTopology);
+			if (_log.IsInfoEnabled)
+			{
+				_log.Info("AddToClusterClusterAsync, requestedTopology: {0}", requestedTopology.AllVotingNodes);
+			} return ModifyTopology(requestedTopology);
 		}
 
 		private Task ModifyTopology(Topology requested)
@@ -334,7 +342,7 @@ namespace Rhino.Raft
 
 			try
 			{
-				DebugLog.Write("Topology change started (TopologyChangeCommand committed to the log)");
+				_log.Debug("Topology change started on leader");
 				TopologyChangeStarting(tcc);
 				AppendCommand(tcc);
 				return tcc.Completion.Task;
@@ -398,13 +406,16 @@ namespace Rhino.Raft
 						StateMachine.Apply(entry, command);
 
 					CommitIndex = entry.Index;
-					DebugLog.Write("ApplyCommits --> CommitIndex changed to {0}", entry.Index);
+					_log.Debug("ApplyCommits --> CommitIndex changed to {0}", entry.Index);
 
 					var tcc = command as TopologyChangeCommand;
 					if (tcc != null)
 					{
-						DebugLog.Write("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}",
-							String.Join(",", tcc.Requested.AllVotingNodes), Name);
+						if (_log.IsInfoEnabled)
+						{
+							_log.Info("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}",
+								String.Join(",", tcc.Requested.AllVotingNodes), Name);
+						}
 						CommitTopologyChange(tcc);
 					}
 
@@ -413,7 +424,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Failed to apply commit. {0}", e);
+					_log.Error("Failed to apply commit", e);
 					throw;
 				}
 			}
@@ -444,7 +455,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Failed to create snapshot because {0}", e);
+					_log.Error("Failed to create snapshot", e);
 					OnSnapshotCreationError(e);
 				}
 			});
@@ -461,7 +472,7 @@ namespace Rhino.Raft
 			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
-				DebugLog.Write("@@@ This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
+				_log.Debug("This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
 				Interlocked.Exchange(ref _changingTopology, null);
 				CurrentLeader = null;
 
@@ -474,7 +485,10 @@ namespace Rhino.Raft
 					CurrentLeader = null;
 				}
 
-				DebugLog.Write("@@@ Finished applying new topology. New AllVotingNodes: {0}", string.Join(",", _currentTopology.AllVotingNodes));
+				if (_log.IsInfoEnabled)
+				{
+					_log.Info("Finished applying new topology. New AllVotingNodes: {0}", string.Join(",", _currentTopology.AllVotingNodes));
+				}
 			}
 
 			OnTopologyChanged(tcc);
@@ -500,7 +514,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on ElectionStarted event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -516,7 +530,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on StateChanged event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -532,7 +546,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on StateTimeout event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -548,7 +562,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on EntriesAppended event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -564,7 +578,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on CommitIndexChanged event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -580,7 +594,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on ElectedAsLeader event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -596,7 +610,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on TopologyChanged event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -612,7 +626,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on CommitApplied event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -628,7 +642,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on TopologyChanging event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -644,7 +658,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on CreatingSnapshot event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -660,7 +674,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on CreatedSnapshot event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -676,7 +690,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception ex)
 				{
-					DebugLog.Write("Error on SnapshotCreationError event: " + ex);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -692,7 +706,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on EventsProcessed event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -708,7 +722,22 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on InstallingSnapshot event: " + e);
+					_log.Error("Error on raising event", e);
+				}
+			}
+		}
+		internal void OnNewTerm(long term)
+		{
+			var handler = NewTerm;
+			if (handler != null)
+			{
+				try
+				{
+					handler(term);
+				}
+				catch (Exception e)
+				{
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -724,7 +753,7 @@ namespace Rhino.Raft
 				}
 				catch (Exception e)
 				{
-					DebugLog.Write("Error on SnapshotInstalled event: " + e);
+					_log.Error("Error on raising event", e);
 				}
 			}
 		}
@@ -743,6 +772,7 @@ namespace Rhino.Raft
 
 		internal void RevertTopologyTo(string[] previousPeers)
 		{
+			_log.Info("Reverting topology because the topology change command was reverted");
 			Interlocked.Exchange(ref _changingTopology, null);
 			Interlocked.Exchange(ref _currentTopology, new Topology(previousPeers));
 			OnTopologyChanged(new TopologyChangeCommand
@@ -760,20 +790,5 @@ namespace Rhino.Raft
 			steppingDownCompletionSource.TrySetResult(null);
 		}
 
-		internal void OnNewTerm(long term)
-		{
-			var handler = NewTerm;
-			if (handler != null)
-			{
-				try
-				{
-					handler(term);
-				}
-				catch (Exception e)
-				{
-					DebugLog.Write("Error on NewTerm event: " + e);
-				}
-			}
-		}
 	}
 }
