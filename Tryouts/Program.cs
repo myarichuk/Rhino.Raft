@@ -1,20 +1,20 @@
 ﻿using System;
+using System.Web.Http;
 using Rhino.Raft.Tests;
+using Rhino.Raft.Transport;
+
 namespace Tryouts
 {
 	class Program
 	{
 		static void Main()
 		{
-			for (int i = 0; i < 1000; i++)
-			{
-				Console.Clear();
-				Console.WriteLine(i);
-				using (var test = new TopologyChangesTests())
-				{
-					test.Cluster_nodes_are_able_to_recover_after_shutdown_in_the_middle_of_topology_change();
-				}
-			}
+			var config = new HttpConfiguration();
+			RaftWebApiConfig.Register(config);
+
+			var _httpServer = new HttpServer(config);
+
+			Console.ReadLine();
 		}
 	}
 }
