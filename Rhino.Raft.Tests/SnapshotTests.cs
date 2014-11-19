@@ -151,12 +151,8 @@ namespace Rhino.Raft.Tests
 						.Build()
 						.ToList();
 
-			var raftNodes = CreateNodeNetwork(3).ToList();
-			raftNodes.ForEach(entry => entry.Options.MaxEntriesPerRequest = 1);
-			raftNodes.First().WaitForLeader();
-
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
+			var leader = CreateNetworkAndWaitForLeader(3);
+			Nodes.ToList().ForEach(entry => entry.Options.MaxEntriesPerRequest = 1);
 
 			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
 			leader.CreatedSnapshot += snapshotCreationEndedEvent.Set;

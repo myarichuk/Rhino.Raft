@@ -215,6 +215,24 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow; 
 		}
 
+		public override void Handle(InstallSnapshotResponse resp)
+		{
+			_matchIndexes[resp.From] = resp.LastLogIndex;
+			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
+			Task snapshotInstallationTask;
+			_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
+			if (resp.Success == false)
+			{
+				_log.Warn("Failed to install snapshot for {0} (term {1} / index {2}) because: {3}",
+					resp.From, resp.CurrentTerm, resp.LastLogIndex, resp.Message);
+			}
+			else
+			{
+				_log.Info("Successfully installed snapshot at {0} for (term {1} / index {2})",
+					resp.From, resp.CurrentTerm, resp.LastLogIndex);
+			}
+		}
+
 		public override void Handle(CanInstallSnapshotResponse resp)
 		{
 			Task snapshotInstallationTask;

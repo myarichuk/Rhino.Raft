@@ -6,11 +6,12 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NLog;
-using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 using Rhino.Raft.Transport;
 using Rhino.Raft.Utils;
 using Voron;
+using Voron.Util;
 using Xunit;
 
 namespace Rhino.Raft.Tests
@@ -20,7 +21,7 @@ namespace Rhino.Raft.Tests
 		private readonly List<RaftEngine> _nodes = new List<RaftEngine>();
 
 		private readonly Logger _log = LogManager.GetCurrentClassLogger();
-		private readonly InMemoryTransportHub _inMemoryTransportHub;
+		protected readonly InMemoryTransportHub _inMemoryTransportHub;
 
 		protected void ForceTimeout(string name)
 		{
@@ -206,41 +207,61 @@ namespace Rhino.Raft.Tests
 			return rcs.Task;
 		}
 
+		protected void RestartAllNodes()
+		{
+			foreach (var raftEngine in _nodes)
+			{
+				raftEngine.Options.StorageOptions.OwnsPagers = false;
+				raftEngine.Dispose();
+			}
+			for (int i = 0; i < _nodes.Count; i++)
+			{
+				_nodes[i] = new RaftEngine(_nodes[i].Options);
+			}
+		}
+
 		protected RaftEngine CreateNetworkAndWaitForLeader(int nodeCount, int messageTimeout = -1)
 		{
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: messageTimeout).ToList();
-			var raftEngine = _nodes[new Random().Next(0, _nodes.Count)];
+			var leaderIndex = new Random().Next(0, nodeCount);
+			if (messageTimeout == -1)
+				messageTimeout = Debugger.IsAttached ? 60*1000 : 1000;
+			var nodeNames = new string[nodeCount];
+			for (int i = 0; i < nodeCount; i++)
+			{
+				nodeNames[i] = "node" + i;
+			}
+
+			for (int index = 0; index < nodeNames.Length; index++)
+			{
+				var nodeName = nodeNames[index];
+				var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
+				if (leaderIndex == index)
+				{
+					storageEnvironmentOptions.OwnsPagers = false;
+					PersistentState.ClusterBootstrap(storageEnvironmentOptions);
+					storageEnvironmentOptions.OwnsPagers = true;
+				}
+				var options = CreateNodeOptions(nodeName, messageTimeout, storageEnvironmentOptions,nodeNames);
+				_nodes.Add(new RaftEngine(options));
+			}
+			
+			var raftEngine = _nodes[leaderIndex];
 
 			var nopCommit = WaitForCommitsOnCluster(1); // nop commit
 
 			var transport = (InMemoryTransportHub.InMemoryTransport)_inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
 			transport.ForceTimeout();
 
-			raftNodes.First().WaitForLeader();
+			_nodes[leaderIndex].WaitForLeader();
 
 			nopCommit.Wait();
 
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			var leader = _nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 			return leader;
 		}
 
-
-		protected RaftEngineOptions CreateNodeOptions(string nodeName, int messageTimeout, params string[] peers)
-		{
-			var nodeOptions = new RaftEngineOptions(nodeName,
-				StorageEnvironmentOptions.CreateMemoryOnly(),
-				_inMemoryTransportHub.CreateTransportFor(nodeName),
-				new DictionaryStateMachine())
-			{
-				MessageTimeout = messageTimeout,
-				AllVotingNodes = peers,
-				Stopwatch = Stopwatch.StartNew()
-			};
-			return nodeOptions;
-		}
-
-		protected RaftEngineOptions CreateNodeOptions(string nodeName,int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
+		private RaftEngineOptions CreateNodeOptions(string nodeName,int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
 		{
 			var nodeOptions = new RaftEngineOptions(nodeName,
 				storageOptions,
@@ -265,32 +286,9 @@ namespace Rhino.Raft.Tests
 
 		protected RaftEngine NewNodeFor(RaftEngine leader)
 		{
-			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Options.MessageTimeout));
+			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Options.MessageTimeout, StorageEnvironmentOptions.CreateMemoryOnly()));
 			_nodes.Add(raftEngine);
 			return raftEngine;
-		}
-
-		protected IEnumerable<RaftEngine> CreateNodeNetwork(int nodeCount, ITransport transport = null, int messageTimeout = -1, Func<RaftEngineOptions,RaftEngineOptions> optionChangerFunc = null)
-		{
-			if (messageTimeout == -1)
-				messageTimeout = Debugger.IsAttached ? 60*1000 : 1000;
-			var nodeNames = new List<string>();
-			for (int i = 0; i < nodeCount; i++)
-			{
-				nodeNames.Add("node" + i);
-			}
-
-			if (optionChangerFunc == null)
-				optionChangerFunc = options => options;
-
-			var raftNetwork = nodeNames
-				.Select(name => optionChangerFunc(CreateNodeOptions(name, messageTimeout, nodeNames.ToArray())))
-				.Select(nodeOptions => new RaftEngine(nodeOptions))
-				.ToList();
-
-			_nodes.AddRange(raftNetwork);
-
-			return raftNetwork;
 		}
 
 		public virtual void Dispose()

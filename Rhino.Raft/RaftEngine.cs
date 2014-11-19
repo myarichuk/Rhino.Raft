@@ -151,7 +151,7 @@ namespace Rhino.Raft
 			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
 			Name = raftEngineOptions.Name;
-			PersistentState = new PersistentState(raftEngineOptions.Options, _eventLoopCancellationTokenSource.Token)
+			PersistentState = new PersistentState(raftEngineOptions.StorageOptions, _eventLoopCancellationTokenSource.Token)
 			{
 				CommandSerializer = new JsonCommandSerializer()
 			};
@@ -307,7 +307,7 @@ namespace Rhino.Raft
 			var requestedTopology = _currentTopology.CloneAndRemove(node);
 			if (_log.IsInfoEnabled)
 			{
-				_log.Info("RemoveFromClusterAsync, requestedTopology: {0}", requestedTopology.AllVotingNodes);
+				_log.Info("RemoveFromClusterAsync, requestedTopology: {0}", requestedTopology);
 			}
 			return ModifyTopology(requestedTopology);
 		}
@@ -320,8 +320,9 @@ namespace Rhino.Raft
 			var requestedTopology = _currentTopology.CloneAndAdd(node);
 			if (_log.IsInfoEnabled)
 			{
-				_log.Info("AddToClusterClusterAsync, requestedTopology: {0}", requestedTopology.AllVotingNodes);
-			} return ModifyTopology(requestedTopology);
+				_log.Info("AddToClusterClusterAsync, requestedTopology: {0}", requestedTopology);
+			}
+			return ModifyTopology(requestedTopology);
 		}
 
 		private Task ModifyTopology(Topology requested)

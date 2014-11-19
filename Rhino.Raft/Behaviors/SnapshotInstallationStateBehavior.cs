@@ -45,7 +45,7 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-			if (req.Term < lastLogEntry.Term)
+			if (req.Term < lastLogEntry.Term || req.LastIncludedIndex < lastLogEntry.Index)
 			{
 				stream.Dispose();
 
@@ -54,7 +54,8 @@ namespace Rhino.Raft.Behaviors
 					From = Engine.Name,
 					CurrentTerm = lastLogEntry.Term,
 					LastLogIndex = lastLogEntry.Index,
-					Message = "Term " + req.Term + " is older than last term in the log " + lastLogEntry.Term + " so the snapshot was rejected",
+					Message = string.Format("Snapshot is too old (term {0} index {1}) while we have (term {2} index {3})",
+						req.Term, req.LastIncludedIndex, lastLogEntry.Term, lastLogEntry.Index),
 					Success = false
 				};
 			}
@@ -91,8 +92,8 @@ namespace Rhino.Raft.Behaviors
 					context.Reply(new InstallSnapshotResponse
 					{
 						From = Engine.Name,
-						CurrentTerm = lastLogEntry.Term,
-						LastLogIndex = lastLogEntry.Index,
+						CurrentTerm = req.Term,
+						LastLogIndex = req.LastIncludedIndex,
 						Success = true
 					});
 				});

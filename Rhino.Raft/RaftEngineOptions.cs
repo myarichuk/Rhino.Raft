@@ -10,15 +10,15 @@ namespace Rhino.Raft
 {
 	public class RaftEngineOptions
 	{
-		public RaftEngineOptions(string name, StorageEnvironmentOptions options, ITransport transport, IRaftStateMachine stateMachine)
+		public RaftEngineOptions(string name, StorageEnvironmentOptions storageOptions, ITransport transport, IRaftStateMachine stateMachine)
 		{
 			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
-			if (options == null) throw new ArgumentNullException("options");
+			if (storageOptions == null) throw new ArgumentNullException("storageOptions");
 			if (transport == null) throw new ArgumentNullException("transport");
 			if (stateMachine == null) throw new ArgumentNullException("stateMachine");
 
 			Name = name;
-			Options = options;
+			StorageOptions = storageOptions;
 			Transport = transport;
 			StateMachine = stateMachine;
 			MessageTimeout = 300;
@@ -41,7 +41,7 @@ namespace Rhino.Raft
 
 		public string Name { get; private set; }
 
-		public StorageEnvironmentOptions Options { get; private set; }
+		public StorageEnvironmentOptions StorageOptions { get; private set; }
 
 		public ITransport Transport { get; private set; }
 

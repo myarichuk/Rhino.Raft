@@ -24,9 +24,13 @@ namespace Rhino.Raft.Tests
 		public void Follower_as_a_single_node_becomes_leader_automatically()
 		{
 			var hub = new InMemoryTransportHub();
+			var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
+			storageEnvironmentOptions.OwnsPagers = false;
+			PersistentState.ClusterBootstrap(storageEnvironmentOptions);
+			storageEnvironmentOptions.OwnsPagers = true;
 			var raftEngineOptions = new RaftEngineOptions(
 				"node1",
-				StorageEnvironmentOptions.CreateMemoryOnly(),
+				storageEnvironmentOptions,
 				hub.CreateTransportFor("node1"),
 				new DictionaryStateMachine()
 				)
@@ -39,44 +43,6 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		[Fact]
-		public void On_two_node_network_first_to_become_candidate_becomes_leader()
-		{
-			CreateNodeNetwork(2);
-
-			ForceTimeout("node0");
-			//less election timeout --> will send vote request sooner, and thus expected to become candidate first
-			Nodes.First().WaitForLeader();
-
-			Assert.Equal(RaftEngineState.Leader, Nodes.First().State);
-			Assert.Equal(RaftEngineState.Follower, Nodes.Last().State);
-		}
-
-		[Theory]
-		[InlineData(2)]
-		[InlineData(3)]
-		[InlineData(10)]
-		public void On_many_node_network_can_be_only_one_leader(int nodeCount)
-		{
-			var leaderEvent = new ManualResetEventSlim();
-
-			var sp = Stopwatch.StartNew();
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 100, optionChangerFunc: options =>
-			{
-				options.Stopwatch = sp;
-				return options;
-			}).ToList();
-			raftNodes.ForEach(node => node.StateChanged += state =>
-			{
-				if (state == RaftEngineState.Leader)
-				{
-					leaderEvent.Set();
-				}
-			});
-
-			Assert.True(leaderEvent.Wait(25000));
-			Assert.Equal(1, raftNodes.Count(node => node.State == RaftEngineState.Leader));
-		}
 
 		[Fact]
 		public void Network_partition_should_cause_message_resend()
@@ -86,9 +52,9 @@ namespace Rhino.Raft.Tests
 			DisconnectNodeSending("node1");
 			DisconnectNode("node2");
 			DisconnectNodeSending("node2");
-			var raftNodes = CreateNodeNetwork(3, messageTimeout: 300).ToList();
+			var raftNodes = CreateNetworkAndWaitForLeader(3, messageTimeout: 300);
 			var countdown = new CountdownEvent(2);
-			raftNodes[0].ElectionStarted += () =>
+			Nodes.First().ElectionStarted += () =>
 			{
 				if (countdown.CurrentCount > 0)
 					countdown.Signal();
@@ -101,7 +67,7 @@ namespace Rhino.Raft.Tests
 			ReconnectNode("node2");
 			ReconnectNodeSending("node2");
 
-			raftNodes.First().WaitForLeader();
+			Nodes.First().WaitForLeader();
 		}
 
 		/*
@@ -182,13 +148,9 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 1500).ToList();
+			var leader = CreateNetworkAndWaitForLeader(nodeCount, messageTimeout: 1500);
 
-			raftNodes.First().WaitForLeader();
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
-
-			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
@@ -240,12 +202,18 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Follower_on_timeout_should_become_candidate()
 		{
-			var nodeOptions = CreateNodeOptions("realNode", 100, "fakeNode");
+			var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
+			storageEnvironmentOptions.OwnsPagers = false;
+			PersistentState.ClusterBootstrap(storageEnvironmentOptions);
+			storageEnvironmentOptions.OwnsPagers = true;
+			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
 
 			using (var node = new RaftEngine(nodeOptions))
 			{
 				var timeoutEvent = new ManualResetEventSlim();
 				node.StateTimeout += timeoutEvent.Set;
+
+				ForceTimeout("real");
 
 				timeoutEvent.Wait();
 				Assert.Equal(RaftEngineState.Candidate, node.State);

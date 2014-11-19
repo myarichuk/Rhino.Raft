@@ -13,12 +13,11 @@ namespace Rhino.Raft.Tests
 {
 	public class CommandsTests : RaftTestsBase
 	{
-		//TODO: check the stability of this test in tryouts --> I've seen several occasional failures of this test -> usually it passes
 		[Fact]
 		public void When_command_committed_CompletionTaskSource_is_notified()
 		{
 			const int CommandCount = 5;
-			var raftNodes = CreateNodeNetwork(3).ToList();
+			var leader = CreateNetworkAndWaitForLeader(3);
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -26,11 +25,8 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			raftNodes.First().WaitForLeader();
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
 
-			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
@@ -51,7 +47,7 @@ namespace Rhino.Raft.Tests
 		public void While_command_not_committed_CompletionTaskSource_is_not_notified()
 		{
 			const int CommandCount = 5;
-			var raftNodes = CreateNodeNetwork(3).ToList();
+			var leader = CreateNetworkAndWaitForLeader(3);
 			var commands = Builder<DictionaryCommand.Set>.CreateListOfSize(CommandCount)
 				.All()
 				.With(x => x.Completion = new TaskCompletionSource<object>())
@@ -59,11 +55,8 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			raftNodes.First().WaitForLeader();
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
 
-			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
@@ -103,23 +96,16 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 2000).ToList();
+			var leader = CreateNetworkAndWaitForLeader(nodeCount);
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
-			raftNodes.ForEach(node =>
+			Nodes.ToList().ForEach(node =>
 			{
 				entriesAppended.Add(node.Name, new List<LogEntry>());
 				node.EntriesAppended += logEntries => entriesAppended[node.Name].AddRange(logEntries);
 			});
 
-			// ReSharper disable once PossibleNullReferenceException
-			var first = raftNodes.First();
-			first.WaitForLeader();
-			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
 
-			var leader = raftNodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-			Assert.NotNull(leader);
-
-			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 			if (nonLeaderNode.CommitIndex == CommandCount + 1) //precaution
 				commitsAppliedEvent.Set();
@@ -149,22 +135,15 @@ namespace Rhino.Raft.Tests
 				.Build()
 				.ToList();
 
-			var raftNodes = CreateNodeNetwork(nodeCount, messageTimeout: 10000).ToList();
+			var leader = CreateNetworkAndWaitForLeader(nodeCount, messageTimeout: 10000);
 			var entriesAppended = new Dictionary<string, List<LogEntry>>();
-			raftNodes.ForEach(node =>
+			Nodes.ToList().ForEach(node =>
 			{
 				entriesAppended.Add(node.Name, new List<LogEntry>());
 				node.EntriesAppended += logEntries => entriesAppended[node.Name].AddRange(logEntries);
 			});
 
-			// ReSharper disable once PossibleNullReferenceException
-			var first = raftNodes.First();
-			first.WaitForLeader();
-			Trace.WriteLine("<!Selected leader, proceeding with the test!>");
-
-			var leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
-
-			var nonLeaderNode = raftNodes.First(x => x.State != RaftEngineState.Leader);
+			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
 			{
@@ -173,10 +152,7 @@ namespace Rhino.Raft.Tests
 			};
 
 			commands.Take(CommandCount).ToList().ForEach(leader.AppendCommand);
-			first.WaitForLeader();
-			Trace.WriteLine("<!made sure the leader is still selected, proceeding with the test!>");
 
-			leader = raftNodes.First(x => x.State == RaftEngineState.Leader);
 			commands.Skip(CommandCount).ToList().ForEach(leader.AppendCommand);
 
 			var millisecondsTimeout = 10000 * nodeCount;

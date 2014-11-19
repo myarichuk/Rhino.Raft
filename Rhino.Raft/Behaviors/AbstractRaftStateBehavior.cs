@@ -26,6 +26,7 @@ namespace Rhino.Raft.Behaviors
 				AppendEntriesResponse appendEntriesResponse;
 				AppendEntriesRequest appendEntriesRequest;
 				InstallSnapshotRequest installSnapshotRequest;
+				InstallSnapshotResponse installSnapshotResponse;
 				CanInstallSnapshotRequest canInstallSnapshotRequest;
 				CanInstallSnapshotResponse canInstallSnapshotResponse;
 				TimeoutNowRequest timeoutNowRequest;
@@ -68,6 +69,10 @@ namespace Rhino.Raft.Behaviors
 				else if (TryCastMessage(context.Message, out canInstallSnapshotResponse))
 				{
 					Handle(canInstallSnapshotResponse);
+				}
+				else if (TryCastMessage(context.Message, out installSnapshotResponse))
+				{
+					Handle(installSnapshotResponse);
 				}
 				else if (TryCastMessage(context.Message, out timeoutNowRequest))
 				{
@@ -263,6 +268,11 @@ namespace Rhino.Raft.Behaviors
 		}
 
 		public virtual void Handle(CanInstallSnapshotResponse resp)
+		{
+			//irrelevant here, so doing nothing (used only in LeaderStateBehavior)
+		}
+
+		public virtual void Handle(InstallSnapshotResponse resp)
 		{
 			//irrelevant here, so doing nothing (used only in LeaderStateBehavior)
 		}
