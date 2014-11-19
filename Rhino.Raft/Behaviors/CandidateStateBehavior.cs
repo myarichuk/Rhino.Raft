@@ -30,8 +30,7 @@ namespace Rhino.Raft.Behaviors
 		private void VoteForSelf()
 		{
 			_log.Info("Voting for myself in term {0}", Engine.PersistentState.CurrentTerm);
-			Handle(Engine.Name,
-				new RequestVoteResponse
+			Handle(new RequestVoteResponse
 				{
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					VoteGranted = true,
@@ -95,7 +94,7 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.Candidate; }
 		}
 
-		public override void Handle(string source, RequestVoteResponse resp)
+		public override void Handle(RequestVoteResponse resp)
 		{
 			if (resp.VoteTerm != Engine.PersistentState.CurrentTerm)
 			{

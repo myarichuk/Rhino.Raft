@@ -79,7 +79,7 @@ namespace Rhino.Raft.Transport
 			HttpClient client;
 			using (GetConnection(dest, out client))
 			{
-				LogStatus("can install snapshot to " + dest, async () =>
+				LogStatus("append entries to " + dest, async () =>
 				{
 					var requestUri = string.Format("/appendEntries?term={0}&=leaderCommit{1}&leaderId={2}&prevLogTerm={3}&prevLogIndex={4}&entriesCount={5}&from={6}",
 						req.Term, req.LeaderCommit, req.LeaderId, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
@@ -107,6 +107,7 @@ namespace Rhino.Raft.Transport
 					Write7BitEncodedInt64(stream, logEntry.Index);
 					Write7BitEncodedInt64(stream, logEntry.Term);
 					stream.WriteByte(logEntry.IsTopologyChange == true ? (byte)1 : (byte)0);
+					Write7BitEncodedInt64(stream, logEntry.Data.Length);
 					stream.Write(logEntry.Data, 0, logEntry.Data.Length);
 				}
 				return Task.FromResult(1);
@@ -143,6 +144,7 @@ namespace Rhino.Raft.Transport
 					length += SizeOf7BitEncodedInt64(logEntry.Index) +
 					          SizeOf7BitEncodedInt64(logEntry.Term) +
 					          1 /*topology*/+
+							  SizeOf7BitEncodedInt64(logEntry.Data.Length) +
 					          logEntry.Data.Length;
 				}
 				return true;

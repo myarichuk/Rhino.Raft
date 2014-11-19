@@ -191,7 +191,7 @@ namespace Rhino.Raft.Behaviors
 			LastHeartbeatTime = DateTime.UtcNow; 
 		}
 
-		public override void Handle(string destination, CanInstallSnapshotResponse resp)
+		public override void Handle(CanInstallSnapshotResponse resp)
 		{
 			Task snapshotInstallationTask;
 			if (resp.Success == false)
@@ -240,7 +240,7 @@ namespace Rhino.Raft.Behaviors
 				task.Start();
 		}
 
-		public override void Handle(string destination, AppendEntriesResponse resp)
+		public override void Handle(AppendEntriesResponse resp)
 		{
 			if (Engine.ContainedInAllVotingNodes(resp.From) == false)
 			{

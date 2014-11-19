@@ -128,6 +128,7 @@ namespace Rhino.Raft.Transport
 		private class InMemoryMessageContext : MessageContext
 		{
 			private readonly InMemoryTransport _parent;
+			public string Destination { get; set; }
 
 			public InMemoryMessageContext(InMemoryTransport parent)
 			{

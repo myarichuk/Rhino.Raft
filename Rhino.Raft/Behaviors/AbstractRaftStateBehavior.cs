@@ -30,25 +30,25 @@ namespace Rhino.Raft.Behaviors
 
 			if (TryCastMessage(context.Message, out requestVoteRequest))
 			{
-				var reply = Handle(context.Destination, requestVoteRequest);
+				var reply = Handle(requestVoteRequest);
 				context.Reply(reply);
 			}
 			else if (TryCastMessage(context.Message, out appendEntriesResponse))
 			{
-				Handle(context.Destination, appendEntriesResponse);
+				Handle(appendEntriesResponse);
 			}
 			else if (TryCastMessage(context.Message, out appendEntriesRequest))
 			{
-				var reply = Handle(context.Destination, appendEntriesRequest);
+				var reply = Handle(appendEntriesRequest);
 				context.Reply(reply);
 			}
 			else if (TryCastMessage(context.Message, out requestVoteResponse))
 			{
-				Handle(context.Destination, requestVoteResponse);
+				Handle(requestVoteResponse);
 			}
 			else if (TryCastMessage(context.Message, out canInstallSnapshotRequest))
 			{
-				var reply = Handle(context.Destination, canInstallSnapshotRequest);
+				var reply = Handle(canInstallSnapshotRequest);
 				context.Reply(reply);
 			}
 			else if (TryCastMessage(context.Message, out installSnapshotRequest))
@@ -59,11 +59,11 @@ namespace Rhino.Raft.Behaviors
 			}
 			else if (TryCastMessage(context.Message, out canInstallSnapshotResponse))
 			{
-				Handle(context.Destination, canInstallSnapshotResponse);
+				Handle(canInstallSnapshotResponse);
 			}
 			else if (TryCastMessage(context.Message, out timeoutNowRequest))
 			{
-				Handle(context.Destination, timeoutNowRequest);
+				Handle(timeoutNowRequest);
 			}
 			else if (TryCastMessage(context.Message, out action))
 			{
@@ -73,7 +73,7 @@ namespace Rhino.Raft.Behaviors
 			Engine.OnEventsProcessed();
 		}
 
-		public void Handle(string destination, TimeoutNowRequest req)
+		public void Handle(TimeoutNowRequest req)
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
@@ -104,7 +104,7 @@ namespace Rhino.Raft.Behaviors
 			};
 		}
 
-		public virtual void Handle(string destination, RequestVoteResponse resp)
+		public virtual void Handle(RequestVoteResponse resp)
 		{
 			//do nothing, irrelevant here
 		}
@@ -127,7 +127,7 @@ namespace Rhino.Raft.Behaviors
 			_log = LogManager.GetLogger(GetType().Name + "." + engine.Name);
 		}
 
-		public RequestVoteResponse Handle(string destination, RequestVoteRequest req)
+		public RequestVoteResponse Handle(RequestVoteRequest req)
 		{
 			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
 			// Raft paper section 6 (cluster membership changes), this apply only if we are a follower, because
@@ -244,12 +244,12 @@ namespace Rhino.Raft.Behaviors
 			};
 		}
 
-		public virtual void Handle(string destination, CanInstallSnapshotResponse resp)
+		public virtual void Handle(CanInstallSnapshotResponse resp)
 		{
 			//irrelevant here, so doing nothing (used only in LeaderStateBehavior)
 		}
 
-		public virtual CanInstallSnapshotResponse Handle(string destination, CanInstallSnapshotRequest req)
+		public virtual CanInstallSnapshotResponse Handle(CanInstallSnapshotRequest req)
 		{
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
@@ -279,13 +279,13 @@ namespace Rhino.Raft.Behaviors
 			};
 		}
 
-		public virtual void Handle(string destination, AppendEntriesResponse resp)
+		public virtual void Handle(AppendEntriesResponse resp)
 		{
 			// not a leader, no idea what to do with this. Probably an old
 			// message from when we were a leader, ignoring.			
 		}
 
-		public virtual AppendEntriesResponse Handle(string destination, AppendEntriesRequest req)
+		public virtual AppendEntriesResponse Handle(AppendEntriesRequest req)
 		{
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{

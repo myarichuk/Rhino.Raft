@@ -5,7 +5,6 @@ namespace Rhino.Raft.Messages
 {
     public abstract class MessageContext
     {
-        public string Destination { get; set; }
         public object Message { get; set; }
 	    public Stream Stream { get; set; }
 

@@ -22,11 +22,11 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.SnapshotInstallation; }
 		}
 
-		public override CanInstallSnapshotResponse Handle(string destination, CanInstallSnapshotRequest req)
+		public override CanInstallSnapshotResponse Handle(CanInstallSnapshotRequest req)
 		{
 			if (_installingSnapshot == null)
 			{
-				return base.Handle(destination, req);
+				return base.Handle(req);
 			}
 			return new CanInstallSnapshotResponse
 			{
@@ -101,7 +101,7 @@ namespace Rhino.Raft.Behaviors
 			return null;
 		}
 
-		public override AppendEntriesResponse Handle(string destination, AppendEntriesRequest req)
+		public override AppendEntriesResponse Handle(AppendEntriesRequest req)
 		{
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 			return

@@ -37,9 +37,9 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.SteppingDown; }
 		}
 
-		public override void Handle(string destination, AppendEntriesResponse resp)
+		public override void Handle(AppendEntriesResponse resp)
 		{
-			base.Handle(destination, resp);
+			base.Handle(resp);
 
 			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
 
