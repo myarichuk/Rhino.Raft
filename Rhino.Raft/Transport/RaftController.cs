@@ -4,6 +4,7 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Threading;
@@ -18,10 +19,17 @@ namespace Rhino.Raft.Transport
 	{
 		private HttpTransportBus _bus;
 
-		public override Task<HttpResponseMessage> ExecuteAsync(HttpControllerContext controllerContext, CancellationToken cancellationToken)
+		public override async Task<HttpResponseMessage> ExecuteAsync(HttpControllerContext controllerContext, CancellationToken cancellationToken)
 		{
 			_bus = (HttpTransportBus) controllerContext.Configuration.Properties[typeof (HttpTransportBus)];
-			return base.ExecuteAsync(controllerContext, cancellationToken);
+			var sp = Stopwatch.StartNew();
+			var msg = await base.ExecuteAsync(controllerContext, cancellationToken);
+			if (_bus.Log.IsDebugEnabled)
+			{
+				_bus.Log.Debug("{0} {1} {2} in {3:#,#;;0} ms", msg.StatusCode, controllerContext.Request.Method, controllerContext.Request.RequestUri, 
+					sp.ElapsedMilliseconds);
+			}
+			return msg;
 		}
 
 

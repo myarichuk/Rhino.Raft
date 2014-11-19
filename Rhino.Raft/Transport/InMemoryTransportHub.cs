@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using NLog;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -39,10 +40,13 @@ namespace Rhino.Raft.Transport
 			private readonly InMemoryTransportHub _parent;
 			private readonly string _from;
 
-			public InMemoryTransport(InMemoryTransportHub parent, string @from)
+			public readonly Logger Log;
+
+			public InMemoryTransport(InMemoryTransportHub parent, string from)
 			{
 				_parent = parent;
-				_from = @from;
+				_from = from;
+				Log = LogManager.GetLogger(typeof (InMemoryTransport).FullName + "." + from);
 			}
 
 			public string From
@@ -158,6 +162,16 @@ namespace Rhino.Raft.Transport
 			public override void ExecuteInEventLoop(Action action)
 			{
 				_parent.SendInternal(_parent.From, _parent.From, action);
+			}
+
+			public override void Done()
+			{
+				// nothing to do here.
+			}
+
+			public override void Error(Exception exception)
+			{
+				_parent.Log.Warn("Error processing message", exception);
 			}
 		}
 

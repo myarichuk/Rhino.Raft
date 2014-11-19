@@ -18,59 +18,73 @@ namespace Rhino.Raft.Behaviors
 
 		public void HandleMessage(MessageContext context)
 		{
-			RequestVoteRequest requestVoteRequest;
-			RequestVoteResponse requestVoteResponse;
-			AppendEntriesResponse appendEntriesResponse;
-			AppendEntriesRequest appendEntriesRequest;
-			InstallSnapshotRequest installSnapshotRequest;
-			CanInstallSnapshotRequest canInstallSnapshotRequest;
-			CanInstallSnapshotResponse canInstallSnapshotResponse;
-			TimeoutNowRequest timeoutNowRequest;
-			Action action;
+			bool asyncMessageHandling = false;
+			try
+			{
+				RequestVoteRequest requestVoteRequest;
+				RequestVoteResponse requestVoteResponse;
+				AppendEntriesResponse appendEntriesResponse;
+				AppendEntriesRequest appendEntriesRequest;
+				InstallSnapshotRequest installSnapshotRequest;
+				CanInstallSnapshotRequest canInstallSnapshotRequest;
+				CanInstallSnapshotResponse canInstallSnapshotResponse;
+				TimeoutNowRequest timeoutNowRequest;
+				Action action;
 
-			if (TryCastMessage(context.Message, out requestVoteRequest))
-			{
-				var reply = Handle(requestVoteRequest);
-				context.Reply(reply);
-			}
-			else if (TryCastMessage(context.Message, out appendEntriesResponse))
-			{
-				Handle(appendEntriesResponse);
-			}
-			else if (TryCastMessage(context.Message, out appendEntriesRequest))
-			{
-				var reply = Handle(appendEntriesRequest);
-				context.Reply(reply);
-			}
-			else if (TryCastMessage(context.Message, out requestVoteResponse))
-			{
-				Handle(requestVoteResponse);
-			}
-			else if (TryCastMessage(context.Message, out canInstallSnapshotRequest))
-			{
-				var reply = Handle(canInstallSnapshotRequest);
-				context.Reply(reply);
-			}
-			else if (TryCastMessage(context.Message, out installSnapshotRequest))
-			{
-				var reply = Handle(context, installSnapshotRequest, context.Stream);
-				if (reply != null)
+				if (TryCastMessage(context.Message, out requestVoteRequest))
+				{
+					var reply = Handle(requestVoteRequest);
 					context.Reply(reply);
-			}
-			else if (TryCastMessage(context.Message, out canInstallSnapshotResponse))
-			{
-				Handle(canInstallSnapshotResponse);
-			}
-			else if (TryCastMessage(context.Message, out timeoutNowRequest))
-			{
-				Handle(timeoutNowRequest);
-			}
-			else if (TryCastMessage(context.Message, out action))
-			{
-				action();
-			}
+				}
+				else if (TryCastMessage(context.Message, out appendEntriesResponse))
+				{
+					Handle(appendEntriesResponse);
+				}
+				else if (TryCastMessage(context.Message, out appendEntriesRequest))
+				{
+					var reply = Handle(appendEntriesRequest);
+					context.Reply(reply);
+				}
+				else if (TryCastMessage(context.Message, out requestVoteResponse))
+				{
+					Handle(requestVoteResponse);
+				}
+				else if (TryCastMessage(context.Message, out canInstallSnapshotRequest))
+				{
+					var reply = Handle(canInstallSnapshotRequest);
+					context.Reply(reply);
+				}
+				else if (TryCastMessage(context.Message, out installSnapshotRequest))
+				{
+					var reply = Handle(context, installSnapshotRequest, context.Stream);
+					if (reply != null)
+						context.Reply(reply);
+					else
+						asyncMessageHandling = true;
+				}
+				else if (TryCastMessage(context.Message, out canInstallSnapshotResponse))
+				{
+					Handle(canInstallSnapshotResponse);
+				}
+				else if (TryCastMessage(context.Message, out timeoutNowRequest))
+				{
+					Handle(timeoutNowRequest);
+				}
+				else if (TryCastMessage(context.Message, out action))
+				{
+					action();
+				}
 
-			Engine.OnEventsProcessed();
+				Engine.OnEventsProcessed();
+			}
+			catch (Exception e)
+			{
+				context.Error(e);
+			}
+			finally
+			{
+				context.Done();
+			}
 		}
 
 		public void Handle(TimeoutNowRequest req)

@@ -14,5 +14,8 @@ namespace Rhino.Raft.Messages
 		public abstract void Reply(RequestVoteResponse resp);
 
 		public abstract void ExecuteInEventLoop(Action action);
+
+	    public abstract void Done();
+	    public abstract void Error(Exception exception);
     }
 }

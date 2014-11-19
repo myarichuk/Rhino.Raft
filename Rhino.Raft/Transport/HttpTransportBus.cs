@@ -12,6 +12,7 @@ using System.Net.Http;
 using System.Net.Http.Formatting;
 using System.Threading;
 using System.Threading.Tasks;
+using NLog;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 
@@ -19,10 +20,22 @@ namespace Rhino.Raft.Transport
 {
 	public class HttpTransportBus : IDisposable
 	{
+		private readonly string _name;
 		private readonly BlockingCollection<HttpTransportMessageContext> _queue = new BlockingCollection<HttpTransportMessageContext>();
+
+		public HttpTransportBus(string name)
+		{
+			_name = name;
+			Log = LogManager.GetLogger(GetType().Name +"."+ name);
+		}
+
+		public Logger Log { get; private set; }
 
 		public bool TryReceiveMessage(int timeout, CancellationToken cancellationToken, out MessageContext messageContext)
 		{
+			if (timeout < 0)
+				timeout = 0;
+
 			HttpTransportMessageContext item;
 			if (_queue.TryTake(out item, timeout, cancellationToken) == false)
 			{
@@ -37,10 +50,11 @@ namespace Rhino.Raft.Transport
 		{
 			private readonly TaskCompletionSource<HttpResponseMessage> _tcs;
 			private readonly HttpTransportBus _parent;
-
+			private bool sent;
 			public HttpTransportMessageContext(TaskCompletionSource<HttpResponseMessage> tcs, HttpTransportBus parent)
 			{
 				_tcs = tcs;
+				sent = tcs == null;
 				_parent = parent;
 			}
 
@@ -49,6 +63,7 @@ namespace Rhino.Raft.Transport
 				if (_tcs == null)
 					return;
 
+
 				var httpResponseMessage = new HttpResponseMessage(
 					success ? HttpStatusCode.OK : HttpStatusCode.NotAcceptable
 					);
@@ -56,6 +71,7 @@ namespace Rhino.Raft.Transport
 				{
 					httpResponseMessage.Content = new ObjectContent(msg.GetType(), msg, new JsonMediaTypeFormatter());
 				}
+				sent = true;
 				_tcs.TrySetResult(httpResponseMessage);
 			}
 
@@ -82,6 +98,20 @@ namespace Rhino.Raft.Transport
 			public override void ExecuteInEventLoop(Action action)
 			{
 				_parent.Publish(action, null);
+			}
+
+			public override void Done()
+			{
+				if (sent)
+					return;// nothing to do
+
+				var httpResponseMessage = new HttpResponseMessage(HttpStatusCode.OK);
+				_tcs.TrySetResult(httpResponseMessage);
+			}
+
+			public override void Error(Exception exception)
+			{
+				_tcs.TrySetException(exception);
 			}
 		}
 

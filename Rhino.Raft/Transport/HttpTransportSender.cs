@@ -23,14 +23,22 @@ namespace Rhino.Raft.Transport
 	/// </summary>
 	public class HttpTransportSender  : IDisposable
 	{
+		private readonly HttpTransportBus _bus;
+
 		private readonly ConcurrentDictionary<string, NodeConnectionInfo> _nodeConnectionInfos =
 			new ConcurrentDictionary<string, NodeConnectionInfo>();
 
 		private readonly ConcurrentDictionary<string, ConcurrentQueue<HttpClient>> _httpClientsCache = new ConcurrentDictionary<string, ConcurrentQueue<HttpClient>>();
 		private readonly Logger _log;
-		public HttpTransportSender(string name)
+		public HttpTransportSender(string name, HttpTransportBus bus)
 		{
+			_bus = bus;
 			_log = LogManager.GetLogger(GetType().Name + "." + name);
+		}
+
+		public void Register(NodeConnectionInfo connectionInfo)
+		{
+			_nodeConnectionInfos.AddOrUpdate(connectionInfo.Name, connectionInfo, (s, info) => connectionInfo);
 		}
 
 		public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
@@ -45,8 +53,8 @@ namespace Rhino.Raft.Transport
 							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.LeaderId, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					var canInstallSnapshotResponse = JsonConvert.DeserializeObject<CanInstallSnapshotResponse>(reply);
-					SendToSelf(canInstallSnapshotResponse);
+					var installSnapshotResponse = JsonConvert.DeserializeObject<CanInstallSnapshotResponse>(reply);
+					SendToSelf(installSnapshotResponse);
 				});
 			}
 		}
@@ -85,8 +93,8 @@ namespace Rhino.Raft.Transport
 						req.Term, req.LeaderCommit, req.LeaderId, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					var canInstallSnapshotResponse = JsonConvert.DeserializeObject<AppendEntriesResponse>(reply);
-					SendToSelf(canInstallSnapshotResponse);
+					var appendEntriesResponse = JsonConvert.DeserializeObject<AppendEntriesResponse>(reply);
+					SendToSelf(appendEntriesResponse);
 				});
 			}
 		}
@@ -179,15 +187,15 @@ namespace Rhino.Raft.Transport
 						req.Term, req.LastLogIndex, req.LastLogTerm, req.CandidateId, req.TrialOnly, req.ForcedElection, req.From);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					var canInstallSnapshotResponse = JsonConvert.DeserializeObject<RequestVoteResponse>(reply);
-					SendToSelf(canInstallSnapshotResponse);
+					var requestVoteResponse = JsonConvert.DeserializeObject<RequestVoteResponse>(reply);
+					SendToSelf(requestVoteResponse);
 				});
 			}
 		}
 
 		private void SendToSelf(object o)
 		{
-			throw new NotImplementedException();
+			_bus.Publish(o, source: null);
 		}
 
 		public void Send(string dest, TimeoutNowRequest req)
