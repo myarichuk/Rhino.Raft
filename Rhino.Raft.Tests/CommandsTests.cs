@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -44,7 +45,7 @@ namespace Rhino.Raft.Tests
 
 		//this test is a show-case of how to check for command commit time-out
 		[Fact]
-		public void While_command_not_committed_CompletionTaskSource_is_not_notified()
+		public void Command_not_committed_after_timeout_CompletionTaskSource_is_notified()
 		{
 			const int CommandCount = 5;
 			var leader = CreateNetworkAndGetLeader(3);
@@ -75,13 +76,11 @@ namespace Rhino.Raft.Tests
 
 			var lastCommand = commands.Last();
 			var commandCompletionTask = lastCommand.Completion.Task;
-			var timeout = Task.Delay(leader.Options.MessageTimeout);
 
 			leader.AppendCommand(lastCommand);
 
-		    var whenAnyTask = Task.WhenAny(commandCompletionTask, timeout);
-			whenAnyTask.Wait();
-			Assert.Equal(timeout, whenAnyTask.Result);
+			var aggregateException = Assert.Throws<AggregateException>(() => commandCompletionTask.Wait(leader.Options.MessageTimeout * 2));
+			Assert.IsType<TimeoutException>(aggregateException.InnerException);
 		}
 
 		[Theory]
