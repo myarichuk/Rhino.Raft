@@ -224,7 +224,7 @@ namespace Rhino.Raft.Tests
 		{
 			var leaderIndex = new Random().Next(0, nodeCount);
 			if (messageTimeout == -1)
-				messageTimeout = Debugger.IsAttached ? 60*1000 : 1000;
+				messageTimeout = Debugger.IsAttached ? 3*1000 : 500;
 			var nodeNames = new string[nodeCount];
 			for (int i = 0; i < nodeCount; i++)
 			{

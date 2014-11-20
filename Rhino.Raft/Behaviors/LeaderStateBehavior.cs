@@ -8,7 +8,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,7 +33,7 @@ namespace Rhino.Raft.Behaviors
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
-			Timeout = engine.Options.MessageTimeout;
+			Timeout = engine.Options.MessageTimeout/2;
 			engine.TopologyChanged += OnTopologyChanged;
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
@@ -82,7 +81,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				if (_log.IsDebugEnabled)
 				{
-					_log.Debug("Starting sending Leader heartbeats to: {0}", Engine.CurrentTopology);
+					_log.Debug("Sending Leader heartbeats to: {0}", Engine.CurrentTopology);
 				}
 				SendEntriesToAllPeers();
 
@@ -207,12 +206,53 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.Leader; }
 		}
 
+		private DateTime _lastCommitTime = DateTime.MinValue;
+		private DateTime _lastCommitTimeOnPreviousTimeout = DateTime.MinValue;
 		public override void HandleTimeout()
 		{
-			// we set this value purely because we want to wait
-			// for messages from the network. And we use the last heartbeat time 
-			// to change the timeout we have
-			LastHeartbeatTime = DateTime.UtcNow; 
+			if (Engine.CurrentTopology.QuoromSize == 1)
+			{
+				// we can't step down, nothing to check
+				LastHeartbeatTime = DateTime.UtcNow;
+				return;
+			}
+
+			// we got a timeout, but during normal operations, we should get a timeout only if
+			// there are no new commands  to distribute (we raise the heart beat whenever we commit)
+			// or if we can't talk to a majority of the cluster, in which case we need to step 
+			// down.
+
+			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
+			var lastLogEntry = Engine.PersistentState.LastLogEntry();
+
+			if (maxIndexOnQuorom == lastLogEntry.Index)
+			{
+				// we are okay, the quorum agrees on our latest commit, so we can continue as the leader
+				LastHeartbeatTime = DateTime.UtcNow;
+				_lastCommitTime = DateTime.UtcNow;
+				return;
+			}
+
+			// in this case, we have events to commit, but we weren't able to commit them within the election
+			// timeout. It is possible that a command came just before we got the timeout, so only if there hasn't
+			// been any commits in _two_ timeouts, will we actually run step down.
+
+			if (_lastCommitTimeOnPreviousTimeout != _lastCommitTime)
+			{
+				// there has been a commit since we got the last timeout, so we are probably good
+				// we'll do this check again next time we get a timeout, and if we can't commit, we'll step down
+				_lastCommitTimeOnPreviousTimeout = _lastCommitTime;
+				LastHeartbeatTime = DateTime.UtcNow;
+				return;
+			}
+
+			_log.Warn("Couldn't commit an entry on the cluster (current index: {1}, cluster quorom: {2}) after {0}, stepping down as the leader.", 
+				(DateTime.UtcNow - _lastCommitTime),
+				lastLogEntry.Index,
+				maxIndexOnQuorom);
+
+			Engine.SetState(RaftEngineState.FollowerAfterStepDown);
+
 		}
 
 		public override void Handle(InstallSnapshotResponse resp)
@@ -319,6 +359,12 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
+			// we update the heartbeat time whenever we get a successful quorum, because
+			// that means that we are good to run without any issues. Further handling is done 
+			// in the HandleTimeout, to handle a situation where the leader can't talk to the clients
+			LastHeartbeatTime = DateTime.UtcNow;
+			_lastCommitTime = DateTime.UtcNow;
+			
 			_log.Debug(
 				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnCurrentQuorom,
 				Engine.CommitIndex);
@@ -378,14 +424,17 @@ namespace Rhino.Raft.Behaviors
 			_matchIndexes[Engine.Name] = index;
 			_nextIndexes[Engine.Name] = index + 1;
 
+
 			if (Engine.CurrentTopology.QuoromSize == 1)
 			{
+				_lastCommitTime = DateTime.UtcNow;
 				CommitEntries(null, index, index);
 				if (command.Completion != null)
 					command.Completion.SetResult(null);
 
 				return;
 			}
+
 
 			if (command.Completion != null)
 				_pendingCommands.Enqueue(command);
@@ -395,9 +444,10 @@ namespace Rhino.Raft.Behaviors
 		{
 			Engine.TopologyChanged -= OnTopologyChanged;
 			_disposedCancellationTokenSource.Cancel();
+			var sp = Stopwatch.StartNew();
 			try
 			{
-				_heartbeatTask.Wait(Timeout * 2);
+				_heartbeatTask.Wait(Timeout*2);
 			}
 			catch (OperationCanceledException)
 			{
@@ -407,6 +457,22 @@ namespace Rhino.Raft.Behaviors
 			{
 				if (e.InnerException is OperationCanceledException == false)
 					throw;
+			}
+			finally
+			{
+				_log.Info("Disposing leader behavior took {0:#,#;;0} ms", sp.ElapsedMilliseconds);
+				Command result;
+				TimeoutException timeoutException = null;
+				while (_pendingCommands.TryDequeue(out result))
+				{
+					if (result.Completion != null)
+					{
+						timeoutException = timeoutException ??
+						                   new TimeoutException(
+							                   "Couldn't commit this command after the timeout has expired, aborting (note that this still might get commited)");
+						result.Completion.TrySetException(timeoutException);
+					}
+				}
 			}
 		}
 

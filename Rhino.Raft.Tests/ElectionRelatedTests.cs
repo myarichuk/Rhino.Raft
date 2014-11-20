@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -105,18 +106,25 @@ namespace Rhino.Raft.Tests
 			commands.Take(3).ToList().ForEach(leader.AppendCommand);
 			Assert.True(commitsAppliedEvent.Wait(5000)); //with in-memory transport it shouldn't take more than 5 sec
 
+			var steppedDown = WaitForStateChange(leader, RaftEngineState.FollowerAfterStepDown);
+			var candidancies = Nodes.Where(x=>x!=leader).Select(node => WaitForStateChange(node, RaftEngineState.Candidate)).ToArray();
+
 			WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
 			DisconnectNode(leader.Name);
 
 			commands.Skip(3).ToList().ForEach(leader.AppendCommand);
 			var formerLeader = leader;
-			Thread.Sleep(Nodes.Max(x => x.Options.MessageTimeout) + 5); // cause election while current leader is disconnected
 
+			Assert.True(steppedDown.Wait(leader.Options.MessageTimeout * 2));
+			Assert.True(WaitHandle.WaitAny(candidancies.Select(x => x.WaitHandle).ToArray(), leader.Options.MessageTimeout*2) != WaitHandle.WaitTimeout);
 			WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
 			ReconnectNode(leader.Name);
 
-			//other leader was selected
-			Assert.True(Nodes.First().WaitForLeader());
+			foreach (var raftEngine in Nodes)
+			{
+				Assert.True(raftEngine.WaitForLeader());
+			}
+			
 			leader = Nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 

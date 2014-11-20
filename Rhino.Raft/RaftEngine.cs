@@ -239,44 +239,41 @@ namespace Rhino.Raft
 			if (State == RaftEngineState.Leader)
 				_leaderSelectedEvent.Reset();
 
-			_log.Debug("{0} ==> {1}", State, state);
-
-			var oldState = StateBehavior;
-			using (oldState)
+			var oldState = State;
+			if (StateBehavior != null)
+				StateBehavior.Dispose();
+			switch (state)
 			{
-				switch (state)
-				{
-					case RaftEngineState.Follower:
-					case RaftEngineState.FollowerAfterStepDown:
-						StateBehavior = new FollowerStateBehavior(this, state == RaftEngineState.FollowerAfterStepDown);
-						break;
-					case RaftEngineState.CandidateByRequest:
-					case RaftEngineState.Candidate:
-						StateBehavior = new CandidateStateBehavior(this, state == RaftEngineState.CandidateByRequest);
-						break;
-					case RaftEngineState.SnapshotInstallation:
-						StateBehavior = new SnapshotInstallationStateBehavior(this);
-						break;
-					case RaftEngineState.Leader:
-						StateBehavior = new LeaderStateBehavior(this);
-						CurrentLeader = Name;
-						OnElectedAsLeader();
-						break;
-					case RaftEngineState.SteppingDown:
-						StateBehavior = new SteppingDownStateBehavior(this);
-						CurrentLeader = Name;
-						break;
-					case RaftEngineState.None:
-						_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
-						break;
-					default:
-						throw new ArgumentOutOfRangeException(state.ToString());
-				}
-
-				Debug.Assert(StateBehavior != null, "StateBehavior != null");
-
-				OnStateChanged(state);
+				case RaftEngineState.Follower:
+				case RaftEngineState.FollowerAfterStepDown:
+					StateBehavior = new FollowerStateBehavior(this, state == RaftEngineState.FollowerAfterStepDown);
+					break;
+				case RaftEngineState.CandidateByRequest:
+				case RaftEngineState.Candidate:
+					StateBehavior = new CandidateStateBehavior(this, state == RaftEngineState.CandidateByRequest);
+					break;
+				case RaftEngineState.SnapshotInstallation:
+					StateBehavior = new SnapshotInstallationStateBehavior(this);
+					break;
+				case RaftEngineState.Leader:
+					StateBehavior = new LeaderStateBehavior(this);
+					CurrentLeader = Name;
+					OnElectedAsLeader();
+					break;
+				case RaftEngineState.SteppingDown:
+					StateBehavior = new SteppingDownStateBehavior(this);
+					CurrentLeader = Name;
+					break;
+				case RaftEngineState.None:
+					_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
+					break;
+				default:
+					throw new ArgumentOutOfRangeException(state.ToString());
 			}
+
+			Debug.Assert(StateBehavior != null, "StateBehavior != null");
+			OnStateChanged(state);
+			_log.Debug("{0} ==> {1}", oldState, state);
 		}
 
 		public Task StepDownAsync()
@@ -758,7 +755,7 @@ namespace Rhino.Raft
 
 		public override string ToString()
 		{
-			return string.Format("Name: {0}", Name);
+			return string.Format("Name: {0} = {1}", Name, State);
 		}
 
 		internal void TopologyChangeStarting(TopologyChangeCommand tcc)

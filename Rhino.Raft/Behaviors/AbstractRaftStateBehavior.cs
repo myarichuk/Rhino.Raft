@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using NLog;
@@ -15,6 +16,7 @@ namespace Rhino.Raft.Behaviors
 		public abstract RaftEngineState State { get; }
 
 		public DateTime LastHeartbeatTime { get; set; }
+		public DateTime LastMessageTime { get; set; }
 
 		public void HandleMessage(MessageContext context)
 		{
@@ -152,15 +154,16 @@ namespace Rhino.Raft.Behaviors
 
 		public RequestVoteResponse Handle(RequestVoteRequest req)
 		{
-			//disregard RequestVoteRequest if this node receives regular heartbeats and the leader is known
+			//disregard RequestVoteRequest if this node receives regular messages and the leader is known
 			// Raft paper section 6 (cluster membership changes), this apply only if we are a follower, because
 			// candidate and leaders both generate their own heartbeat messages
-			var timeSinceLastHeartbeat = (int)(DateTime.UtcNow - LastHeartbeatTime).TotalMilliseconds;
+			var timeSinceLastHeartbeat = (DateTime.UtcNow - LastMessageTime).TotalMilliseconds;
 
+			var halfTimeout = (long)(Timeout / 2);
 			if (State == RaftEngineState.Follower && req.ForcedElection == false &&
-				(timeSinceLastHeartbeat < (Timeout / 2)) && Engine.CurrentLeader != null)
+				(timeSinceLastHeartbeat < halfTimeout) && Engine.CurrentLeader != null)
 			{
-				_log.Info("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting");
+				_log.Info("Received RequestVoteRequest from a node within election timeout while leader exists, rejecting " );
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,
@@ -242,13 +245,15 @@ namespace Rhino.Raft.Behaviors
 					TrialOnly = req.TrialOnly
 				};
 			}
-			// we said we would be voting for this guy, so we can give it a full election timeout, 
-			// by treating this as a heart beat. This means we won't be timing out ourselves and trying
-			// to become the leader
-			LastHeartbeatTime = DateTime.UtcNow;
-
+			
 			if (req.TrialOnly == false)
 			{
+				// we said we would be voting for this guy, so we can give it a full election timeout, 
+				// by treating this as a heart beat. This means we won't be timing out ourselves and trying
+				// to become the leader
+				LastHeartbeatTime = DateTime.UtcNow;
+				LastMessageTime = DateTime.UtcNow;
+
 				_log.Info("Recording vote for candidate = {0}", req.From);
 				Engine.PersistentState.RecordVoteFor(req.From, req.Term);
 			}
@@ -364,6 +369,7 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			LastHeartbeatTime = DateTime.UtcNow;
+			LastMessageTime = DateTime.UtcNow;
 			if (req.Entries.Length > 0)
 			{
 				_log.Debug("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
