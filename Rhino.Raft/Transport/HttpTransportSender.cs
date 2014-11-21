@@ -250,7 +250,20 @@ namespace Rhino.Raft.Transport
 			_httpClientsCache.Clear();
 			var array = _runningOps.Keys.ToArray();
 			_runningOps.Clear();
-			Task.WaitAll(array);
+			try
+			{
+				Task.WaitAll(array);
+			}
+			catch (OperationCanceledException e)
+			{
+				// nothing to do here
+			}
+			catch (AggregateException e)
+			{
+				if (e.InnerException is OperationCanceledException == false)
+					throw;
+				// nothing to do here
+			}
 		}
 
 

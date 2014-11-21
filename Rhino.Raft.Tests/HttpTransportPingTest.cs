@@ -24,8 +24,8 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly IDisposable _server;
 		private readonly RaftEngine _raftEngine;
-		private readonly int _timeout = Debugger.IsAttached ? 50*1000 : 2500;
-		private HttpTransport _node1Transport;
+		private readonly int _timeout = Debugger.IsAttached ? 50*1000 : 10 *1000;
+		private readonly HttpTransport _node1Transport;
 
 		public HttpTransportPingTest()
 		{
