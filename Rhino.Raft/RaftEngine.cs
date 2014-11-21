@@ -244,9 +244,6 @@ namespace Rhino.Raft
 					StateBehavior = new SteppingDownStateBehavior(this);
 					CurrentLeader = Name;
 					break;
-				case RaftEngineState.None:
-					_eventLoopCancellationTokenSource.Cancel(); //stop event loop						
-					break;
 				default:
 					throw new ArgumentOutOfRangeException(state.ToString());
 			}
@@ -464,10 +461,10 @@ namespace Rhino.Raft
 			var shouldRemainInTopology = tcc.Requested.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
-				_log.Debug("This node is being removed from topology, setting its state to None (stopping event loop)");
+				_log.Debug("This node is being removed from topology, setting its state to follower, it will be idle until a leader will join it to the cluster again");
 				CurrentLeader = null;
 
-				SetState(RaftEngineState.None);
+				SetState(RaftEngineState.Follower);
 				return;
 			}
 
