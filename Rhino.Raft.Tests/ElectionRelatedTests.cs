@@ -220,7 +220,7 @@ namespace Rhino.Raft.Tests
 			
 			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
 
-			PersistentState.ClusterBootstrap(nodeOptions, new Topology(new[]{"u2", "pj"}, new string[0], new string[0]));
+			PersistentState.ClusterBootstrap(nodeOptions, new Topology(new[]{"real", "u2", "pj"}, new string[0], new string[0]));
 			storageEnvironmentOptions.OwnsPagers = true;
 
 			using (var node = new RaftEngine(nodeOptions))

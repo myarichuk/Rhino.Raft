@@ -39,7 +39,7 @@ namespace Rhino.Raft.Tests
 
 			inMemoryTransport.ForceTimeout();// force it to win
 
-			topologyChnaged.Wait();
+			Assert.True(topologyChnaged.Wait(3000));
 
 			Assert.True(nonLeaders.Any(x=>x.State==RaftEngineState.Leader));
 			foreach (var raftEngine in nonLeaders)

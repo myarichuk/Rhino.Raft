@@ -31,7 +31,7 @@ namespace Rhino.Raft.Behaviors
 	    {
 			LastHeartbeatTime = DateTime.UtcNow;
 
-		    if (Engine.CurrentTopology.IsVoter(Engine.Name))
+		    if (Engine.CurrentTopology.IsVoter(Engine.Name) == false)
 		    {
 			    _log.Info("Not a leader material, can't become a candidate. (This will change the first time we'll get a append entries request).");
 			    return;

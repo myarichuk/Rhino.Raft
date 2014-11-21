@@ -26,7 +26,7 @@ namespace Rhino.Raft.Storage
 		private readonly HashSet<string> _nonVotingNodes;
 		private readonly HashSet<string> _promotableNodes;
 
-		private readonly HashSet<string> _allNodes; 
+		private readonly HashSet<string> _allNodes;
 
 		public int QuorumSize
 		{
@@ -36,6 +36,11 @@ namespace Rhino.Raft.Storage
 		public IEnumerable<string> AllNodes
 		{
 			get { return _allNodes; }
+		}
+
+		public bool HasVoters
+		{
+			get { return _allVotingNodes.Count > 0; }
 		}
 
 		public Topology()

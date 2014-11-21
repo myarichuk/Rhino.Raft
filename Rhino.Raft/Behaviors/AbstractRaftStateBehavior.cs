@@ -175,9 +175,12 @@ namespace Rhino.Raft.Behaviors
 				};
 			}
 
-			if (Engine.CurrentTopology.IsVoter(req.From) == false)
+			if (Engine.CurrentTopology.IsVoter(req.From) == false 
+				// if it isn't in my cluster, but we don't have any voters, than we are probably a new node, so we'll accept this 
+				// and allow it to become our leader
+				&& Engine.CurrentTopology.HasVoters) 
 			{
-				_log.Info("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.From);
+				_log.Info("Received RequestVoteRequest from a node that isn't a voting member in the cluster: {0}, rejecting", req.From);
 				return new RequestVoteResponse
 				{
 					VoteGranted = false,

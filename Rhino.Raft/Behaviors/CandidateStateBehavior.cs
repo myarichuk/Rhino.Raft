@@ -115,7 +115,7 @@ namespace Rhino.Raft.Behaviors
 
 			if(Engine.CurrentTopology.IsVoter(resp.From) == false) //precaution
 			{
-				_log.Info("Vote acepted from {0}, which isn't in our topology", resp.From);
+				_log.Info("Vote accepted from {0}, which isn't a voting node in our cluster", resp.From);
 				return;
 			}
 
