@@ -6,50 +6,92 @@ namespace Rhino.Raft.Storage
 {
 	public class Topology
 	{
-		public HashSet<string> AllVotingNodes { get; private set; }
-		private string topologyString = string.Empty;
-		private int topologyStringCount = -1;
-		public int QuoromSize
+		public IEnumerable<string> AllVotingNodes
 		{
-			get { return (AllVotingNodes.Count / 2) + 1; }
+			get { return _allVotingNodes; }
 		}
 
-		public Topology(IEnumerable<string> allVotingPeers)
+		public IEnumerable<string> NonVotingNodes
 		{
-			AllVotingNodes = (allVotingPeers == null) ? 
-				new HashSet<string>(StringComparer.InvariantCultureIgnoreCase) : 
-				new HashSet<string>(allVotingPeers, StringComparer.InvariantCultureIgnoreCase);
+			get { return _nonVotingNodes; }
 		}
 
-		public Topology Clone()
+		public IEnumerable<string> PromotableNodes
 		{
-			return new Topology(AllVotingNodes);
+			get { return _promotableNodes; }
 		}
 
-		public Topology CloneAndRemove(params string[] additionalNodes)
+		private readonly string _topologyString;
+		private readonly HashSet<string> _allVotingNodes;
+		private readonly HashSet<string> _nonVotingNodes;
+		private readonly HashSet<string> _promotableNodes;
+
+		private readonly HashSet<string> _allNodes; 
+
+		public int QuorumSize
 		{
-			return new Topology(AllVotingNodes.Except(additionalNodes, StringComparer.InvariantCultureIgnoreCase));
+			get { return (_allVotingNodes.Count / 2) + 1; }
 		}
 
-		public Topology CloneAndAdd(params string[] additionalNodes)
+		public IEnumerable<string> AllNodes
 		{
-			return new Topology(AllVotingNodes.Union(additionalNodes, StringComparer.InvariantCultureIgnoreCase));
+			get { return _allNodes; }
 		}
+
+		public Topology()
+		{
+			_allVotingNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			_nonVotingNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			_promotableNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			_allNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			_topologyString = "<empty topology>";
+		}
+
+		public Topology(IEnumerable<string> allVotingNodes, IEnumerable<string> nonVotingNodes, IEnumerable<string> promotableNodes)
+			: this()
+		{
+			_allVotingNodes.UnionWith(allVotingNodes);
+			_nonVotingNodes.UnionWith(nonVotingNodes);
+			_promotableNodes.UnionWith(promotableNodes);
+
+			_allNodes.UnionWith(_allVotingNodes);
+			_allNodes.UnionWith(_nonVotingNodes);
+			_allNodes.UnionWith(_promotableNodes);
+
+			_topologyString = "";
+			if (_allVotingNodes.Count > 0)
+				_topologyString += "Voting: [" + string.Join(", ", _allVotingNodes) + "] ";
+			if (_nonVotingNodes.Count > 0)
+				_topologyString += "Non voting: [" + string.Join(", ", _nonVotingNodes) + "] ";
+			if (_promotableNodes.Count > 0)
+				_topologyString += "Promotables: [" + string.Join(", ", _promotableNodes) + "] ";
+		}
+
 
 		public bool HasQuorum(HashSet<string> votes)
 		{
 			var sum = AllVotingNodes.Count(votes.Contains);
-			return sum >= QuoromSize;
+			return sum >= QuorumSize;
 		}
 
 		public override string ToString()
 		{
-			if (topologyStringCount != AllVotingNodes.Count)
-			{
-				topologyString = string.Join(", ", AllVotingNodes);
-				topologyStringCount = AllVotingNodes.Count;
-			}
-			return topologyString;
+			return _topologyString;
+		}
+
+		public bool Contains(string node)
+		{
+			return _allVotingNodes.Contains(node) || _nonVotingNodes.Contains(node) || _promotableNodes.Contains(node);
+		}
+
+		public bool IsVoter(string node)
+		{
+			return _allVotingNodes.Contains(node);
+		}
+
+		public bool IsPromotable(string node)
+		{
+			return _promotableNodes.Contains(node);
 		}
 	}
 }

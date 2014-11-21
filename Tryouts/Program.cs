@@ -23,7 +23,7 @@ namespace Tryouts
 			var raftEngineOptions = new RaftEngineOptions("me", StorageEnvironmentOptions.CreateMemoryOnly(),httpTransport, new DictionaryStateMachine())
 			{
 				MessageTimeout = 60*1000,
-				AllVotingNodes = new[] { "me", "oren"}
+				//AllVotingNodes = new[] { "me", "oren"}
 			};
 			var raftEngine = new RaftEngine(raftEngineOptions);
 

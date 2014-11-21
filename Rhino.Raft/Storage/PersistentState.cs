@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
 using Rhino.Raft.Commands;
@@ -40,8 +41,6 @@ namespace Rhino.Raft.Storage
 		public long VotedForTerm { get; private set; }
 		public long CurrentTerm { get; private set; }
 
-		public bool IsLeaderPotential { get; private set; }
-
 		private readonly StorageEnvironment _env;
 
 		private readonly string _name;
@@ -64,9 +63,9 @@ namespace Rhino.Raft.Storage
 		{
 			var metadata = tx.ReadTree(MetadataTreeName);
 
-			var allVotingPeers = metadata.Read<string[]>("current-topology") ?? new string[0];
-			metadata.Add("previous-topology", allVotingPeers);
-			metadata.Add("current-topology", currentTopology.AllVotingNodes);
+			var current = metadata.Read("current-topology");
+			metadata.Add("previous-topology", current == null ? "{}" : current.Reader.ToStringValue());
+			metadata.Add("current-topology", JsonConvert.SerializeObject(currentTopology));
 			metadata.Add("current-topology-index", EndianBitConverter.Little.GetBytes(index));
 		}
 
@@ -75,8 +74,9 @@ namespace Rhino.Raft.Storage
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
 			{
 				var metadata = tx.ReadTree(MetadataTreeName);
-				var allVotingPeers = metadata.Read<string[]>("current-topology") ?? new string[0];
-				return new Topology(allVotingPeers);
+				var current = metadata.Read("current-topology");
+				var currentTopology = JsonConvert.DeserializeObject<Topology>(current == null ? "{}" : current.Reader.ToStringValue());
+				return currentTopology;
 			}
 		}
 
@@ -90,28 +90,15 @@ namespace Rhino.Raft.Storage
 			InitializeDatabase();
 		}
 
-		public static void ClusterBootstrap(StorageEnvironmentOptions options)
+		public static void ClusterBootstrap(RaftEngineOptions options, Topology topology = null)
 		{
-			using (var ps = new PersistentState("ClusterBootstrap",options, CancellationToken.None))
+			using (var ps = new PersistentState("ClusterBootstrap",options.StorageOptions, CancellationToken.None))
 			{
-				ps.MarkAsLeaderPotential();
+				topology = topology ?? new Topology(new[] {options.Name}, Enumerable.Empty<string>(), Enumerable.Empty<string>());
+				ps.SetCurrentTopology(topology, 0);
 			}
 		}
 
-		public void MarkAsLeaderPotential()
-		{
-			if (IsLeaderPotential)
-				return;
-
-			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
-			{
-				var metadata = tx.ReadTree(MetadataTreeName);
-				metadata.Add("is-leader-potential", EndianBitConverter.Little.GetBytes(1));
-				tx.Commit();
-			}
-			_log.Info("Leadership potential reached, we can now become leaders");
-			IsLeaderPotential = true;
-		}
 
 		private void InitializeDatabase()
 		{
@@ -142,8 +129,6 @@ namespace Rhino.Raft.Storage
 					int used;
 					var bytes = metadata.Read("db-id").Reader.ReadBytes(16, out used).Take(16).ToArray();
 					DbId = new Guid(bytes);
-
-					IsLeaderPotential = metadata.Read("is-leader-potential").Reader.ReadLittleEndianInt32() == 1;
 
 					CurrentTerm = metadata.Read("current-term").Reader.ReadLittleEndianInt64();
 					var votedFor = metadata.Read("voted-for");
@@ -442,7 +427,8 @@ namespace Rhino.Raft.Storage
 				if (changed > removeAllAfter)
 				{
 					// need to reset the topology
-					var prevTopology = metadata.Read<string[]>("previous-topology") ?? new string[0];
+					var current = metadata.Read("current-topology");
+					var prevTopology = JsonConvert.DeserializeObject<Topology>(current == null ? "{}" : current.Reader.ToStringValue());
 					metadata.Add("current-topology", prevTopology);
 					metadata.Add("current-topology-index", EndianBitConverter.Little.GetBytes(0L));
 					engine.RevertTopologyTo(prevTopology);

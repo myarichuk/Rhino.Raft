@@ -41,7 +41,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			base.Handle(resp);
 
-			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
+			var maxIndexOnQuorom = GetMaxIndexOnQuorum();
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 

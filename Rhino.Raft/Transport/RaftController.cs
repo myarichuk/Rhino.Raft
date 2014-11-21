@@ -11,7 +11,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Controllers;
+using Newtonsoft.Json;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 namespace Rhino.Raft.Transport
 {
@@ -35,8 +37,9 @@ namespace Rhino.Raft.Transport
 
 		[HttpPost]
 		[Route("raft/installSnapshot")]
-		public async Task<HttpResponseMessage> InstallSnapshot([FromUri]InstallSnapshotRequest request)
+		public async Task<HttpResponseMessage> InstallSnapshot([FromUri]InstallSnapshotRequest request, [FromUri]string topology)
 		{
+			request.Topology = JsonConvert.DeserializeObject<Topology>(topology);
 			var stream = await Request.Content.ReadAsStreamAsync();
 			var taskCompletionSource = new TaskCompletionSource<HttpResponseMessage>();
 			_bus.Publish(request, taskCompletionSource, stream);

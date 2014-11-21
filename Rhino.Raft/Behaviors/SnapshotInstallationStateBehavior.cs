@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Threading.Tasks;
+using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 
 namespace Rhino.Raft.Behaviors
@@ -71,6 +72,10 @@ namespace Rhino.Raft.Behaviors
 				{
 					Engine.StateMachine.ApplySnapshot(req.LastIncludedTerm, req.LastIncludedIndex, stream);
 					Engine.PersistentState.MarkSnapshotFor(req.LastIncludedIndex, req.LastIncludedTerm, int.MaxValue);
+					Engine.PersistentState.SetCurrentTopology(req.Topology, req.LastIncludedIndex);
+					var tcc = new TopologyChangeCommand { Requested = req.Topology };
+					Engine.StartTopologyChange(tcc);
+					Engine.CommitTopologyChange(tcc);
 				}
 				catch (Exception e)
 				{

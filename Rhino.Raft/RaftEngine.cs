@@ -36,19 +36,6 @@ namespace Rhino.Raft
 
 		public ITransport Transport { get { return _raftEngineOptions.Transport; } }
 
-		public IEnumerable<string> AllVotingNodes
-		{
-			get
-			{
-				return _currentTopology.AllVotingNodes;
-			}
-		}
-
-		public bool ContainedInAllVotingNodes(string node)
-		{
-			return _currentTopology.AllVotingNodes.Contains(node);
-		}
-
 		public string Name { get; set; }
 		public PersistentState PersistentState { get; set; }
 
@@ -158,18 +145,11 @@ namespace Rhino.Raft
 
 			_currentTopology = PersistentState.GetCurrentTopology();
 
-			if (raftEngineOptions.ForceNewTopology ||
-				(_currentTopology.AllVotingNodes.Count == 0))
-			{
-				_currentTopology = new Topology(raftEngineOptions.AllVotingNodes ?? new[] { Name });
-				PersistentState.SetCurrentTopology(_currentTopology, 0);
-			}
-
 			//warm up to make sure that the serializer don't take too long and force election timeout
 			PersistentState.CommandSerializer.Serialize(new NopCommand());
 
-			var thereAreOthersInTheCluster = AllVotingNodes.Any(n => !n.Equals(Name, StringComparison.OrdinalIgnoreCase));
-			if (thereAreOthersInTheCluster == false && PersistentState.IsLeaderPotential)
+			var thereAreOthersInTheCluster = CurrentTopology.QuorumSize > 1;
+			if (thereAreOthersInTheCluster == false && CurrentTopology.IsVoter(Name))
 			{
 				SetState(RaftEngineState.Leader);
 				PersistentState.UpdateTermTo(this, PersistentState.CurrentTerm + 1);// restart means new term
@@ -281,7 +261,7 @@ namespace Rhino.Raft
 			if (State != RaftEngineState.Leader)
 				throw new InvalidOperationException("Not a leader, and only leaders can step down");
 
-			if (CurrentTopology.QuoromSize == 1)
+			if (CurrentTopology.QuorumSize == 1)
 			{
 				throw new InvalidOperationException("Cannot step down if I'm the only one in the cluster");
 			}
@@ -295,13 +275,17 @@ namespace Rhino.Raft
 
 		public Task RemoveFromClusterAsync(string node)
 		{
-			if (_currentTopology.AllVotingNodes.Contains(node) == false)
+			if (_currentTopology.Contains(node) == false)
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
 			if (string.Equals(node, Name, StringComparison.OrdinalIgnoreCase))
 				throw new InvalidOperationException("You cannot remove the current node from the cluster, step down this node and then remove it from the new leader");
 
-			var requestedTopology = _currentTopology.CloneAndRemove(node);
+			var requestedTopology = new Topology(
+				_currentTopology.AllVotingNodes.Except(new[] { node }, StringComparer.OrdinalIgnoreCase),
+				_currentTopology.NonVotingNodes.Except(new[] { node }, StringComparer.OrdinalIgnoreCase),
+				_currentTopology.PromotableNodes.Except(new[] { node }, StringComparer.OrdinalIgnoreCase)
+			);
 			if (_log.IsInfoEnabled)
 			{
 				_log.Info("RemoveFromClusterAsync, requestedTopology: {0}", requestedTopology);
@@ -309,12 +293,15 @@ namespace Rhino.Raft
 			return ModifyTopology(requestedTopology);
 		}
 
-		public Task AddToClusterAsync(string node)
+		public Task AddToClusterAsync(string node, bool nonVoting = false)
 		{
-			if (_currentTopology.AllVotingNodes.Contains(node))
+			if (_currentTopology.Contains(node))
 				throw new InvalidOperationException("Node " + node + " is already in the cluster");
 
-			var requestedTopology = _currentTopology.CloneAndAdd(node);
+			var requestedTopology = new Topology(_currentTopology.AllVotingNodes,
+				nonVoting ? _currentTopology.NonVotingNodes.Union(new[] { node }) : _currentTopology.NonVotingNodes,
+				nonVoting ? _currentTopology.PromotableNodes : _currentTopology.PromotableNodes.Union(new[] { node })
+				);
 			if (_log.IsInfoEnabled)
 			{
 				_log.Info("AddToClusterClusterAsync, requestedTopology: {0}", requestedTopology);
@@ -322,7 +309,12 @@ namespace Rhino.Raft
 			return ModifyTopology(requestedTopology);
 		}
 
-		private Task ModifyTopology(Topology requested)
+		internal bool CurrentlyChangingTopology()
+		{
+			return Interlocked.CompareExchange(ref _changingTopology, null, null) == null;
+		}
+
+		internal Task ModifyTopology(Topology requested)
 		{
 			if (State != RaftEngineState.Leader)
 				throw new InvalidOperationException("Cannot modify topology from a non leader node, current leader is: " +
@@ -342,7 +334,7 @@ namespace Rhino.Raft
 			try
 			{
 				_log.Debug("Topology change started on leader");
-				TopologyChangeStarting(tcc);
+				StartTopologyChange(tcc);
 				AppendCommand(tcc);
 				return tcc.Completion.Task;
 			}
@@ -357,6 +349,7 @@ namespace Rhino.Raft
 		{
 			get { return _currentTopology; }
 		}
+
 
 		internal bool LogIsUpToDate(long lastLogTerm, long lastLogIndex)
 		{
@@ -412,8 +405,8 @@ namespace Rhino.Raft
 					{
 						if (_log.IsInfoEnabled)
 						{
-							_log.Info("ApplyCommits for TopologyChangedCommand,tcc.Requested.AllVotingPeers = {0}, Name = {1}",
-								String.Join(",", tcc.Requested.AllVotingNodes), Name);
+							_log.Info("ApplyCommits for TopologyChangedCommand, tcc.Requested = {0}, Name = {1}",
+								tcc.Requested, Name);
 						}
 						CommitTopologyChange(tcc);
 					}
@@ -465,15 +458,13 @@ namespace Rhino.Raft
 		}
 
 
-		private void CommitTopologyChange(TopologyChangeCommand tcc)
+		public void CommitTopologyChange(TopologyChangeCommand tcc)
 		{
 			Interlocked.Exchange(ref _changingTopology, null);
-			var shouldRemainInTopology = tcc.Requested.AllVotingNodes.Contains(Name);
+			var shouldRemainInTopology = tcc.Requested.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
-				_log.Debug(
-					"This node is being removed from topology, emptying its AllVotingNodes list and settings its state to None (stopping event loop)");
-				Interlocked.Exchange(ref _changingTopology, null);
+				_log.Debug("This node is being removed from topology, setting its state to None (stopping event loop)");
 				CurrentLeader = null;
 
 				SetState(RaftEngineState.None);
@@ -482,8 +473,7 @@ namespace Rhino.Raft
 
 			if (_log.IsInfoEnabled)
 			{
-				_log.Info("Finished applying new topology. New AllVotingNodes: {0}",
-					string.Join(",", _currentTopology.AllVotingNodes));
+				_log.Info("Finished applying new topology. New AllVotingNodes: {0}", _currentTopology);
 			}
 
 			OnTopologyChanged(tcc);
@@ -758,21 +748,21 @@ namespace Rhino.Raft
 			return string.Format("Name: {0} = {1}", Name, State);
 		}
 
-		internal void TopologyChangeStarting(TopologyChangeCommand tcc)
+		internal void StartTopologyChange(TopologyChangeCommand tcc)
 		{
 			Interlocked.Exchange(ref _currentTopology, tcc.Requested);
 			Interlocked.Exchange(ref _changingTopology, new TaskCompletionSource<object>().Task);
 			OnTopologyChanging(tcc);
 		}
 
-		internal void RevertTopologyTo(string[] previousPeers)
+		internal void RevertTopologyTo(Topology previous)
 		{
 			_log.Info("Reverting topology because the topology change command was reverted");
 			Interlocked.Exchange(ref _changingTopology, null);
-			Interlocked.Exchange(ref _currentTopology, new Topology(previousPeers));
+			Interlocked.Exchange(ref _currentTopology, previous);
 			OnTopologyChanged(new TopologyChangeCommand
 			{
-				Requested = new Topology(previousPeers)
+				Requested = previous
 			});
 		}
 

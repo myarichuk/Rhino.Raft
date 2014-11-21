@@ -235,13 +235,13 @@ namespace Rhino.Raft.Tests
 			{
 				var nodeName = nodeNames[index];
 				var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
+				storageEnvironmentOptions.OwnsPagers = false;
+				var options = CreateNodeOptions(nodeName, messageTimeout, storageEnvironmentOptions, nodeNames);
 				if (leaderIndex == index)
 				{
-					storageEnvironmentOptions.OwnsPagers = false;
-					PersistentState.ClusterBootstrap(storageEnvironmentOptions);
-					storageEnvironmentOptions.OwnsPagers = true;
+					PersistentState.ClusterBootstrap(options, new Topology(nodeNames, new String[0], new String[0]));
 				}
-				var options = CreateNodeOptions(nodeName, messageTimeout, storageEnvironmentOptions,nodeNames);
+				storageEnvironmentOptions.OwnsPagers = true;
 				_nodes.Add(new RaftEngine(options));
 			}
 			
@@ -271,7 +271,7 @@ namespace Rhino.Raft.Tests
 				new DictionaryStateMachine())
 			{
 				MessageTimeout = messageTimeout,
-				AllVotingNodes = peers,
+				//AllVotingNodes = peers,
 				Stopwatch = Stopwatch.StartNew()
 			};
 			return nodeOptions;

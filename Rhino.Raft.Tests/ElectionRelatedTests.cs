@@ -27,8 +27,7 @@ namespace Rhino.Raft.Tests
 			var hub = new InMemoryTransportHub();
 			var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
 			storageEnvironmentOptions.OwnsPagers = false;
-			PersistentState.ClusterBootstrap(storageEnvironmentOptions);
-			storageEnvironmentOptions.OwnsPagers = true;
+			
 			var raftEngineOptions = new RaftEngineOptions(
 				"node1",
 				storageEnvironmentOptions,
@@ -38,6 +37,10 @@ namespace Rhino.Raft.Tests
 			{
 				MessageTimeout = 1000
 			};
+
+			PersistentState.ClusterBootstrap(raftEngineOptions);
+			storageEnvironmentOptions.OwnsPagers = true;
+
 			using (var raftNode = new RaftEngine(raftEngineOptions))
 			{
 				Assert.Equal(RaftEngineState.Leader, raftNode.State);
@@ -214,12 +217,11 @@ namespace Rhino.Raft.Tests
 		{
 			var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
 			storageEnvironmentOptions.OwnsPagers = false;
-			PersistentState.ClusterBootstrap(storageEnvironmentOptions);
+			
+			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
+
+			PersistentState.ClusterBootstrap(nodeOptions, new Topology(new[]{"u2", "pj"}, new string[0], new string[0]));
 			storageEnvironmentOptions.OwnsPagers = true;
-			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine())
-			{
-				AllVotingNodes = new[] { "u2", "pj"}
-			};
 
 			using (var node = new RaftEngine(nodeOptions))
 			{
@@ -253,7 +255,8 @@ namespace Rhino.Raft.Tests
 						var currentConfiguration = persistentState.GetCurrentTopology();
 						Assert.Empty(currentConfiguration.AllVotingNodes);
 
-						persistentState.SetCurrentTopology(new Topology(expectedAllVotingPeers), 1);
+						var currentTopology = new Topology(expectedAllVotingPeers, Enumerable.Empty<string>(), Enumerable.Empty<string>());
+						persistentState.SetCurrentTopology(currentTopology, 1);
 					}
 				}
 				using (var options = StorageEnvironmentOptions.ForPath(path))

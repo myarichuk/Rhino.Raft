@@ -36,7 +36,7 @@ namespace Rhino.Raft.Tests
 
 			var engineOptions = new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport, new DictionaryStateMachine())
 			{
-				AllVotingNodes = new[] { "node1", "node2", "node3" },
+				//AllVotingNodes = new[] { "node1", "node2", "node3" },
 				MessageTimeout = 60*1000
 			};
 			_raftEngine = new RaftEngine(engineOptions);

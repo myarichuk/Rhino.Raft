@@ -49,8 +49,8 @@ namespace Rhino.Raft.Transport
 				LogStatus("install snapshot to " + dest, async () =>
 				{
 					var requestUri =
-						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&from={3}",
-							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From);
+						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&from={3}&topology={4}",
+							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From, Uri.EscapeDataString(JsonConvert.SerializeObject(req.Topology)));
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
 					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();

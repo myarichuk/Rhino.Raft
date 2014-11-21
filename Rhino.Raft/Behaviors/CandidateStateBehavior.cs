@@ -75,9 +75,9 @@ namespace Rhino.Raft.Behaviors
 				ForcedElection = _forcedElection
 			};
 
-			var allVotingNodes = Engine.AllVotingNodes;
+			var allVotingNodes = Engine.CurrentTopology.AllVotingNodes;
 
-			//dont't send to yourself the message
+			// don't send to yourself the message
 			foreach (var votingPeer in allVotingNodes.Where(node =>
 				!node.Equals(Engine.Name, StringComparison.InvariantCultureIgnoreCase)))
 			{
@@ -113,7 +113,7 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			if(Engine.ContainedInAllVotingNodes(resp.From) == false) //precaution
+			if(Engine.CurrentTopology.IsVoter(resp.From) == false) //precaution
 			{
 				_log.Info("Vote acepted from {0}, which isn't in our topology", resp.From);
 				return;

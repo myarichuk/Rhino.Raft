@@ -13,6 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 namespace Rhino.Raft.Behaviors
 {
@@ -37,7 +38,7 @@ namespace Rhino.Raft.Behaviors
 			engine.TopologyChanged += OnTopologyChanged;
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
-			foreach (var peer in Engine.AllVotingNodes)
+			foreach (var peer in Engine.CurrentTopology.AllNodes)
 			{
 				_nextIndexes[peer] = lastLogEntry.Index + 1;
 				_matchIndexes[peer] = 0;
@@ -54,10 +55,10 @@ namespace Rhino.Raft.Behaviors
 			// if we have any removed servers, we need to know let them know that they have
 			// been removed, we do that by committing the current entry (hopefully they already
 			// have topology change command, so they know they are being removed from the cluster).
-			// This is mostly us being nice neigbours, this isn't required, and the cluster will reject
+			// This is mostly us being nice neighbors, this isn't required, and the cluster will reject
 			// messages from nodes not considered to be in the cluster.
 
-			var removedNodes = tcc.Previous.AllVotingNodes.Except(tcc.Requested.AllVotingNodes).ToList();
+			var removedNodes = tcc.Previous.AllNodes.Except(tcc.Requested.AllNodes).ToList();
 			foreach (var removedNode in removedNodes)
 			{
 				var prevLogEntry = Engine.PersistentState.LastLogEntry();
@@ -92,8 +93,7 @@ namespace Rhino.Raft.Behaviors
 
 		internal void SendEntriesToAllPeers()
 		{
-			var peers = Engine.AllVotingNodes;
-			foreach (var peer in peers)
+			foreach (var peer in Engine.CurrentTopology.AllNodes)
 			{
 				if (peer.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
 					continue;// we don't need to send to ourselves
@@ -210,7 +210,7 @@ namespace Rhino.Raft.Behaviors
 		private DateTime _lastCommitTimeOnPreviousTimeout = DateTime.MinValue;
 		public override void HandleTimeout()
 		{
-			if (Engine.CurrentTopology.QuoromSize == 1)
+			if (Engine.CurrentTopology.QuorumSize == 1)
 			{
 				// we can't step down, nothing to check
 				LastHeartbeatTime = DateTime.UtcNow;
@@ -222,7 +222,7 @@ namespace Rhino.Raft.Behaviors
 			// or if we can't talk to a majority of the cluster, in which case we need to step 
 			// down.
 
-			var maxIndexOnQuorom = GetMaxIndexOnQuorom();
+			var maxIndexOnQuorom = GetMaxIndexOnQuorum();
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
 			if (maxIndexOnQuorom == lastLogEntry.Index)
@@ -324,7 +324,7 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(AppendEntriesResponse resp)
 		{
-			if (Engine.ContainedInAllVotingNodes(resp.From) == false)
+			if (Engine.CurrentTopology.Contains(resp.From) == false)
 			{
 				_log.Info("Rejecting append entries response from {0} because it is not in my cluster", resp.From);
 				return;
@@ -342,6 +342,13 @@ namespace Rhino.Raft.Behaviors
 			Debug.Assert(resp.From != null);
 			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
 			_matchIndexes[resp.From] = resp.LastLogIndex;
+
+			if (Engine.CurrentTopology.IsPromotable(resp.From) && 
+				resp.LastLogIndex == Engine.CommitIndex)
+			{
+				PromoteNodeToVoter(resp);
+			}
+
 			_log.Debug("Follower ({0}) has LastLogIndex = {1}", resp.From, resp.LastLogIndex);
 
 			if (resp.Success == false)
@@ -351,11 +358,11 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			var maxIndexOnCurrentQuorom = GetMaxIndexOnQuorom();
-			if (maxIndexOnCurrentQuorom <= Engine.CommitIndex)
+			var maxIndexOnCurrentQuorum = GetMaxIndexOnQuorum();
+			if (maxIndexOnCurrentQuorum <= Engine.CommitIndex)
 			{
-				_log.Debug("maxIndexOnQuorom = {0} <= Engine.CommitIndex = {1}.",
-					maxIndexOnCurrentQuorom, Engine.CommitIndex);
+				_log.Debug("maxIndexOnCurrentQuorum = {0} <= Engine.CommitIndex = {1}.",
+					maxIndexOnCurrentQuorum, Engine.CommitIndex);
 				return;
 			}
 
@@ -366,18 +373,42 @@ namespace Rhino.Raft.Behaviors
 			_lastCommitTime = DateTime.UtcNow;
 			
 			_log.Debug(
-				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnCurrentQuorom,
+				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnCurrentQuorum,
 				Engine.CommitIndex);
-			Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnCurrentQuorom);
+			Engine.ApplyCommits(Engine.CommitIndex + 1, maxIndexOnCurrentQuorum);
 
 			Command result;
-			while (_pendingCommands.TryPeek(out result) && result.AssignedIndex <= maxIndexOnCurrentQuorom)
+			while (_pendingCommands.TryPeek(out result) && result.AssignedIndex <= maxIndexOnCurrentQuorum)
 			{
 				if (_pendingCommands.TryDequeue(out result) == false)
 					break; // should never happen
 
 				result.Completion.TrySetResult(null);
 			}
+		}
+
+		private void PromoteNodeToVoter(AppendEntriesResponse resp)
+		{
+			// if we got a successful append entries response from a promotable node, and it has caught up
+			// with the committed entries, it means that we can promote it to voting positions, since it 
+			// can now become a leader.
+			var requestTopology = new Topology(
+				Engine.CurrentTopology.AllVotingNodes.Union(new[] {resp.From}),
+				Engine.CurrentTopology.NonVotingNodes,
+				Engine.CurrentTopology.PromotableNodes.Except(new[] {resp.From}, StringComparer.OrdinalIgnoreCase)
+				);
+			if (Engine.CurrentlyChangingTopology() == false)
+			{
+				_log.Info(
+					"Node {0} is a promotable node, and it has caught up to the current cluster commit index, but we are currently updating the topology, will try again later",
+					resp.From);
+				return;
+			}
+			
+			_log.Info(
+				"Node {0} is a promotable node, and it has caught up to the current cluster commit index, promoting to voting member",
+				resp.From);
+			Engine.ModifyTopology(requestTopology);
 		}
 
 		/// <summary>
@@ -387,18 +418,18 @@ namespace Rhino.Raft.Behaviors
 		/// { A = 4, B = 3, C = 2 }
 		/// 
 		/// 
-		/// In this case, the quorom agrees on 3 as the committed index.
+		/// In this case, the quorum agrees on 3 as the committed index.
 		/// 
 		/// Why? Because A has 4 (which implies that it has 3) and B has 3 as well.
 		/// So we have 2 nodes that have 3, so that is the quorom.
 		/// </summary>
-		protected long GetMaxIndexOnQuorom()
+		protected long GetMaxIndexOnQuorum()
 		{
 			var topology = Engine.CurrentTopology;
 			var dic = new Dictionary<long, int>();
 			foreach (var index in _matchIndexes)
 			{
-				if (topology.AllVotingNodes.Contains(index.Key, StringComparer.OrdinalIgnoreCase) == false)
+				if (topology.IsVoter(index.Key) == false)
 					continue;
 
 				int count;
@@ -411,7 +442,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				var confirmationsForThisIndex = source.Value + boost;
 				boost += source.Value;
-				if (confirmationsForThisIndex >= topology.QuoromSize)
+				if (confirmationsForThisIndex >= topology.QuorumSize)
 					return source.Key;
 			}
 
@@ -425,7 +456,7 @@ namespace Rhino.Raft.Behaviors
 			_nextIndexes[Engine.Name] = index + 1;
 
 
-			if (Engine.CurrentTopology.QuoromSize == 1)
+			if (Engine.CurrentTopology.QuorumSize == 1)
 			{
 				_lastCommitTime = DateTime.UtcNow;
 				CommitEntries(null, index, index);

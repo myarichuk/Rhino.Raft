@@ -31,7 +31,7 @@ namespace Rhino.Raft.Tests
 
 			var topologyChnaged = WaitForToplogyChange(leader);
 
-			Assert.True(leader.ContainedInAllVotingNodes("node2"));
+			Assert.True(leader.CurrentTopology.IsVoter("node2"));
 
 			WriteLine("<-- should switch leaders now");
 
@@ -44,9 +44,9 @@ namespace Rhino.Raft.Tests
 			Assert.True(nonLeaders.Any(x=>x.State==RaftEngineState.Leader));
 			foreach (var raftEngine in nonLeaders)
 			{
-				Assert.False(raftEngine.ContainedInAllVotingNodes("node3"));
+				Assert.False(raftEngine.CurrentTopology.IsVoter("node3"));
 			}
-			Assert.False(leader.ContainedInAllVotingNodes("node3"));
+			Assert.False(leader.CurrentTopology.IsVoter("node3"));
 
 		}
 
@@ -148,10 +148,13 @@ namespace Rhino.Raft.Tests
 			}
 
 			var nodePeerLists = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
-										 .Select(n => n.AllVotingNodes)
+										 .Select(n => n.CurrentTopology)
 										 .ToList();
 
-			nodePeerLists.ForEach(peerList => peerList.ShouldBeEquivalentTo(nodesThatShouldRemain));
+			foreach (var nodePeerList in nodePeerLists)
+			{
+				Assert.Equal(nodesThatShouldRemain, nodePeerList.AllNodes);
+			}
 		}
 
 
@@ -180,7 +183,7 @@ namespace Rhino.Raft.Tests
 
 			foreach (var raftEngine in Nodes)
 			{
-				raftEngine.AllVotingNodes.Should().Contain("nodeC");
+				raftEngine.CurrentTopology.AllNodes.Should().Contain("nodeC");
 			}
 		}
 
@@ -215,14 +218,14 @@ namespace Rhino.Raft.Tests
 				var raftNodes = Nodes.ToList();
 				foreach (var node in raftNodes)
 				{
-					var containedInAllVotingNodes = node.ContainedInAllVotingNodes(additionalNode.Name);
+					var containedInAllVotingNodes = node.CurrentTopology.IsVoter(additionalNode.Name);
 					if(containedInAllVotingNodes)
 						continue;
 					Assert.True(containedInAllVotingNodes,
-						string.Join(", ", node.AllVotingNodes) + " on " + node.Name);
+						node.CurrentTopology + " on " + node.Name);
 				}
 
-				additionalNode.AllVotingNodes.Should().Contain(raftNodes.Select(node => node.Name));
+				additionalNode.CurrentTopology.AllNodes.Should().Contain(raftNodes.Select(node => node.Name));
 			}
 		}
 
@@ -291,7 +294,7 @@ namespace Rhino.Raft.Tests
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
 
-			raftNodes.ForEach(node => node.AllVotingNodes.Should()
+			raftNodes.ForEach(node => node.CurrentTopology.AllNodes.Should()
 				.BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
 		}
 
@@ -319,7 +322,7 @@ namespace Rhino.Raft.Tests
 
 			Assert.True(someCommitsAppliedEvent.Wait(2000));
 
-			Assert.Equal(3, leader.CurrentTopology.QuoromSize);
+			Assert.Equal(3, leader.CurrentTopology.QuorumSize);
 			Trace.WriteLine(string.Format("<--- Removing from cluster {0} --->", nonLeaderNode.Name));
 			leader.RemoveFromClusterAsync(nonLeaderNode.Name).Wait();
 
@@ -383,7 +386,7 @@ namespace Rhino.Raft.Tests
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
 			Trace.WriteLine("<-- expectedNodeNameList:" + expectedNodeNameList.Aggregate(String.Empty, (all, curr) => all + ", " + curr));
-			raftNodes.ForEach(node => node.AllVotingNodes.Should().BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
+			raftNodes.ForEach(node => node.CurrentTopology.AllNodes.Should().BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
 		}
 	}
 }

@@ -175,7 +175,7 @@ namespace Rhino.Raft.Behaviors
 				};
 			}
 
-			if (Engine.ContainedInAllVotingNodes(req.From) == false)
+			if (Engine.CurrentTopology.IsVoter(req.From) == false)
 			{
 				_log.Info("Received RequestVoteRequest from a node that isn't a member in the cluster: {0}, rejecting", req.From);
 				return new RequestVoteResponse
@@ -375,10 +375,6 @@ namespace Rhino.Raft.Behaviors
 				_log.Debug("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
 
-				// if we get an append entries, we are good, because that means that there is a leader (one has to be manually seeded)
-				// and now that we go that notice from him, we can now also become leaders
-				Engine.PersistentState.MarkAsLeaderPotential();
-
 				// if is possible that we'll get the same event multiple times (for example, if we took longer than a heartbeat
 				// to process a message). In this case, our log already have the entries in question, and it would be a waste to
 				// truncate the log and re-add them all the time. What we are doing here is to find the next match for index/term
@@ -413,9 +409,9 @@ namespace Rhino.Raft.Behaviors
 															Instead, it is of type: " + command.GetType() + ". It is probably a bug!");
 
 					_log.Info("Topology change started (TopologyChangeCommand committed to the log): {0}",
-						topologyChangeCommand.Requested.AllVotingNodes);
+						topologyChangeCommand.Requested);
 					Engine.PersistentState.SetCurrentTopology(topologyChangeCommand.Requested, topologyChange.Index);
-					Engine.TopologyChangeStarting(topologyChangeCommand);
+					Engine.StartTopologyChange(topologyChangeCommand);
 				}
 			}
 

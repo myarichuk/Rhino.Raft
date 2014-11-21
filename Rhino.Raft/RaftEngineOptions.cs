@@ -33,11 +33,7 @@ namespace Rhino.Raft
 
 		public int MaxLogLengthBeforeCompaction { get; set; }
 
-		public bool ForceNewTopology { get; set; }
-
 		public Stopwatch Stopwatch { get; set; }
-
-		public IEnumerable<string> AllVotingNodes { get; set; }
 
 		public string Name { get; private set; }
 
