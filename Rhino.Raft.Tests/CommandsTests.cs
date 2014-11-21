@@ -156,7 +156,6 @@ namespace Rhino.Raft.Tests
 
 			var millisecondsTimeout = 10000 * nodeCount;
 			Assert.True(commitsAppliedEvent.Wait(millisecondsTimeout), "within " + millisecondsTimeout + " sec. non leader node should have all relevant commands committed");
-			Assert.Equal(CommandCount * 2 + 1, nonLeaderNode.CommitIndex);
 
 			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																					.OfType<DictionaryCommand.Set>().ToList();

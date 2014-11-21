@@ -21,7 +21,7 @@ namespace Rhino.Raft.Storage
 			get { return _promotableNodes; }
 		}
 
-		private readonly string _topologyString;
+		private string _topologyString;
 		private readonly HashSet<string> _allVotingNodes;
 		private readonly HashSet<string> _nonVotingNodes;
 		private readonly HashSet<string> _promotableNodes;
@@ -49,7 +49,6 @@ namespace Rhino.Raft.Storage
 			_nonVotingNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			_promotableNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			_allNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			_topologyString = "<empty topology>";
 		}
 
 		public Topology(IEnumerable<string> allVotingNodes, IEnumerable<string> nonVotingNodes, IEnumerable<string> promotableNodes)
@@ -62,6 +61,17 @@ namespace Rhino.Raft.Storage
 			_allNodes.UnionWith(_allVotingNodes);
 			_allNodes.UnionWith(_nonVotingNodes);
 			_allNodes.UnionWith(_promotableNodes);
+
+			CreateTopologyString();
+		}
+
+		private void CreateTopologyString()
+		{
+			if (_allNodes.Count == 0)
+			{
+				_topologyString = "<empty topology>";
+				return;
+			}
 
 			_topologyString = "";
 			if (_allVotingNodes.Count > 0)
@@ -81,6 +91,8 @@ namespace Rhino.Raft.Storage
 
 		public override string ToString()
 		{
+			if (_topologyString == null)
+				CreateTopologyString();
 			return _topologyString;
 		}
 

@@ -21,6 +21,7 @@ namespace Rhino.Raft.Behaviors
 	{
 		protected readonly ConcurrentDictionary<string, long> _matchIndexes = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 		private readonly ConcurrentDictionary<string, long> _nextIndexes = new ConcurrentDictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+		private readonly ConcurrentDictionary<string, DateTime> _lastContact = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 		private readonly ConcurrentDictionary<string, Task> _snapshotsPendingInstallation = new ConcurrentDictionary<string, Task>(StringComparer.OrdinalIgnoreCase);
 
 		private readonly ConcurrentQueue<Command> _pendingCommands = new ConcurrentQueue<Command>();
@@ -153,7 +154,7 @@ namespace Rhino.Raft.Behaviors
 
 			if (_log.IsDebugEnabled)
 			{
-				_log.Debug("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: {2}).", entries.Length, peer, prevLogEntry);
+				_log.Debug("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: Term = {2} Index = {3}).", entries.Length, peer, prevLogEntry.Index, prevLogEntry.Term);
 			}
 
 			var aer = new AppendEntriesRequest
@@ -206,10 +207,9 @@ namespace Rhino.Raft.Behaviors
 			get { return RaftEngineState.Leader; }
 		}
 
-		private DateTime _lastCommitTime = DateTime.MinValue;
-		private DateTime _lastCommitTimeOnPreviousTimeout = DateTime.MinValue;
 		public override void HandleTimeout()
 		{
+			_lastContact[Engine.Name] = DateTime.UtcNow;
 			if (Engine.CurrentTopology.QuorumSize == 1)
 			{
 				// we can't step down, nothing to check
@@ -221,35 +221,26 @@ namespace Rhino.Raft.Behaviors
 			// there are no new commands  to distribute (we raise the heart beat whenever we commit)
 			// or if we can't talk to a majority of the cluster, in which case we need to step 
 			// down.
+			// We check when was the last time we talked to a majority of the cluster, then make our decision
+			var latency = GetQuorumLatencyInMilliseconds();
 
-			var maxIndexOnQuorom = GetMaxIndexOnQuorum();
-			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-
-			if (maxIndexOnQuorom == lastLogEntry.Index)
+			if (latency < Engine.Options.MessageTimeout)
 			{
-				// we are okay, the quorum agrees on our latest commit, so we can continue as the leader
-				LastHeartbeatTime = DateTime.UtcNow;
-				_lastCommitTime = DateTime.UtcNow;
-				return;
-			}
-
-			// in this case, we have events to commit, but we weren't able to commit them within the election
-			// timeout. It is possible that a command came just before we got the timeout, so only if there hasn't
-			// been any commits in _two_ timeouts, will we actually run step down.
-
-			if (_lastCommitTimeOnPreviousTimeout != _lastCommitTime)
-			{
-				// there has been a commit since we got the last timeout, so we are probably good
-				// we'll do this check again next time we get a timeout, and if we can't commit, we'll step down
-				_lastCommitTimeOnPreviousTimeout = _lastCommitTime;
+				// we are okay, a full quorum was reached within the message timeout, so we can 
+				// safely resume running as the leader
 				LastHeartbeatTime = DateTime.UtcNow;
 				return;
 			}
 
-			_log.Warn("Couldn't commit an entry on the cluster (current index: {1}, cluster quorom: {2}) after {0}, stepping down as the leader.", 
-				(DateTime.UtcNow - _lastCommitTime),
-				lastLogEntry.Index,
-				maxIndexOnQuorom);
+			if (_log.IsWarnEnabled)
+			{
+				var lastLogEntry = Engine.PersistentState.LastLogEntry();
+
+				_log.Warn(
+					"Couldn't commit an entry on the cluster (current index: {1}, cluster quorum latency: {0}ms), stepping down as the leader.",
+					latency,
+					lastLogEntry.Index);
+			}
 
 			Engine.SetState(RaftEngineState.FollowerAfterStepDown);
 
@@ -259,6 +250,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			_matchIndexes[resp.From] = resp.LastLogIndex;
 			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
+			_lastContact[resp.From] = DateTime.UtcNow;
 			Task snapshotInstallationTask;
 			_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
 			if (resp.Success == false)
@@ -284,6 +276,7 @@ namespace Rhino.Raft.Behaviors
 					resp.Index);
 				_matchIndexes[resp.From] = resp.Index;
 				_nextIndexes[resp.From] = resp.Index + 1;
+				_lastContact[resp.From] = DateTime.UtcNow;
 				_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
 				return;
 			}
@@ -342,6 +335,7 @@ namespace Rhino.Raft.Behaviors
 			Debug.Assert(resp.From != null);
 			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
 			_matchIndexes[resp.From] = resp.LastLogIndex;
+			_lastContact[resp.From] = DateTime.UtcNow;
 
 			if (Engine.CurrentTopology.IsPromotable(resp.From) && 
 				resp.LastLogIndex == Engine.CommitIndex)
@@ -370,7 +364,6 @@ namespace Rhino.Raft.Behaviors
 			// that means that we are good to run without any issues. Further handling is done 
 			// in the HandleTimeout, to handle a situation where the leader can't talk to the clients
 			LastHeartbeatTime = DateTime.UtcNow;
-			_lastCommitTime = DateTime.UtcNow;
 			
 			_log.Debug(
 				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnCurrentQuorum,
@@ -409,6 +402,25 @@ namespace Rhino.Raft.Behaviors
 				"Node {0} is a promotable node, and it has caught up to the current cluster commit index, promoting to voting member",
 				resp.From);
 			Engine.ModifyTopology(requestTopology);
+		}
+
+		/// <summary>
+		/// This method works on the last contact from all nodes.
+		/// </summary>
+		protected long GetQuorumLatencyInMilliseconds()
+		{
+			var currentTopology = Engine.CurrentTopology;
+			var now = DateTime.UtcNow;
+			var results = (
+				from contact in _lastContact
+				where currentTopology.IsVoter(contact.Key)
+				select (now - contact.Value).TotalMilliseconds
+				into time
+				orderby time
+				select time
+				).ToList();
+
+			return (long)results[currentTopology.QuorumSize - 1];
 		}
 
 		/// <summary>
@@ -454,11 +466,10 @@ namespace Rhino.Raft.Behaviors
 			var index = Engine.PersistentState.AppendToLeaderLog(command);
 			_matchIndexes[Engine.Name] = index;
 			_nextIndexes[Engine.Name] = index + 1;
-
+			_lastContact[Engine.Name] = DateTime.UtcNow;
 
 			if (Engine.CurrentTopology.QuorumSize == 1)
 			{
-				_lastCommitTime = DateTime.UtcNow;
 				CommitEntries(null, index, index);
 				if (command.Completion != null)
 					command.Completion.SetResult(null);

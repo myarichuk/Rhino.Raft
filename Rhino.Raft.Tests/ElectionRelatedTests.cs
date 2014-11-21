@@ -51,20 +51,26 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void Network_partition_should_cause_message_resend()
 		{
-			for (int i = 0; i < 3; i++)
-			{
-				DisconnectNode("node"+i);
-				DisconnectNodeSending("node"+i);
-			}
+			var leader = CreateNetworkAndGetLeader(3, messageTimeout: 300);
 			
-			var leader = CreateNetworkAndGetLeader(3, messageTimeout: 300, waitForLeader: false);
 			var countdown = new CountdownEvent(2);
 			leader.ElectionStarted += () =>
 			{
 				if (countdown.CurrentCount > 0)
 					countdown.Signal();
 			};
+			WriteLine("Disconnecting network");
+			for (int i = 0; i < 3; i++)
+			{
+				DisconnectNode("node" + i);
+				DisconnectNodeSending("node" + i);
+			}
 
+			for (int i = 0; i < 5; i++)
+			{
+				ForceTimeout(leader.Name);
+
+			}
 			Assert.True(countdown.Wait(1500));
 
 			for (int i = 0; i < 3; i++)
@@ -107,6 +113,7 @@ namespace Rhino.Raft.Tests
 			};
 
 			commands.Take(3).ToList().ForEach(leader.AppendCommand);
+			var waitForCommitsOnCluster = WaitForCommitsOnCluster(machine => machine.LastAppliedIndex == commands[2].AssignedIndex);
 			Assert.True(commitsAppliedEvent.Wait(5000)); //with in-memory transport it shouldn't take more than 5 sec
 
 			var steppedDown = WaitForStateChange(leader, RaftEngineState.FollowerAfterStepDown);
@@ -131,11 +138,7 @@ namespace Rhino.Raft.Tests
 			leader = Nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
 			Assert.NotNull(leader);
 
-			//former leader that is now a follower, should get the first 3 entries it distributed
-			while (formerLeader.CommitIndex < 4) //CommitIndex == 4 --> NOP command + first three commands
-				Thread.Sleep(50);
-
-			Assert.True(formerLeader.CommitIndex == 4);
+			Assert.True(waitForCommitsOnCluster.Wait(3000));
 			var committedCommands = formerLeader.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																					.OfType<DictionaryCommand.Set>()
 																					.ToList();
@@ -164,13 +167,6 @@ namespace Rhino.Raft.Tests
 			var leader = CreateNetworkAndGetLeader(nodeCount, messageTimeout: 1500);
 
 			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
-			var commitsAppliedEvent = new ManualResetEventSlim();
-
-			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
-			{
-				if (newIndex == CommandCount + 1)
-					commitsAppliedEvent.Set();
-			};
 
 			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
 			while (nonLeaderNode.CommitIndex < 2) //make sure at least one command is committed
@@ -179,13 +175,15 @@ namespace Rhino.Raft.Tests
 			WriteLine("<Disconnecting leader!> (" + leader.Name + ")");
 			DisconnectNode(leader.Name);
 
-			leader.AppendCommand(commands.Last());
+			DictionaryCommand.Set command = commands.Last();
+			leader.AppendCommand(command);
+
+			var waitForCommitsOnCluster = WaitForCommitsOnCluster(machine => machine.LastAppliedIndex == command.AssignedIndex);
 
 			WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
 			ReconnectNode(leader.Name);
 			Assert.Equal(RaftEngineState.Leader, leader.State);
-
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * nodeCount));
+			Assert.True(waitForCommitsOnCluster.Wait(3000));
 
 			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																					.OfType<DictionaryCommand.Set>()
@@ -220,7 +218,8 @@ namespace Rhino.Raft.Tests
 			
 			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
 
-			PersistentState.ClusterBootstrap(nodeOptions, new Topology(new[]{"real", "u2", "pj"}, new string[0], new string[0]));
+			PersistentState.SetTopologyExplicitly(nodeOptions,
+				new Topology(new[] {"real", "u2", "pj"}, new string[0], new string[0]), throwIfTopologyExists: true);
 			storageEnvironmentOptions.OwnsPagers = true;
 
 			using (var node = new RaftEngine(nodeOptions))

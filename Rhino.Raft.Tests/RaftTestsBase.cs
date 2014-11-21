@@ -220,7 +220,7 @@ namespace Rhino.Raft.Tests
 			}
 		}
 
-		protected RaftEngine CreateNetworkAndGetLeader(int nodeCount, int messageTimeout = -1, bool waitForLeader = true)
+		protected RaftEngine CreateNetworkAndGetLeader(int nodeCount, int messageTimeout = -1)
 		{
 			var leaderIndex = new Random().Next(0, nodeCount);
 			if (messageTimeout == -1)
@@ -231,6 +231,8 @@ namespace Rhino.Raft.Tests
 				nodeNames[i] = "node" + i;
 			}
 
+			WriteLine("{0} selected as seed", nodeNames[leaderIndex]);
+			var allNodesFinishedJoining = new ManualResetEventSlim();
 			for (int index = 0; index < nodeNames.Length; index++)
 			{
 				var nodeName = nodeNames[index];
@@ -239,26 +241,38 @@ namespace Rhino.Raft.Tests
 				var options = CreateNodeOptions(nodeName, messageTimeout, storageEnvironmentOptions, nodeNames);
 				if (leaderIndex == index)
 				{
-					PersistentState.ClusterBootstrap(options, new Topology(nodeNames, new String[0], new String[0]));
+					PersistentState.ClusterBootstrap(options);
 				}
 				storageEnvironmentOptions.OwnsPagers = true;
-				_nodes.Add(new RaftEngine(options));
+				var engine = new RaftEngine(options);
+				_nodes.Add(engine);
+				if (leaderIndex == index)
+				{
+					engine.TopologyChanged += command =>
+					{
+						if (command.Requested.AllNodes.All(command.Requested.IsVoter))
+						{
+							allNodesFinishedJoining.Set();
+						}
+					};
+					for (int i = 0; i < nodeNames.Length; i++)
+					{
+						if (i == leaderIndex)
+							continue;
+						Assert.True(engine.AddToClusterAsync(nodeNames[i]).Wait(3000));
+					}
+				}
 			}
-			
+			Assert.True(allNodesFinishedJoining.Wait(3000));
+
 			var raftEngine = _nodes[leaderIndex];
 
-			var nopCommit = WaitForCommitsOnCluster(1); // nop commit
 
-			var transport = (InMemoryTransportHub.InMemoryTransport)_inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
+			var transport = (InMemoryTransportHub.InMemoryTransport) _inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
 			transport.ForceTimeout();
-			if (waitForLeader)
-			{
-				Assert.True(_nodes[leaderIndex].WaitForLeader());
-
-				nopCommit.Wait();
-				var leader = _nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
-				Assert.NotNull(leader);
-			}
+			Assert.True(_nodes[leaderIndex].WaitForLeader());
+			var leader = _nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
+			Assert.NotNull(leader);
 
 			return _nodes[leaderIndex];
 		}

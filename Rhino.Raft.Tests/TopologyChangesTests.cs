@@ -29,9 +29,9 @@ namespace Rhino.Raft.Tests
 			WriteLine("Initial leader is " + leader.Name);
 			leader.AddToClusterAsync("node3");
 
-			var topologyChnaged = WaitForToplogyChange(leader);
+			var topologyChanged = WaitForToplogyChange(leader);
 
-			Assert.True(leader.CurrentTopology.IsVoter("node2"));
+			Assert.True(leader.CurrentTopology.Contains("node2"));
 
 			WriteLine("<-- should switch leaders now");
 
@@ -39,7 +39,7 @@ namespace Rhino.Raft.Tests
 
 			inMemoryTransport.ForceTimeout();// force it to win
 
-			Assert.True(topologyChnaged.Wait(3000));
+			Assert.True(topologyChanged.Wait(3000));
 
 			Assert.True(nonLeaders.Any(x=>x.State==RaftEngineState.Leader));
 			foreach (var raftEngine in nonLeaders)
@@ -64,7 +64,7 @@ namespace Rhino.Raft.Tests
 			leader.AddToClusterAsync("non-existing-node").Wait();
 
 			Assert.True(topologyChangeFinishedOnAllNodes.Wait(5000),"Topology changes should happen in less than 5 sec for 3 node network");
-			Nodes.ToList().ForEach(n => n.CurrentTopology.AllVotingNodes.Should().Contain("non-existing-node"));
+			Nodes.ToList().ForEach(n => n.CurrentTopology.AllNodes.Should().Contain("non-existing-node"));
 		}
 
 
