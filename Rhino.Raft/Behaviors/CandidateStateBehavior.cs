@@ -12,64 +12,54 @@ using Rhino.Raft.Messages;
 namespace Rhino.Raft.Behaviors
 {
 	public class CandidateStateBehavior : AbstractRaftStateBehavior
-    {
+	{
 		private readonly bool _forcedElection;
 		private readonly HashSet<string> _votesForMyLeadership = new HashSet<string>();
 		private readonly Random _random;
 		private bool _wonTrialElection;
 
-		public CandidateStateBehavior(RaftEngine engine, bool forcedElection) : base(engine)
+		public CandidateStateBehavior(RaftEngine engine, bool forcedElection)
+			: base(engine)
 		{
 			_forcedElection = forcedElection;
-			_wonTrialElection = forcedElection; 
-			_random = new Random((int) (engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
+			_wonTrialElection = forcedElection;
+			_random = new Random((int)(engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
 			Timeout = _random.Next(engine.Options.MessageTimeout / 2, engine.Options.MessageTimeout);
 			StartElection();
 		}
 
-		private void VoteForSelf()
-		{
-			_log.Info("Voting for myself in term {0}", Engine.PersistentState.CurrentTerm);
-			Handle(new RequestVoteResponse
-				{
-					CurrentTerm = Engine.PersistentState.CurrentTerm,
-					VoteGranted = true,
-					Message = String.Format("{0} -> Voting for myself", Engine.Name),
-					From = Engine.Name,
-					VoteTerm = Engine.PersistentState.CurrentTerm,
-				});
-		}
-
 		public override void HandleTimeout()
-	    {
+		{
 			_log.Info("Timeout ({1:#,#;;0} ms) for elections in term {0}", Engine.PersistentState.CurrentTerm,
 				  Timeout);
 
 			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
 			_wonTrialElection = false;
 			StartElection();
-	    }
+		}
 
 		private void StartElection()
 		{
 			LastHeartbeatTime = DateTime.UtcNow;
 			_votesForMyLeadership.Clear();
-			var term = Engine.PersistentState.CurrentTerm;
-			Engine.PersistentState.RecordVoteFor(Engine.Name, term + 1);
 
-			if (_wonTrialElection) // only in the real election, we increment the current term
-				Engine.PersistentState.UpdateTermTo(Engine, Engine.PersistentState.CurrentTerm + 1);
+			long currentTerm = Engine.PersistentState.CurrentTerm + 1;
+			if (_wonTrialElection) // only in the real election, we increment the current term and record a vote to ourselves
+			{
+				Engine.PersistentState.UpdateTermTo(Engine, currentTerm);
+				Engine.PersistentState.RecordVoteFor(Engine.Name, currentTerm);
+			}
 
 			Engine.CurrentLeader = null;
 			_log.Info("Calling for {0} election in term {1}",
-				_wonTrialElection ? "an" : "a trial", Engine.PersistentState.CurrentTerm);
+				_wonTrialElection ? "an" : "a trial", currentTerm);
 
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 			var rvr = new RequestVoteRequest
 			{
 				LastLogIndex = lastLogEntry.Index,
 				LastLogTerm = lastLogEntry.Term,
-				Term = Engine.PersistentState.CurrentTerm,
+				Term = currentTerm,
 				From = Engine.Name,
 				TrialOnly = _wonTrialElection == false,
 				ForcedElection = _forcedElection
@@ -85,7 +75,16 @@ namespace Rhino.Raft.Behaviors
 			}
 
 			Engine.OnCandidacyAnnounced();
-			VoteForSelf();
+			_log.Info("Voting for myself in {1}election for term {0}", currentTerm, _wonTrialElection ? " " : " trial ");
+			Handle(new RequestVoteResponse
+			{
+				CurrentTerm = Engine.PersistentState.CurrentTerm,
+				VoteGranted = true,
+				Message = String.Format("{0} -> Voting for myself", Engine.Name),
+				From = Engine.Name,
+				VoteTerm = currentTerm,
+				TrialOnly = _wonTrialElection == false
+			});
 		}
 
 		public override RaftEngineState State
@@ -95,15 +94,17 @@ namespace Rhino.Raft.Behaviors
 
 		public override void Handle(RequestVoteResponse resp)
 		{
-			if (resp.VoteTerm != Engine.PersistentState.CurrentTerm)
+			long currentTerm = _wonTrialElection ? Engine.PersistentState.CurrentTerm : Engine.PersistentState.CurrentTerm + 1;
+			if (resp.VoteTerm != currentTerm)
 			{
-				_log.Info("Got a vote for election term {0} but current term is {1}, ignoring", resp.VoteTerm, Engine.PersistentState.CurrentTerm);
+				_log.Info("Got a vote for {2}election term {0} but current term is {1}, ignoring", resp.VoteTerm, currentTerm,
+					_wonTrialElection ? " " : "trial ");
 				return;
 			}
-			if (resp.CurrentTerm > Engine.PersistentState.CurrentTerm )
+			if (resp.CurrentTerm > currentTerm)
 			{
 				_log.Info("CandidateStateBehavior -> UpdateCurrentTerm called, there is a new leader, moving to follower state");
-				Engine.UpdateCurrentTerm(resp.CurrentTerm, null); 
+				Engine.UpdateCurrentTerm(resp.CurrentTerm, null);
 				return;
 			}
 
@@ -113,7 +114,7 @@ namespace Rhino.Raft.Behaviors
 				return;
 			}
 
-			if(Engine.CurrentTopology.IsVoter(resp.From) == false) //precaution
+			if (Engine.CurrentTopology.IsVoter(resp.From) == false) //precaution
 			{
 				_log.Info("Vote accepted from {0}, which isn't a voting node in our cluster", resp.From);
 				return;
@@ -141,10 +142,10 @@ namespace Rhino.Raft.Behaviors
 				StartElection();
 				return;
 			}
-			
+
 			Engine.SetState(RaftEngineState.Leader);
 			_log.Info("Selected as leader, term = {0}", resp.CurrentTerm);
 		}
 
-    }
+	}
 }
