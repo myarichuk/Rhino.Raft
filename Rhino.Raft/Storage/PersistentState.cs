@@ -90,11 +90,19 @@ namespace Rhino.Raft.Storage
 			InitializeDatabase();
 		}
 
-		public static void ClusterBootstrap(RaftEngineOptions options, Topology topology = null)
+		public static void ClusterBootstrap(RaftEngineOptions options)
+		{
+			SetTopologyExplicitly(options, 
+				new Topology(new[] { options.Name }, Enumerable.Empty<string>(), Enumerable.Empty<string>()),
+				throwIfTopologyExists: true);
+		}
+
+		public static void SetTopologyExplicitly(RaftEngineOptions options, Topology topology, bool throwIfTopologyExists)
 		{
 			using (var ps = new PersistentState("ClusterBootstrap",options.StorageOptions, CancellationToken.None))
 			{
-				topology = topology ?? new Topology(new[] {options.Name}, Enumerable.Empty<string>(), Enumerable.Empty<string>());
+				if (ps.GetCurrentTopology().HasVoters && throwIfTopologyExists)
+					throw new InvalidOperationException("Cannot set topology on a cluster that already have a topology");
 				ps.SetCurrentTopology(topology, 0);
 			}
 		}
