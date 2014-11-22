@@ -32,6 +32,7 @@ namespace Rhino.Raft.Behaviors
 			return new CanInstallSnapshotResponse
 			{
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				IsCurrentlyInstalling = true,
 				Message = "The node is in the process of installing a snapshot",
 				Success = false
@@ -53,6 +54,7 @@ namespace Rhino.Raft.Behaviors
 				return new InstallSnapshotResponse
 				{
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					CurrentTerm = lastLogEntry.Term,
 					LastLogIndex = lastLogEntry.Index,
 					Message = string.Format("Snapshot is too old (term {0} index {1}) while we have (term {2} index {3})",
@@ -97,6 +99,7 @@ namespace Rhino.Raft.Behaviors
 					context.Reply(new InstallSnapshotResponse
 					{
 						From = Engine.Name,
+						ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 						CurrentTerm = req.Term,
 						LastLogIndex = req.LastIncludedIndex,
 						Success = true
@@ -114,6 +117,7 @@ namespace Rhino.Raft.Behaviors
 				new AppendEntriesResponse
 				{
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = lastLogEntry.Index,
 					LeaderId = Engine.CurrentLeader,

@@ -1,13 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using NLog;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
@@ -62,6 +59,9 @@ namespace Rhino.Raft.Storage
 
 		private static void SetCurrentTopologyInternal(Topology currentTopology, long index, Transaction tx)
 		{
+			if (currentTopology.TopologyId == Guid.Empty)
+				throw new InvalidOperationException("Cannot set topology with an empty TopologyId");
+
 			var metadata = tx.ReadTree(MetadataTreeName);
 
 			var current = metadata.Read("current-topology");
@@ -93,14 +93,14 @@ namespace Rhino.Raft.Storage
 
 		public static void ClusterBootstrap(RaftEngineOptions options)
 		{
-			SetTopologyExplicitly(options, 
-				new Topology(new[] { options.SelfConnection }, Enumerable.Empty<NodeConnectionInfo>(), Enumerable.Empty<NodeConnectionInfo>()),
+			SetTopologyExplicitly(options,
+				new Topology(Guid.NewGuid(), new[] { options.SelfConnection }, Enumerable.Empty<NodeConnectionInfo>(), Enumerable.Empty<NodeConnectionInfo>()),
 				throwIfTopologyExists: true);
 		}
 
 		public static void SetTopologyExplicitly(RaftEngineOptions options, Topology topology, bool throwIfTopologyExists)
 		{
-			using (var ps = new PersistentState("ClusterBootstrap",options.StorageOptions, CancellationToken.None))
+			using (var ps = new PersistentState("ClusterBootstrap", options.StorageOptions, CancellationToken.None))
 			{
 				if (ps.GetCurrentTopology().HasVoters && throwIfTopologyExists)
 					throw new InvalidOperationException("Cannot set topology on a cluster that already have a topology");
@@ -248,7 +248,7 @@ namespace Rhino.Raft.Storage
 					var snapshotTerm = metadata.Read("snapshot-term");
 					var snapshotIndex = metadata.Read("snapshot-index");
 
-					if(snapshotIndex == null || snapshotTerm == null)
+					if (snapshotIndex == null || snapshotTerm == null)
 						return new LogEntry();
 
 					return new LogEntry
@@ -310,7 +310,7 @@ namespace Rhino.Raft.Storage
 			}
 		}
 
-		
+
 		public void UpdateTermTo(RaftEngine engine, long term)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
@@ -486,7 +486,7 @@ namespace Rhino.Raft.Storage
 				using (var it = logs.Iterate())
 				{
 					var lastEntryIndex = it.Seek(Slice.AfterAllKeys) == false ?
-						0 : 
+						0 :
 						it.CurrentKey.CreateReader().ReadBigEndianInt64();
 					return logs.State.EntriesCount - Math.Max(0, (lastEntryIndex - lastCommittedEntry));
 				}

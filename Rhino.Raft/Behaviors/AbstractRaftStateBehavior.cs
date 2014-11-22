@@ -120,7 +120,7 @@ namespace Rhino.Raft.Behaviors
 			_log.Warn("Got disconnection notification  from the leader, clearing topology and moving to idle follower state");
 			var tcc = new TopologyChangeCommand
 			{
-				Requested = new Topology()
+				Requested = new Topology(req.ClusterTopologyId)
 			};
 			Engine.PersistentState.SetCurrentTopology(tcc.Requested, 0L);
 			Engine.StartTopologyChange(tcc);
@@ -155,6 +155,7 @@ namespace Rhino.Raft.Behaviors
 				Message = "Cannot install snapshot from state " + State,
 				CurrentTerm = Engine.PersistentState.CurrentTerm,
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				LastLogIndex = Engine.PersistentState.LastLogEntry().Index
 			};
 		}
@@ -201,6 +202,7 @@ namespace Rhino.Raft.Behaviors
 					VoteTerm = req.Term,
 					Message = "I currently have a leader and I am receiving heartbeats within election timeout.",
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					TrialOnly = req.TrialOnly
 				};
 			}
@@ -218,6 +220,7 @@ namespace Rhino.Raft.Behaviors
 					VoteTerm = req.Term,
 					Message = "You are not a memeber in my cluster, and cannot be a leader",
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					TrialOnly = req.TrialOnly
 				};
 			}
@@ -236,7 +239,8 @@ namespace Rhino.Raft.Behaviors
 					VoteTerm = req.Term,
 					Message = msg,
 					From = Engine.Name,
-					TrialOnly = req.TrialOnly
+					TrialOnly = req.TrialOnly,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				};
 			}
 
@@ -259,6 +263,7 @@ namespace Rhino.Raft.Behaviors
 					VoteTerm = req.Term,
 					Message = msg,
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					TrialOnly = req.TrialOnly
 				};
 			}
@@ -275,6 +280,7 @@ namespace Rhino.Raft.Behaviors
 					VoteTerm = req.Term,
 					Message = msg,
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					TrialOnly = req.TrialOnly
 				};
 			}
@@ -301,6 +307,7 @@ namespace Rhino.Raft.Behaviors
 				VoteTerm = req.Term,
 				Message = "Vote granted",
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				TrialOnly = req.TrialOnly
 			};
 		}
@@ -325,6 +332,7 @@ namespace Rhino.Raft.Behaviors
 				return new CanInstallSnapshotResponse
 				{
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					IsCurrentlyInstalling = false,
 					Message = String.Format("Term or Index do not match the ones on this node. Cannot install snapshot. (CurrentTerm = {0}, req.Term = {1}, LastLogEntry index = {2}, req.Index = {3}",
 						Engine.PersistentState.CurrentTerm, req.Term, index, req.Index),
@@ -339,6 +347,7 @@ namespace Rhino.Raft.Behaviors
 			return new CanInstallSnapshotResponse
 			{
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				IsCurrentlyInstalling = false,
 				Message = "Everything ok, go ahead, install the snapshot!",
 				Success = true
@@ -369,6 +378,7 @@ namespace Rhino.Raft.Behaviors
 					LeaderId = Engine.CurrentLeader,
 					Message = msg,
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				};
 			}
 
@@ -397,7 +407,8 @@ namespace Rhino.Raft.Behaviors
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = msg,
 					LeaderId = Engine.CurrentLeader,
-					From = Engine.Name
+					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				};
 			}
 
@@ -463,7 +474,8 @@ namespace Rhino.Raft.Behaviors
 					Success = true,
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
-					From = Engine.Name
+					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				};
 			}
 			catch (Exception e)
@@ -474,7 +486,8 @@ namespace Rhino.Raft.Behaviors
 					CurrentTerm = Engine.PersistentState.CurrentTerm,
 					LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 					Message = "Failed to apply new entries. Reason: " + e,
-					From = Engine.Name
+					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				};
 			}
 		}

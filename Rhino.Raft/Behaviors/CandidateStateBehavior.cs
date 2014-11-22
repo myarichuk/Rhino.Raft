@@ -61,6 +61,7 @@ namespace Rhino.Raft.Behaviors
 				LastLogTerm = lastLogEntry.Term,
 				Term = currentTerm,
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				TrialOnly = _wonTrialElection == false,
 				ForcedElection = _forcedElection
 			};
@@ -83,6 +84,7 @@ namespace Rhino.Raft.Behaviors
 				VoteGranted = true,
 				Message = String.Format("{0} -> Voting for myself", Engine.Name),
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				VoteTerm = currentTerm,
 				TrialOnly = _wonTrialElection == false
 			});

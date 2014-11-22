@@ -17,8 +17,12 @@ namespace Rhino.Raft.Storage
 		private readonly Dictionary<string, NodeConnectionInfo> _nonVotingNodes;
 		[JsonProperty("PromotableNodes")]
 		private readonly Dictionary<string, NodeConnectionInfo> _promotableNodes;
+		[JsonProperty]
+		public Guid TopologyId { get; private set; }
 
 		private string _topologyString;
+
+
 
 		public Topology()
 		{
@@ -28,9 +32,15 @@ namespace Rhino.Raft.Storage
 			_allNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
 		}
 
-		public Topology(IEnumerable<NodeConnectionInfo> allVotingNodes, IEnumerable<NodeConnectionInfo> nonVotingNodes,
+
+		public Topology(Guid topologyId) : this()
+		{
+			TopologyId = topologyId;
+		}
+	
+		public Topology(Guid topologyId,IEnumerable<NodeConnectionInfo> allVotingNodes, IEnumerable<NodeConnectionInfo> nonVotingNodes,
 			IEnumerable<NodeConnectionInfo> promotableNodes)
-			: this()
+			: this(topologyId)
 		{
 			foreach (NodeConnectionInfo nodeConnectionInfo in allVotingNodes)
 			{

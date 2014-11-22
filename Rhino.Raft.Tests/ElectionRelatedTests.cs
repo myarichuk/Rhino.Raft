@@ -220,6 +220,7 @@ namespace Rhino.Raft.Tests
 
 			PersistentState.SetTopologyExplicitly(nodeOptions,
 				new Topology(
+					new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					new[]
 					{
 						new NodeConnectionInfo {Name = "real"}, new NodeConnectionInfo {Name = "u2"}, new NodeConnectionInfo {Name = "pj"},
@@ -258,7 +259,8 @@ namespace Rhino.Raft.Tests
 						var currentConfiguration = persistentState.GetCurrentTopology();
 						Assert.Empty(currentConfiguration.AllVotingNodes);
 
-						var currentTopology = new Topology(expectedAllVotingPeers.Select(x => new NodeConnectionInfo { Name = x }), Enumerable.Empty<NodeConnectionInfo>(), Enumerable.Empty<NodeConnectionInfo>());
+						var currentTopology = new Topology(new Guid("355a589b-cadc-463d-a515-5add2ea47205"), 
+							expectedAllVotingPeers.Select(x => new NodeConnectionInfo { Name = x }), Enumerable.Empty<NodeConnectionInfo>(), Enumerable.Empty<NodeConnectionInfo>());
 						persistentState.SetCurrentTopology(currentTopology, 1);
 					}
 				}

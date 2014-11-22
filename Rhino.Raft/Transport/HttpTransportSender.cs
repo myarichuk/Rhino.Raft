@@ -42,8 +42,8 @@ namespace Rhino.Raft.Transport
 				LogStatus("install snapshot to " + dest, async () =>
 				{
 					var requestUri =
-						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&from={3}&topology={4}",
-							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From, Uri.EscapeDataString(JsonConvert.SerializeObject(req.Topology)));
+						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&from={3}&topology={4}&clusterTopologyId={5}",
+							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From, Uri.EscapeDataString(JsonConvert.SerializeObject(req.Topology)), req.ClusterTopologyId);
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
 					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -83,8 +83,8 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("append entries to " + dest, async () =>
 				{
-					var requestUri = string.Format("raft/appendEntries?term={0}&leaderCommit={1}&prevLogTerm={2}&prevLogIndex={3}&entriesCount={4}&from={5}",
-						req.Term, req.LeaderCommit, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From);
+					var requestUri = string.Format("raft/appendEntries?term={0}&leaderCommit={1}&prevLogTerm={2}&prevLogIndex={3}&entriesCount={4}&from={5}&clusterTopologyId={6}",
+						req.Term, req.LeaderCommit, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
 					httpResponseMessage.EnsureSuccessStatusCode();
@@ -161,8 +161,8 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("can install snapshot to " + dest, async () =>
 				{
-					var requestUri = string.Format("raft/canInstallSnapshot?term={0}&=index{1}&from={2}", req.Term, req.Index,
-						req.From);
+					var requestUri = string.Format("raft/canInstallSnapshot?term={0}&=index{1}&from={2}&clusterTopologyId={3}", req.Term, req.Index,
+						req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -179,8 +179,8 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("request vote from " + dest, async () =>
 				{
-					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}", 
-						req.Term, req.LastLogIndex, req.LastLogTerm, req.TrialOnly, req.ForcedElection, req.From);
+					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}&clusterTopologyId={6}", 
+						req.Term, req.LastLogIndex, req.LastLogTerm, req.TrialOnly, req.ForcedElection, req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
@@ -202,7 +202,7 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("timeout to " + dest, async () =>
 				{
-					var message = await client.GetAsync(string.Format("raft/timeoutNow?term={0}&from={1}", req.Term, req.From));
+					var message = await client.GetAsync(string.Format("raft/timeoutNow?term={0}&from={1}&clusterTopologyId={2}", req.Term, req.From, req.ClusterTopologyId));
 					message.EnsureSuccessStatusCode();
 					SendToSelf(new NothingToDo());
 				});
@@ -216,7 +216,7 @@ namespace Rhino.Raft.Transport
 			{
 				LogStatus("disconnect " + dest, async () =>
 				{
-					var message = await client.GetAsync(string.Format("raft/disconnectFromCluster?term={0}&from={1}", req.Term, req.From));
+					var message = await client.GetAsync(string.Format("raft/disconnectFromCluster?term={0}&from={1}&clusterTopologyId={2}", req.Term, req.From, req.ClusterTopologyId));
 					message.EnsureSuccessStatusCode();
 					SendToSelf(new NothingToDo());
 				});

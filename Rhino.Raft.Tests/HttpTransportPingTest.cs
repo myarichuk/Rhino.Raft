@@ -14,6 +14,7 @@ using Microsoft.Owin.Hosting;
 using Newtonsoft.Json;
 using Owin;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 using Rhino.Raft.Transport;
 using Voron;
 using Xunit;
@@ -24,7 +25,7 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly IDisposable _server;
 		private readonly RaftEngine _raftEngine;
-		private readonly int _timeout = Debugger.IsAttached ? 50 * 1000 : 10 * 1000;
+		private readonly int _timeout = Debugger.IsAttached ? 50 * 1000 : 5*1000;
 		private readonly HttpTransport _node1Transport;
 
 		public HttpTransportPingTest()
@@ -60,6 +61,7 @@ namespace Rhino.Raft.Tests
 				{
 					TrialOnly = true,
 					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					Term = 3,
 					LastLogIndex = 2,
 					LastLogTerm = 2,
@@ -78,12 +80,13 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void CanSendTimeoutNow()
 		{
-			using (var node2Transport = new Transport.HttpTransport("node2"))
+			using (var node2Transport = new HttpTransport("node2"))
 			{
 				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
 				node2Transport.Send(node1, new AppendEntriesRequest
 				{
 					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					Term = 2,
 					PrevLogIndex = 0,
 					PrevLogTerm = 0,
@@ -118,7 +121,8 @@ namespace Rhino.Raft.Tests
 				node2Transport.Send(node1, new TimeoutNowRequest
 				{
 					Term = 4,
-					From = "node2"
+					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 				});
 
 				gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
@@ -141,6 +145,7 @@ namespace Rhino.Raft.Tests
 				node2Transport.Send(node1, new CanInstallSnapshotRequest
 				{
 					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					Term = 2,
 					Index = 3,
 				});
@@ -166,6 +171,7 @@ namespace Rhino.Raft.Tests
 				node2Transport.Send(node1, new AppendEntriesRequest
 				{
 					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					Term = 2,
 					PrevLogIndex = 0,
 					PrevLogTerm = 0,
@@ -209,6 +215,7 @@ namespace Rhino.Raft.Tests
 				node2Transport.Send(node1, new CanInstallSnapshotRequest
 				{
 					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					Term = 2,
 					Index = 3,
 				});
@@ -221,7 +228,9 @@ namespace Rhino.Raft.Tests
 				node2Transport.Stream(node1, new InstallSnapshotRequest
 				{
 					From = "node2",
+					ClusterTopologyId = new Guid("355a589b-cadc-463d-a515-5add2ea47205"),
 					Term = 2,
+					Topology = new Topology(new Guid("355a589b-cadc-463d-a515-5add2ea47205")),
 					LastIncludedIndex = 2,
 					LastIncludedTerm = 2,
 				}, stream =>

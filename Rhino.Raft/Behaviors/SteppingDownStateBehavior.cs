@@ -25,6 +25,7 @@ namespace Rhino.Raft.Behaviors
 			{
 				CurrentTerm = Engine.PersistentState.CurrentTerm,
 				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 				LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
 				LeaderId = Engine.Name,
 				Message = "Forcing step down evaluation",
@@ -65,7 +66,8 @@ namespace Rhino.Raft.Behaviors
 					Engine.Transport.Send(nodeConnectionInfo, new TimeoutNowRequest
 					{
 						Term = Engine.PersistentState.CurrentTerm,
-						From = Engine.Name
+						From = Engine.Name,
+						ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					});
 					_log.Info("Transferring cluster leadership to {0}", bestMatch);
 				}

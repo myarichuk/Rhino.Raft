@@ -1,8 +1,11 @@
+using System;
+
 namespace Rhino.Raft.Messages
 {
 	public abstract class BaseMessage
 	{
 		public string From { get; set; }
+		public Guid ClusterTopologyId { get; set; }
 	}
 
 	public class DisconnectedFromCluster : BaseMessage

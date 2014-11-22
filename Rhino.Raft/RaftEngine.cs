@@ -280,6 +280,7 @@ namespace Rhino.Raft
 				throw new InvalidOperationException("You cannot remove the current node from the cluster, step down this node and then remove it from the new leader");
 
 			var requestedTopology = new Topology(
+				_currentTopology.TopologyId,
 				_currentTopology.AllVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase) == false),
 				_currentTopology.NonVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase) == false),
 				_currentTopology.PromotableNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase) == false)
@@ -296,7 +297,9 @@ namespace Rhino.Raft
 			if (_currentTopology.Contains(node.Name))
 				throw new InvalidOperationException("Node " + node.Name + " is already in the cluster");
 
-			var requestedTopology = new Topology(_currentTopology.AllVotingNodes,
+			var requestedTopology = new Topology(
+				_currentTopology.TopologyId,
+				_currentTopology.AllVotingNodes,
 				nonVoting ? _currentTopology.NonVotingNodes.Union(new[] { node }) : _currentTopology.NonVotingNodes,
 				nonVoting ? _currentTopology.PromotableNodes : _currentTopology.PromotableNodes.Union(new[] { node })
 				);

@@ -74,6 +74,7 @@ namespace Rhino.Raft.Behaviors
 				Engine.Transport.Send(nodeByName, new DisconnectedFromCluster
 				{
 					From = Engine.Name,
+					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					Term = Engine.PersistentState.CurrentTerm
 				});
 			}
@@ -128,6 +129,7 @@ namespace Rhino.Raft.Behaviors
 						Engine.Transport.Send(peer, new CanInstallSnapshotRequest
 						{
 							From = Engine.Name,
+							ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 							Index = snapshotWriter.Index,
 							Term = snapshotWriter.Term,
 						});
@@ -166,7 +168,8 @@ namespace Rhino.Raft.Behaviors
 				PrevLogIndex = prevLogEntry.Index,
 				PrevLogTerm = prevLogEntry.Term,
 				Term = Engine.PersistentState.CurrentTerm,
-				From = Engine.Name
+				From = Engine.Name,
+				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 			};
 
 			Engine.Transport.Send(peer, aer);
@@ -191,6 +194,7 @@ namespace Rhino.Raft.Behaviors
 						LastIncludedIndex = snapshotWriter.Index,
 						LastIncludedTerm = snapshotWriter.Term,
 						From = Engine.Name,
+						ClusterTopologyId = Engine.CurrentTopology.TopologyId,
 					}, stream => snapshotWriter.WriteSnapshot(stream));
 
 					_log.Info("Finished snapshot streaming -> to {0} - term {1}, index {2} in {3}", peer, snapshotWriter.Index,
@@ -397,6 +401,7 @@ namespace Rhino.Raft.Behaviors
 			if (upgradedNode == null)
 				return;
 			var requestTopology = new Topology(
+				Engine.CurrentTopology.TopologyId,
 				Engine.CurrentTopology.AllVotingNodes.Union(new[] { upgradedNode }),
 				Engine.CurrentTopology.NonVotingNodes,
 				Engine.CurrentTopology.PromotableNodes.Where(x => x != upgradedNode)
