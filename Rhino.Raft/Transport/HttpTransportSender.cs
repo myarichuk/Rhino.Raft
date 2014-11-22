@@ -216,6 +216,20 @@ namespace Rhino.Raft.Transport
 			}
 		}
 
+		public void Send(string dest, DisconnectedFromCluster req)
+		{
+			HttpClient client;
+			using (GetConnection(dest, out client))
+			{
+				LogStatus("disconnect " + dest, async () =>
+				{
+					var message = await client.GetAsync(string.Format("raft/disconnectFromCluster?term={0}&from={1}", req.Term, req.From));
+					message.EnsureSuccessStatusCode();
+					SendToSelf(new NothingToDo());
+				});
+			}
+		}
+
 		private ConcurrentDictionary<Task, object> _runningOps = new ConcurrentDictionary<Task, object>();
 
 		private void LogStatus(string details, Func<Task> operation)

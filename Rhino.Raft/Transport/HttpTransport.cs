@@ -30,6 +30,11 @@ namespace Rhino.Raft.Transport
 			_sender.Register(connectionInfo);
 		}
 
+		public void Send(string dest, DisconnectedFromCluster req)
+		{
+			_sender.Send(dest, req);
+		}
+
 		public void Send(string dest, AppendEntriesRequest req)
 		{
 			_sender.Send(dest, req);

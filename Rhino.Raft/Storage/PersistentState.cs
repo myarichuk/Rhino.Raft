@@ -152,6 +152,8 @@ namespace Rhino.Raft.Storage
 
 		public long AppendToLeaderLog(Command command)
 		{
+			if (CurrentTerm == 0)
+				throw new InvalidOperationException("Cannot append entries in term 0");
 			using (var tx = _env.NewTransaction(TransactionFlags.ReadWrite))
 			{
 				var logs = tx.ReadTree(LogsTreeName);

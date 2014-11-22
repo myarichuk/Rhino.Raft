@@ -55,7 +55,7 @@ namespace Rhino.Raft.Tests
 
 		protected void WriteLine(string format, params object[] args)
 		{
-			_log.Debug(format, args);
+			_log.Error(format, args);
 		}
 
 		public IEnumerable<RaftEngine> Nodes { get { return _nodes; } }
@@ -263,6 +263,8 @@ namespace Rhino.Raft.Tests
 					}
 				}
 			}
+			if (nodeCount == 1)
+				allNodesFinishedJoining.Set();
 			Assert.True(allNodesFinishedJoining.Wait(3000));
 
 			var raftEngine = _nodes[leaderIndex];

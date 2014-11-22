@@ -5,6 +5,7 @@ using System.Linq;
 using NLog;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Storage;
 
 
 namespace Rhino.Raft.Behaviors
@@ -32,6 +33,7 @@ namespace Rhino.Raft.Behaviors
 				CanInstallSnapshotRequest canInstallSnapshotRequest;
 				CanInstallSnapshotResponse canInstallSnapshotResponse;
 				TimeoutNowRequest timeoutNowRequest;
+				DisconnectedFromCluster disconnectedFromCluster;
 				Action action;
 
 				if (context.Message is NothingToDo)
@@ -80,6 +82,10 @@ namespace Rhino.Raft.Behaviors
 				{
 					Handle(timeoutNowRequest);
 				}
+				else if (TryCastMessage(context.Message, out disconnectedFromCluster))
+				{
+					Handle(disconnectedFromCluster);
+				}
 				else if (TryCastMessage(context.Message, out action))
 				{
 					action();
@@ -96,6 +102,30 @@ namespace Rhino.Raft.Behaviors
 				if (asyncMessageHandling == false)
 					context.Done();
 			}
+		}
+
+		public void Handle(DisconnectedFromCluster req)
+		{
+			if (req.Term < Engine.PersistentState.CurrentTerm)
+			{
+				_log.Info("Got disconnection notification from an older term, ignoring");
+				return;
+			}
+			if (req.From != Engine.CurrentLeader)
+			{
+				_log.Info("Got disconnection notification from {0}, who isn't the current leader, ignoring.",
+					req.From);
+				return;
+			}
+			_log.Warn("Got disconnection notification  from the leader, clearing topology and moving to idle follower state");
+			var tcc = new TopologyChangeCommand
+			{
+				Requested = new Topology()
+			};
+			Engine.PersistentState.SetCurrentTopology(tcc.Requested, 0L);
+			Engine.StartTopologyChange(tcc);
+			Engine.CommitTopologyChange(tcc);
+			Engine.SetState(RaftEngineState.Follower);
 		}
 
 		public void Handle(TimeoutNowRequest req)
@@ -149,7 +179,7 @@ namespace Rhino.Raft.Behaviors
 		{
 			Engine = engine;
 			LastHeartbeatTime = DateTime.UtcNow;
-			_log = LogManager.GetLogger(GetType().Name + "." + engine.Name);
+			_log = LogManager.GetLogger(engine.Name + "." + GetType().Name);
 		}
 
 		public RequestVoteResponse Handle(RequestVoteRequest req)

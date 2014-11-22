@@ -119,6 +119,15 @@ namespace Rhino.Raft.Transport
 		}
 
 		[HttpGet]
+		[Route("raft/disconnectFromCluster")]
+		public Task<HttpResponseMessage> DisconnectFromCluster([FromUri]DisconnectedFromCluster request)
+		{
+			var taskCompletionSource = new TaskCompletionSource<HttpResponseMessage>();
+			_bus.Publish(request, taskCompletionSource);
+			return taskCompletionSource.Task;
+		}
+
+		[HttpGet]
 		[Route("raft/canInstallSnapshot")]
 		public Task<HttpResponseMessage> CanInstallSnapshot([FromUri]CanInstallSnapshotRequest request)
 		{

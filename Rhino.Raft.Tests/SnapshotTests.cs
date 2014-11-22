@@ -152,7 +152,8 @@ namespace Rhino.Raft.Tests
 						.ToList();
 
 			var leader = CreateNetworkAndGetLeader(3);
-			Nodes.ToList().ForEach(entry => entry.Options.MaxEntriesPerRequest = 1);
+			var lastLogEntry = leader.PersistentState.LastLogEntry();
+			leader.Options.MaxLogLengthBeforeCompaction = commandsCount - 4;
 
 			var appliedAllCommandsEvent = new CountdownEvent(commandsCount);
 			leader.CreatedSnapshot += snapshotCreationEndedEvent.Set;
@@ -161,23 +162,20 @@ namespace Rhino.Raft.Tests
 			{
 				if (cmd is DictionaryCommand.Set)
 				{
-					Trace.WriteLine("Commit applied --> DictionaryCommand.Set");
 					appliedAllCommandsEvent.Signal();
 				}
 			};
 
-			leader.Options.MaxLogLengthBeforeCompaction = commandsCount - 4;
-			Trace.WriteLine("<--- Started appending commands..");
+			WriteLine("<--- Started appending commands..");
 			commands.ForEach(leader.AppendCommand);
-			Trace.WriteLine("<--- Ended appending commands..");
+			WriteLine("<--- Ended appending commands..");
 
 			var millisecondsTimeout = Debugger.IsAttached ? 600000 : 4000;
 			Assert.True(snapshotCreationEndedEvent.Wait(millisecondsTimeout));
 			Assert.True(appliedAllCommandsEvent.Wait(millisecondsTimeout), "Not all commands were applied, there are still " + appliedAllCommandsEvent.CurrentCount + " commands left");
 
 			var entriesAfterSnapshotCreation = leader.PersistentState.LogEntriesAfter(0).ToList();
-			entriesAfterSnapshotCreation.Should().HaveCount((commandsCount + 1 /*nop command */ ) - leader.Options.MaxLogLengthBeforeCompaction);
-			entriesAfterSnapshotCreation.Should().OnlyContain(entry => entry.Index > leader.Options.MaxLogLengthBeforeCompaction);
+			Assert.Empty(entriesAfterSnapshotCreation.Where(x=>x.Index == lastLogEntry.Index));
 		}
 	}
 }

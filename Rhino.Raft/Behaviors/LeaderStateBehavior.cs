@@ -62,18 +62,14 @@ namespace Rhino.Raft.Behaviors
 			var removedNodes = tcc.Previous.AllNodes.Except(tcc.Requested.AllNodes).ToList();
 			foreach (var removedNode in removedNodes)
 			{
-				var prevLogEntry = Engine.PersistentState.LastLogEntry();
-				var aer = new AppendEntriesRequest
+				// try sending the latest updates (which include the topology removal entry)
+				SendEntriesToPeer(removedNode);
+				// at any rate, try sending the disconnection command explicitly, to gracefully shut down the node if we can
+				Engine.Transport.Send(removedNode, new DisconnectedFromCluster
 				{
-					Entries = new LogEntry[0],
-					LeaderCommit = Engine.CommitIndex,
-					PrevLogIndex = prevLogEntry.Index,
-					PrevLogTerm = prevLogEntry.Term,
-					Term = Engine.PersistentState.CurrentTerm,
-					From = Engine.Name
-				};
-
-				Engine.Transport.Send(removedNode, aer);
+					From = Engine.Name,
+					Term = Engine.PersistentState.CurrentTerm
+				});
 			}
 		}
 

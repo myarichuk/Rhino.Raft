@@ -83,6 +83,11 @@ namespace Rhino.Raft.Transport
 				_parent.AddToQueue(this, dest, req);
 			}
 
+			public void Send(string dest, DisconnectedFromCluster req)
+			{
+				_parent.AddToQueue(this, dest, req);
+			}
+
 			public void Send(string dest, AppendEntriesRequest req)
 			{
 				_parent.AddToQueue(this, dest, req);

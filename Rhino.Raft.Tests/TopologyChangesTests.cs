@@ -310,11 +310,11 @@ namespace Rhino.Raft.Tests
 			var leader = CreateNetworkAndGetLeader(4, messageTimeout: 1500);
 
 			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
-			var someCommitsAppliedEvent = new ManualResetEventSlim();
-			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			var someCommitsAppliedEvent = new CountdownEvent(2);
+			nonLeaderNode.CommitApplied += (cmd) =>
 			{
-				if (newIndex >= 3) //two commands and NOP
-					someCommitsAppliedEvent.Set();
+				if (cmd is DictionaryCommand.Set && someCommitsAppliedEvent.CurrentCount > 0)
+					someCommitsAppliedEvent.Signal();
 			};
 
 			leader.AppendCommand(commands[0]);
@@ -323,29 +323,26 @@ namespace Rhino.Raft.Tests
 			Assert.True(someCommitsAppliedEvent.Wait(2000));
 
 			Assert.Equal(3, leader.CurrentTopology.QuorumSize);
-			Trace.WriteLine(string.Format("<--- Removing from cluster {0} --->", nonLeaderNode.Name));
+			WriteLine(string.Format("<--- Removing from cluster {0} --->", nonLeaderNode.Name));
 			leader.RemoveFromClusterAsync(nonLeaderNode.Name).Wait();
 
 			var otherNonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader && !ReferenceEquals(x, nonLeaderNode));
 
 			var allCommitsAppliedEvent = new ManualResetEventSlim();
-			var sw = Stopwatch.StartNew();
-			const int indexChangeTimeout = 3000;
-			otherNonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			otherNonLeaderNode.CommitApplied += (cmd) =>
 			{
-				if (newIndex == 7 || sw.ElapsedMilliseconds >= indexChangeTimeout) //limit waiting to 5 sec
-				{
+				if (commands[4].AssignedIndex== cmd.AssignedIndex)
 					allCommitsAppliedEvent.Set();
-					sw.Stop();
-				}
 			};
 
-			Trace.WriteLine(string.Format("<--- Appending remaining commands ---> (leader name = {0})", leader.Name));
+
+			WriteLine(string.Format("<--- Appending remaining commands ---> (leader name = {0}, reading from {1})", leader.Name, nonLeaderNode.Name));
 			leader.AppendCommand(commands[2]);
 			leader.AppendCommand(commands[3]);
 			leader.AppendCommand(commands[4]);
 
-			Assert.True(allCommitsAppliedEvent.Wait(indexChangeTimeout) && sw.ElapsedMilliseconds < indexChangeTimeout);
+			var condition = allCommitsAppliedEvent.Wait(3000);
+			Assert.True(condition);
 
 			var committedCommands = otherNonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																						 .OfType<DictionaryCommand.Set>().ToList();
@@ -356,7 +353,7 @@ namespace Rhino.Raft.Tests
 				Assert.Equal(commands[i].AssignedIndex, committedCommands[i].AssignedIndex);
 			}
 
-			otherNonLeaderNode.CommitIndex.Should().Be(leader.CommitIndex, "after all commands have been comitted, on non-leader nodes should be the same commit index as on index node");
+			otherNonLeaderNode.CommitIndex.Should().Be(leader.CommitIndex, "after all commands have been committed, on non-leader nodes should be the same commit index as on index node");
 		}
 
 		[Theory]

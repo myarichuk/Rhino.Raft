@@ -5,5 +5,10 @@ namespace Rhino.Raft.Messages
 		public string From { get; set; }
 	}
 
+	public class DisconnectedFromCluster : BaseMessage
+	{
+		public long Term { get; set; }
+	}
+
 	public class NothingToDo { }
 }

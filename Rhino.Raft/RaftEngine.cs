@@ -133,7 +133,7 @@ namespace Rhino.Raft
 			_raftEngineOptions = raftEngineOptions;
 			Debug.Assert(raftEngineOptions.Stopwatch != null);
 
-			_log = LogManager.GetLogger(GetType().FullName + "." + raftEngineOptions.Name);
+			_log = LogManager.GetLogger(raftEngineOptions.Name + "." + GetType().FullName);
 
 			_eventLoopCancellationTokenSource = new CancellationTokenSource();
 
@@ -151,8 +151,8 @@ namespace Rhino.Raft
 			var thereAreOthersInTheCluster = CurrentTopology.QuorumSize > 1;
 			if (thereAreOthersInTheCluster == false && CurrentTopology.IsVoter(Name))
 			{
-				SetState(RaftEngineState.Leader);
 				PersistentState.UpdateTermTo(this, PersistentState.CurrentTerm + 1);// restart means new term
+				SetState(RaftEngineState.Leader);
 			}
 			else
 			{
@@ -395,7 +395,7 @@ namespace Rhino.Raft
 						StateMachine.Apply(entry, command);
 
 					CommitIndex = entry.Index;
-					_log.Debug("ApplyCommits --> CommitIndex changed to {0}", entry.Index);
+					_log.Debug("Committing entry #{0}", entry.Index);
 
 					var tcc = command as TopologyChangeCommand;
 					if (tcc != null)
@@ -613,7 +613,7 @@ namespace Rhino.Raft
 			}
 		}
 
-		internal virtual void OnTopologyChanging(TopologyChangeCommand tcc)
+		private void OnTopologyChanging(TopologyChangeCommand tcc)
 		{
 			var handler = TopologyChanging;
 			if (handler != null)
