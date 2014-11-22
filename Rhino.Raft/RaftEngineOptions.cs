@@ -11,17 +11,15 @@ namespace Rhino.Raft
 {
 	public class RaftEngineOptions
 	{
-		public RaftEngineOptions(string name, StorageEnvironmentOptions storageOptions, ITransport transport, IRaftStateMachine stateMachine)
+		public RaftEngineOptions(NodeConnectionInfo connection, StorageEnvironmentOptions storageOptions, ITransport transport, IRaftStateMachine stateMachine)
 		{
-			if (String.IsNullOrWhiteSpace(name)) throw new ArgumentNullException("name");
+			if (connection == null) throw new ArgumentNullException("connection");
+			if (String.IsNullOrWhiteSpace(connection.Name)) throw new ArgumentNullException("connection.Name");
 			if (storageOptions == null) throw new ArgumentNullException("storageOptions");
 			if (transport == null) throw new ArgumentNullException("transport");
 			if (stateMachine == null) throw new ArgumentNullException("stateMachine");
 
-			SelfConnection = new NodeConnectionInfo
-			{
-				Name = name
-			};
+			SelfConnection = connection;
 			StorageOptions = storageOptions;
 			Transport = transport;
 			StateMachine = stateMachine;

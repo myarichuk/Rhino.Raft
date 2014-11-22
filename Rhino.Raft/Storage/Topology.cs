@@ -1,16 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json;
 using Rhino.Raft.Transport;
 
 namespace Rhino.Raft.Storage
 {
+	[JsonObject(MemberSerialization.OptIn)]
 	public class Topology
 	{
+		[JsonProperty("AllNodes")]
 		private readonly Dictionary<string, NodeConnectionInfo> _allNodes;
+		[JsonProperty("AllVotingNodes")]
 		private readonly Dictionary<string, NodeConnectionInfo> _allVotingNodes;
+		[JsonProperty("NonVotingNodes")]
 		private readonly Dictionary<string, NodeConnectionInfo> _nonVotingNodes;
+		[JsonProperty("PromotableNodes")]
 		private readonly Dictionary<string, NodeConnectionInfo> _promotableNodes;
+
 		private string _topologyString;
 
 		public Topology()

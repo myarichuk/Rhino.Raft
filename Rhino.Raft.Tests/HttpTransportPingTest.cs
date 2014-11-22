@@ -24,17 +24,18 @@ namespace Rhino.Raft.Tests
 	{
 		private readonly IDisposable _server;
 		private readonly RaftEngine _raftEngine;
-		private readonly int _timeout = Debugger.IsAttached ? 50*1000 : 10 *1000;
+		private readonly int _timeout = Debugger.IsAttached ? 50 * 1000 : 10 * 1000;
 		private readonly HttpTransport _node1Transport;
 
 		public HttpTransportPingTest()
 		{
 			_node1Transport = new HttpTransport("node1");
-			
-			var engineOptions = new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport, new DictionaryStateMachine())
-			{
-				MessageTimeout = 60*1000
-			};
+
+			var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+			var engineOptions = new RaftEngineOptions(node1, StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport, new DictionaryStateMachine())
+				{
+					MessageTimeout = 60 * 1000
+				};
 			_raftEngine = new RaftEngine(engineOptions);
 
 			_server = WebApp.Start(new StartOptions
@@ -105,7 +106,7 @@ namespace Rhino.Raft.Tests
 				var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
 
 				Assert.True(gotIt);
-				Assert.True(((AppendEntriesResponse) context.Message).Success);
+				Assert.True(((AppendEntriesResponse)context.Message).Success);
 
 				var mres = new ManualResetEventSlim();
 				_raftEngine.StateChanged += state =>
@@ -149,7 +150,7 @@ namespace Rhino.Raft.Tests
 				var gotIt = node2Transport.TryReceiveMessage(_timeout, CancellationToken.None, out context);
 
 				Assert.True(gotIt);
-				var msg = (CanInstallSnapshotResponse) context.Message;
+				var msg = (CanInstallSnapshotResponse)context.Message;
 				Assert.True(msg.Success);
 			}
 		}
@@ -160,7 +161,7 @@ namespace Rhino.Raft.Tests
 			using (var node2Transport = new HttpTransport("node2"))
 			{
 				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
-				
+
 
 				node2Transport.Send(node1, new AppendEntriesRequest
 				{
@@ -190,10 +191,10 @@ namespace Rhino.Raft.Tests
 
 				Assert.True(gotIt);
 
-				var appendEntriesResponse = (AppendEntriesResponse) context.Message;
+				var appendEntriesResponse = (AppendEntriesResponse)context.Message;
 				Assert.True(appendEntriesResponse.Success);
 
-				Assert.Equal(2, ((DictionaryStateMachine) _raftEngine.StateMachine).Data["a"]);
+				Assert.Equal(2, ((DictionaryStateMachine)_raftEngine.StateMachine).Data["a"]);
 			}
 		}
 
@@ -203,7 +204,7 @@ namespace Rhino.Raft.Tests
 			using (var node2Transport = new HttpTransport("node2"))
 			{
 				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
-				
+
 
 				node2Transport.Send(node1, new CanInstallSnapshotRequest
 				{
@@ -226,7 +227,7 @@ namespace Rhino.Raft.Tests
 				}, stream =>
 				{
 					var streamWriter = new StreamWriter(stream);
-					var data = new Dictionary<string, int> {{"a", 2}};
+					var data = new Dictionary<string, int> { { "a", 2 } };
 					new JsonSerializer().Serialize(streamWriter, data);
 					streamWriter.Flush();
 				});
@@ -236,10 +237,10 @@ namespace Rhino.Raft.Tests
 
 				Assert.True(gotIt);
 
-				var appendEntriesResponse = (InstallSnapshotResponse) context.Message;
+				var appendEntriesResponse = (InstallSnapshotResponse)context.Message;
 				Assert.True(appendEntriesResponse.Success);
 
-				Assert.Equal(2, ((DictionaryStateMachine) _raftEngine.StateMachine).Data["a"]);
+				Assert.Equal(2, ((DictionaryStateMachine)_raftEngine.StateMachine).Data["a"]);
 			}
 		}
 

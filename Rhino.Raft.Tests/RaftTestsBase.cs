@@ -281,7 +281,7 @@ namespace Rhino.Raft.Tests
 
 		private RaftEngineOptions CreateNodeOptions(string nodeName,int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
 		{
-			var nodeOptions = new RaftEngineOptions(nodeName,
+			var nodeOptions = new RaftEngineOptions(new NodeConnectionInfo { Name = nodeName }, 
 				storageOptions,
 				_inMemoryTransportHub.CreateTransportFor(nodeName),
 				new DictionaryStateMachine())

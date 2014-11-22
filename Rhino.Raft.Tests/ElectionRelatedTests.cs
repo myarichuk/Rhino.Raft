@@ -29,7 +29,7 @@ namespace Rhino.Raft.Tests
 			storageEnvironmentOptions.OwnsPagers = false;
 			
 			var raftEngineOptions = new RaftEngineOptions(
-				"node1",
+				new NodeConnectionInfo { Name = "node1" }, 
 				storageEnvironmentOptions,
 				hub.CreateTransportFor("node1"),
 				new DictionaryStateMachine()
@@ -215,8 +215,8 @@ namespace Rhino.Raft.Tests
 		{
 			var storageEnvironmentOptions = StorageEnvironmentOptions.CreateMemoryOnly();
 			storageEnvironmentOptions.OwnsPagers = false;
-			
-			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
+
+			var nodeOptions = new RaftEngineOptions(new NodeConnectionInfo { Name = "real" }, storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"), new DictionaryStateMachine());
 
 			PersistentState.SetTopologyExplicitly(nodeOptions,
 				new Topology(
