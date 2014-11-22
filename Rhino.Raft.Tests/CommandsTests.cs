@@ -144,9 +144,9 @@ namespace Rhino.Raft.Tests
 
 			var nonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader);
 			var commitsAppliedEvent = new ManualResetEventSlim();
-			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
+			nonLeaderNode.CommitApplied += (cmd) =>
 			{
-				if (newIndex >= (CommandCount * 2 + 1))
+				if (cmd.AssignedIndex == commands.Last().AssignedIndex)
 					commitsAppliedEvent.Set();
 			};
 
@@ -159,6 +159,8 @@ namespace Rhino.Raft.Tests
 
 			var committedCommands = nonLeaderNode.PersistentState.LogEntriesAfter(0).Select(x => nonLeaderNode.PersistentState.CommandSerializer.Deserialize(x.Data))
 																					.OfType<DictionaryCommand.Set>().ToList();
+
+			Assert.Equal(10, committedCommands.Count);
 			for (int i = 0; i < 10; i++)
 			{
 				Assert.Equal(commands[i].Value, committedCommands[i].Value);

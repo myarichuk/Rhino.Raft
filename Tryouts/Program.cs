@@ -18,9 +18,9 @@ namespace Tryouts
 			for (int i = 0; i < 10; i++)
 			{
 				Console.WriteLine(i);
-				using (var s = new TopologyChangesTests())
+				using (var s = new CommandsTests())
 				{
-					s.Non_leader_Node_removed_from_cluster_should_update_peers_list(5);
+					s.Leader_AppendCommand_several_times_should_distribute_commands_between_nodes(10);
 				}
 			}
 		}
