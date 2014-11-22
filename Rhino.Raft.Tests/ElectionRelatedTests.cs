@@ -108,7 +108,7 @@ namespace Rhino.Raft.Tests
 			var commitsAppliedEvent = new ManualResetEventSlim();
 			nonLeaderNode.CommitIndexChanged += (oldIndex, newIndex) =>
 			{
-				if (newIndex == 4) //index == 4 --> NOP command + first three commands
+				if (newIndex == commands[2].AssignedIndex)
 					commitsAppliedEvent.Set();
 			};
 

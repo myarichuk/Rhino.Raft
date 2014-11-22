@@ -130,22 +130,13 @@ namespace Rhino.Raft.Tests
 			var nodeToRemove = Nodes.First(x => x.State != RaftEngineState.Leader);
 
 			var nodesThatShouldRemain = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
-												 .Select(n => n.Name)
 												 .ToList();
 
-			var list = (
-				from engine in Nodes
-				where engine != nodeToRemove 
-				select WaitForToplogyChange(engine)
-			).ToList();
-
-			Trace.WriteLine("<--- started removing");
+			var waitForToplogyChangeOnCluster = WaitForToplogyChangeOnCluster(nodesThatShouldRemain);
 			leader.RemoveFromClusterAsync(nodeToRemove.Name).Wait();
 
-			foreach (var slim in list)
-			{
-				slim.Wait();
-			}
+			Assert.True(waitForToplogyChangeOnCluster.Wait(3000));
+
 
 			var nodePeerLists = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
 										 .Select(n => n.CurrentTopology)
@@ -153,7 +144,12 @@ namespace Rhino.Raft.Tests
 
 			foreach (var nodePeerList in nodePeerLists)
 			{
-				Assert.Equal(nodesThatShouldRemain, nodePeerList.AllNodes);
+				Assert.Equal(nodesThatShouldRemain.Count(), nodePeerList.AllNodes.Count());
+
+				foreach (var node in nodesThatShouldRemain)
+				{
+					Assert.True(nodePeerList.Contains(node.Name));
+				}
 			}
 		}
 
@@ -218,7 +214,7 @@ namespace Rhino.Raft.Tests
 				var raftNodes = Nodes.ToList();
 				foreach (var node in raftNodes)
 				{
-					var containedInAllVotingNodes = node.CurrentTopology.IsVoter(additionalNode.Name);
+					var containedInAllVotingNodes = node.CurrentTopology.Contains(additionalNode.Name);
 					if(containedInAllVotingNodes)
 						continue;
 					Assert.True(containedInAllVotingNodes,
