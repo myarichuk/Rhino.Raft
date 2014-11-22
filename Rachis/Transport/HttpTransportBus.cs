@@ -12,6 +12,7 @@ using System.Net.Http;
 using System.Net.Http.Formatting;
 using System.Threading;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
 using NLog;
 using Rachis.Messages;
 
@@ -121,6 +122,7 @@ namespace Rachis.Transport
 
 		public void Publish(object msg, TaskCompletionSource<HttpResponseMessage> source, Stream stream = null)
 		{
+			if (msg == null) throw new ArgumentNullException("msg");
 			_queue.Add(new HttpTransportMessageContext(source, this)
 			{
 				Message = msg,

@@ -10,7 +10,7 @@ namespace Rachis.Transport
 {
 	public class NodeConnectionInfo
 	{
-		public Uri Url { get; set; }
+		public Uri Uri { get; set; }
 
 		public string Name { get; set; }
 

@@ -261,7 +261,7 @@ namespace Rachis.Transport
 			{
 				Task.WaitAll(array);
 			}
-			catch (OperationCanceledException e)
+			catch (OperationCanceledException)
 			{
 				// nothing to do here
 			}
@@ -282,7 +282,7 @@ namespace Rachis.Transport
 			{
 				result = new HttpClient
 				{
-					BaseAddress = info.Url
+					BaseAddress = info.Uri
 				};
 			}
 

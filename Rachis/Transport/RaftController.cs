@@ -94,7 +94,7 @@ namespace Rachis.Transport
 					throw new EndOfStreamException();
 
 				b = (byte)maybeEof;
-				count |= (b & 0x7F) << shift;
+				count |= (uint)(b & 0x7F) << shift;
 				shift += 7;
 			} while ((b & 0x80) != 0);
 			return count;

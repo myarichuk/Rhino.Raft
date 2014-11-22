@@ -10,9 +10,9 @@ namespace Rachis.Transport
 {
 	public static class RaftWebApiConfig
 	{
-		public static void Register(HttpConfiguration config)
+		public static void Load()
 		{
-			config.MapHttpAttributeRoutes();
+			// calling this force .NET to load this assembly, so then you can call MapHttpAttributeRoutes
 		}
 	}
 }

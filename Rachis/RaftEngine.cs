@@ -499,7 +499,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising ElectionStarted event", e);
 				}
 			}
 		}
@@ -515,7 +515,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising StateChanged event", e);
 				}
 			}
 		}
@@ -531,7 +531,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising StateTimeout event", e);
 				}
 			}
 		}
@@ -547,7 +547,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising EntriesAppended event", e);
 				}
 			}
 		}
@@ -563,7 +563,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising CommitIndexChanged event", e);
 				}
 			}
 		}
@@ -579,7 +579,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising ElectedAsLeader event", e);
 				}
 			}
 		}
@@ -595,7 +595,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising TopologyChanged event", e);
 				}
 			}
 		}
@@ -611,7 +611,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising CommitApplied event", e);
 				}
 			}
 		}
@@ -627,7 +627,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising TopologyChanging event", e);
 				}
 			}
 		}
@@ -675,7 +675,7 @@ namespace Rachis
 				}
 				catch (Exception ex)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising SnapshotCreationError event", ex);
 				}
 			}
 		}
@@ -691,7 +691,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising event", e);
+					_log.Error("Error on raising EventsProcessed event", e);
 				}
 			}
 		}

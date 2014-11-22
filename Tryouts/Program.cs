@@ -14,7 +14,7 @@ namespace Tryouts
 		static void Main()
 		{
 			var _node1Transport = new HttpTransport("node1");
-var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 			var engineOptions = new RaftEngineOptions(node1, StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport , new DictionaryStateMachine())
 			{
 				MessageTimeout = 60 * 1000
@@ -27,7 +27,8 @@ var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://local
 			}, builder =>
 			{
 				var httpConfiguration = new HttpConfiguration();
-				RaftWebApiConfig.Register(httpConfiguration);
+				RaftWebApiConfig.Load();
+				httpConfiguration.MapHttpAttributeRoutes();
 				httpConfiguration.Properties[typeof(HttpTransportBus)] = _node1Transport.Bus;
 				builder.UseWebApi(httpConfiguration);
 			});

@@ -32,7 +32,7 @@ namespace Rachis.Tests
 		{
 			_node1Transport = new HttpTransport("node1");
 
-			var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+			var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 			var engineOptions = new RaftEngineOptions(node1, StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport, new DictionaryStateMachine())
 				{
 					MessageTimeout = 60 * 1000
@@ -45,7 +45,8 @@ namespace Rachis.Tests
 			}, builder =>
 			{
 				var httpConfiguration = new HttpConfiguration();
-				RaftWebApiConfig.Register(httpConfiguration);
+				RaftWebApiConfig.Load();
+				httpConfiguration.MapHttpAttributeRoutes();
 				httpConfiguration.Properties[typeof(HttpTransportBus)] = _node1Transport.Bus;
 				builder.UseWebApi(httpConfiguration);
 			});
@@ -56,7 +57,7 @@ namespace Rachis.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 				node2Transport.Send(node1, new RequestVoteRequest
 				{
 					TrialOnly = true,
@@ -82,7 +83,7 @@ namespace Rachis.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 				node2Transport.Send(node1, new AppendEntriesRequest
 				{
 					From = "node2",
@@ -140,7 +141,7 @@ namespace Rachis.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 
 				node2Transport.Send(node1, new CanInstallSnapshotRequest
 				{
@@ -165,7 +166,7 @@ namespace Rachis.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 
 
 				node2Transport.Send(node1, new AppendEntriesRequest
@@ -209,7 +210,7 @@ namespace Rachis.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 
 
 				node2Transport.Send(node1, new CanInstallSnapshotRequest

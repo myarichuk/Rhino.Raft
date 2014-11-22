@@ -1,14 +1,13 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using Rachis.Commands;
 using Rachis.Messages;
 
 namespace Rachis.Interfaces
 {
-	public interface IRaftStateMachine
+	public interface IRaftStateMachine : IDisposable
 	{
 		long LastAppliedIndex { get; }
-
-		int EntryCount { get; }
 
 		void Apply(LogEntry entry, Command cmd);
 

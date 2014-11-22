@@ -14,11 +14,6 @@ namespace Rachis.Tests
 		private readonly JsonSerializer _serializer = new JsonSerializer();
 		public long LastAppliedIndex { get; private set; }
 
-		public int EntryCount
-		{
-			get { return Data.Count; }
-		}
-
 		private class SnapshotWriter : ISnapshotWriter
 		{
 			private readonly Dictionary<string, int> _snapshot;
@@ -89,6 +84,11 @@ namespace Rachis.Tests
 				Term = term,
 				Index = index
 			};
+		}
+
+		public void Dispose()
+		{
+			//nothing to do
 		}
 	}
 }
