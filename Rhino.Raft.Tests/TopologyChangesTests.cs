@@ -27,7 +27,7 @@ namespace Rhino.Raft.Tests
 			DisconnectNodeSending(leader.Name);
 
 			WriteLine("Initial leader is " + leader.Name);
-			leader.AddToClusterAsync("node3");
+			leader.AddToClusterAsync(new NodeConnectionInfo { Name = "node3" });
 
 			var topologyChanged = WaitForToplogyChange(leader);
 
@@ -61,7 +61,7 @@ namespace Rhino.Raft.Tests
 			Nodes.ToList().ForEach(n => n.TopologyChanged += cmd => topologyChangeFinishedOnAllNodes.Signal());
 
 			// ReSharper disable once PossibleNullReferenceException
-			leader.AddToClusterAsync("non-existing-node").Wait();
+			leader.AddToClusterAsync(new NodeConnectionInfo { Name = "non-existing-node" }).Wait();
 
 			Assert.True(topologyChangeFinishedOnAllNodes.Wait(5000),"Topology changes should happen in less than 5 sec for 3 node network");
 			Nodes.ToList().ForEach(n => n.CurrentTopology.AllNodeNames.Should().Contain("non-existing-node"));
@@ -78,7 +78,7 @@ namespace Rhino.Raft.Tests
 				additionalNode.TopologyChanging += () => DisconnectNode("node3");
 				var waitForTopologyChangeInLeader = WaitForToplogyChange(leaderNode);
 
-				leaderNode.AddToClusterAsync(additionalNode.Name).Wait();
+				leaderNode.AddToClusterAsync(new NodeConnectionInfo { Name = additionalNode.Name }).Wait();
 
 				Thread.Sleep(additionalNode.Options.MessageTimeout * 2);
 				ReconnectNode(additionalNode.Name);
@@ -91,7 +91,10 @@ namespace Rhino.Raft.Tests
 		public void Adding_already_existing_node_should_throw()
 		{
 			var leader = CreateNetworkAndGetLeader(2);
-			leader.Invoking(x => x.AddToClusterAsync(Nodes.First(a => a != leader).Name))
+			leader.Invoking(x => x.AddToClusterAsync(new NodeConnectionInfo
+			{
+				Name = Nodes.First(a => a.Name != leader.Name).Name
+			}))
 				.ShouldThrow<InvalidOperationException>();
 		}
 
@@ -99,7 +102,7 @@ namespace Rhino.Raft.Tests
 		public void Removal_of_non_existing_node_should_throw()
 		{
 			var leader = CreateNetworkAndGetLeader(2);
-			leader.Invoking(x => x.RemoveFromClusterAsync("santa"))
+			leader.Invoking(x => x.RemoveFromClusterAsync(new NodeConnectionInfo { Name = "santa" }))
 				.ShouldThrow<InvalidOperationException>();
 
 		}
@@ -112,10 +115,10 @@ namespace Rhino.Raft.Tests
 			var nonLeader = Nodes.FirstOrDefault(x => x.State != RaftEngineState.Leader);
 			Assert.NotNull(nonLeader);
 
-			leader.RemoveFromClusterAsync(nonLeader.Name);
+			leader.RemoveFromClusterAsync(new NodeConnectionInfo { Name = nonLeader.Name });
 
 			//if another removal from cluster is in progress, 
-			Assert.Throws<InvalidOperationException>(() => leader.RemoveFromClusterAsync(leader.Name).Wait());
+			Assert.Throws<InvalidOperationException>(() => leader.RemoveFromClusterAsync(new NodeConnectionInfo { Name = leader.Name }).Wait());
 		}
 
 		[Theory]
@@ -133,7 +136,7 @@ namespace Rhino.Raft.Tests
 												 .ToList();
 
 			var waitForToplogyChangeOnCluster = WaitForToplogyChangeOnCluster(nodesThatShouldRemain);
-			leader.RemoveFromClusterAsync(nodeToRemove.Name).Wait();
+			leader.RemoveFromClusterAsync(new NodeConnectionInfo { Name = nodeToRemove.Name }).Wait();
 
 			Assert.True(waitForToplogyChangeOnCluster.Wait(3000));
 
@@ -166,7 +169,7 @@ namespace Rhino.Raft.Tests
 				DisconnectNodeSending(nonLeader.Name);
 				topologyChangeStarted.Set();
 			};
-			leader.AddToClusterAsync("nodeC");
+			leader.AddToClusterAsync(new NodeConnectionInfo { Name = "nodeC" });
 			Assert.True(topologyChangeStarted.Wait(2000));
 
 			RestartAllNodes();
@@ -188,10 +191,10 @@ namespace Rhino.Raft.Tests
 		{
 			var leader = CreateNetworkAndGetLeader(4, messageTimeout: 1500);
 
-			leader.AddToClusterAsync("extra1");
+			leader.AddToClusterAsync(new NodeConnectionInfo { Name = "extra1" });
 
 			//if another removal from cluster is in progress, 
-			Assert.Throws<InvalidOperationException>(() => leader.AddToClusterAsync("extra2").Wait());
+			Assert.Throws<InvalidOperationException>(() => leader.AddToClusterAsync(new NodeConnectionInfo { Name = "extra2" }).Wait());
 		}
 
 		[Theory]
@@ -206,7 +209,7 @@ namespace Rhino.Raft.Tests
 				var clusterChanged = WaitForToplogyChangeOnCluster();
 				var newNodeAdded = WaitForToplogyChange(additionalNode);
 
-				leader.AddToClusterAsync(additionalNode.Name).Wait();
+				leader.AddToClusterAsync(new NodeConnectionInfo { Name = additionalNode.Name }).Wait();
 
 				clusterChanged.Wait();
 				newNodeAdded.Wait();
@@ -284,7 +287,7 @@ namespace Rhino.Raft.Tests
 
 			var waitForToplogyChangeOnCluster = WaitForToplogyChangeOnCluster(raftNodes);
 
-			waitForNewLeaderAsync.Result.RemoveFromClusterAsync(leader.Name).Wait();
+			waitForNewLeaderAsync.Result.RemoveFromClusterAsync(new NodeConnectionInfo { Name = leader.Name }).Wait();
 
 			Assert.True(waitForToplogyChangeOnCluster.Wait(300));
 
@@ -320,7 +323,7 @@ namespace Rhino.Raft.Tests
 
 			Assert.Equal(3, leader.CurrentTopology.QuorumSize);
 			WriteLine(string.Format("<--- Removing from cluster {0} --->", nonLeaderNode.Name));
-			leader.RemoveFromClusterAsync(nonLeaderNode.Name).Wait();
+			leader.RemoveFromClusterAsync(new NodeConnectionInfo { Name = nonLeaderNode.Name }).Wait();
 
 			var otherNonLeaderNode = Nodes.First(x => x.State != RaftEngineState.Leader && !ReferenceEquals(x, nonLeaderNode));
 
@@ -373,7 +376,7 @@ namespace Rhino.Raft.Tests
 			raftNodes.ForEach(node => node.TopologyChanged += cmd => topologyChangeComittedEvent.Signal());
 
 			Trace.WriteLine(string.Format("<-- Removing {0} from the cluster -->", removedNode.Name));
-			leader.RemoveFromClusterAsync(removedNode.Name).Wait();
+			leader.RemoveFromClusterAsync(new NodeConnectionInfo { Name = removedNode.Name }).Wait();
 
 			Assert.True(topologyChangeComittedEvent.Wait(nodeCount * 2500));
 

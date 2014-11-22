@@ -259,7 +259,7 @@ namespace Rhino.Raft.Tests
 					{
 						if (i == leaderIndex)
 							continue;
-						Assert.True(engine.AddToClusterAsync(nodeNames[i]).Wait(3000));
+						Assert.True(engine.AddToClusterAsync(new NodeConnectionInfo { Name = nodeNames[i] }).Wait(3000));
 					}
 				}
 			}

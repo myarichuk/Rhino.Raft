@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
+using Rhino.Raft.Transport;
 using Voron;
 using Xunit;
 using Xunit.Extensions;
@@ -84,7 +85,7 @@ namespace Rhino.Raft.Tests
 			WriteLine("<-- adding node");
 			var waitForSnapshotInstallation = WaitForSnapshotInstallation(newNode);
 
-			leader.AddToClusterAsync(newNode.Name).Wait();
+			leader.AddToClusterAsync(new NodeConnectionInfo { Name = newNode.Name }).Wait();
 
 			waitForSnapshotInstallation.Wait();
 

@@ -219,7 +219,11 @@ namespace Rhino.Raft.Tests
 			var nodeOptions = new RaftEngineOptions("real", storageEnvironmentOptions, _inMemoryTransportHub.CreateTransportFor("real"),new DictionaryStateMachine());
 
 			PersistentState.SetTopologyExplicitly(nodeOptions,
-				new Topology(new[] {"real", "u2", "pj"}, new string[0], new string[0]), throwIfTopologyExists: true);
+				new Topology(
+					new[]
+					{
+						new NodeConnectionInfo {Name = "real"}, new NodeConnectionInfo {Name = "u2"}, new NodeConnectionInfo {Name = "pj"},
+					}, new NodeConnectionInfo[0], new NodeConnectionInfo[0]), throwIfTopologyExists: true);
 			storageEnvironmentOptions.OwnsPagers = true;
 
 			using (var node = new RaftEngine(nodeOptions))
@@ -254,7 +258,7 @@ namespace Rhino.Raft.Tests
 						var currentConfiguration = persistentState.GetCurrentTopology();
 						Assert.Empty(currentConfiguration.AllVotingNodes);
 
-						var currentTopology = new Topology(expectedAllVotingPeers, Enumerable.Empty<string>(), Enumerable.Empty<string>());
+						var currentTopology = new Topology(expectedAllVotingPeers.Select(x => new NodeConnectionInfo { Name = x }), Enumerable.Empty<NodeConnectionInfo>(), Enumerable.Empty<NodeConnectionInfo>());
 						persistentState.SetCurrentTopology(currentTopology, 1);
 					}
 				}

@@ -30,13 +30,9 @@ namespace Rhino.Raft.Tests
 		public HttpTransportPingTest()
 		{
 			_node1Transport = new HttpTransport("node1");
-			_node1Transport.Register(new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") });
-			_node1Transport.Register(new NodeConnectionInfo { Name = "node2", Url = new Uri("http://localhost:9078") });
-			_node1Transport.Register(new NodeConnectionInfo { Name = "node3", Url = new Uri("http://localhost:9077") });
-
+			
 			var engineOptions = new RaftEngineOptions("node1", StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport, new DictionaryStateMachine())
 			{
-				//AllVotingNodes = new[] { "node1", "node2", "node3" },
 				MessageTimeout = 60*1000
 			};
 			_raftEngine = new RaftEngine(engineOptions);
@@ -56,15 +52,10 @@ namespace Rhino.Raft.Tests
 		[Fact]
 		public void CanSendRequestVotesAndGetReply()
 		{
-			using (var node2Transport = new Transport.HttpTransport("node2"))
+			using (var node2Transport = new HttpTransport("node2"))
 			{
-				node2Transport.Register(new NodeConnectionInfo
-				{
-					Name = "node1",
-					Url = new Uri("http://localhost:9079")
-				});
-
-				node2Transport.Send("node1", new RequestVoteRequest
+				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				node2Transport.Send(node1, new RequestVoteRequest
 				{
 					TrialOnly = true,
 					From = "node2",
@@ -88,13 +79,8 @@ namespace Rhino.Raft.Tests
 		{
 			using (var node2Transport = new Transport.HttpTransport("node2"))
 			{
-				node2Transport.Register(new NodeConnectionInfo
-				{
-					Name = "node1",
-					Url = new Uri("http://localhost:9079")
-				});
-
-				node2Transport.Send("node1", new AppendEntriesRequest
+				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				node2Transport.Send(node1, new AppendEntriesRequest
 				{
 					From = "node2",
 					Term = 2,
@@ -128,7 +114,7 @@ namespace Rhino.Raft.Tests
 						mres.Set();
 				};
 
-				node2Transport.Send("node1", new TimeoutNowRequest
+				node2Transport.Send(node1, new TimeoutNowRequest
 				{
 					Term = 4,
 					From = "node2"
@@ -149,13 +135,9 @@ namespace Rhino.Raft.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				node2Transport.Register(new NodeConnectionInfo
-				{
-					Name = "node1",
-					Url = new Uri("http://localhost:9079")
-				});
+				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
 
-				node2Transport.Send("node1", new CanInstallSnapshotRequest
+				node2Transport.Send(node1, new CanInstallSnapshotRequest
 				{
 					From = "node2",
 					Term = 2,
@@ -177,13 +159,10 @@ namespace Rhino.Raft.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				node2Transport.Register(new NodeConnectionInfo
-				{
-					Name = "node1",
-					Url = new Uri("http://localhost:9079")
-				});
+				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				
 
-				node2Transport.Send("node1", new AppendEntriesRequest
+				node2Transport.Send(node1, new AppendEntriesRequest
 				{
 					From = "node2",
 					Term = 2,
@@ -223,13 +202,10 @@ namespace Rhino.Raft.Tests
 		{
 			using (var node2Transport = new HttpTransport("node2"))
 			{
-				node2Transport.Register(new NodeConnectionInfo
-				{
-					Name = "node1",
-					Url = new Uri("http://localhost:9079")
-				});
+				var node1 = new NodeConnectionInfo { Name = "node1", Url = new Uri("http://localhost:9079") };
+				
 
-				node2Transport.Send("node1", new CanInstallSnapshotRequest
+				node2Transport.Send(node1, new CanInstallSnapshotRequest
 				{
 					From = "node2",
 					Term = 2,
@@ -241,7 +217,7 @@ namespace Rhino.Raft.Tests
 				Assert.True(gotIt);
 				Assert.True(context.Message is CanInstallSnapshotResponse);
 
-				node2Transport.Stream("node1", new InstallSnapshotRequest
+				node2Transport.Stream(node1, new InstallSnapshotRequest
 				{
 					From = "node2",
 					Term = 2,
