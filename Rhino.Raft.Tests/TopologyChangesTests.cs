@@ -128,7 +128,19 @@ namespace Rhino.Raft.Tests
 		[InlineData(7)]
 		public void Non_leader_Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
-			var leader = CreateNetworkAndGetLeader(nodeCount,messageTimeout: 3000);
+			var leader = CreateNetworkAndGetLeader(nodeCount);
+
+			var cmd = new DictionaryCommand.Set
+			{
+				Key = "a",
+				Value = 1
+			};
+
+			var waitForCommitsOnCluster = WaitForCommitsOnCluster(machine => machine.LastAppliedIndex == cmd.AssignedIndex);
+
+			leader.AppendCommand(cmd);
+
+			Assert.True(waitForCommitsOnCluster.Wait(3000));
 
 			var nodeToRemove = Nodes.First(x => x.State != RaftEngineState.Leader);
 
@@ -142,16 +154,16 @@ namespace Rhino.Raft.Tests
 
 
 			var nodePeerLists = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
-										 .Select(n => n.CurrentTopology)
+										 .Select(n => n)
 										 .ToList();
 
-			foreach (var nodePeerList in nodePeerLists)
+			foreach (var node in nodePeerLists)
 			{
-				Assert.Equal(nodesThatShouldRemain.Count(), nodePeerList.AllNodeNames.Count());
+				Assert.Equal(nodesThatShouldRemain.Count(), node.CurrentTopology.AllNodeNames.Count());
 
-				foreach (var node in nodesThatShouldRemain)
+				foreach (var n in nodesThatShouldRemain)
 				{
-					Assert.True(nodePeerList.Contains(node.Name));
+					Assert.True(node.CurrentTopology.Contains(n.Name));
 				}
 			}
 		}
