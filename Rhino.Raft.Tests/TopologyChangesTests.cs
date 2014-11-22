@@ -64,7 +64,7 @@ namespace Rhino.Raft.Tests
 			leader.AddToClusterAsync("non-existing-node").Wait();
 
 			Assert.True(topologyChangeFinishedOnAllNodes.Wait(5000),"Topology changes should happen in less than 5 sec for 3 node network");
-			Nodes.ToList().ForEach(n => n.CurrentTopology.AllNodes.Should().Contain("non-existing-node"));
+			Nodes.ToList().ForEach(n => n.CurrentTopology.AllNodeNames.Should().Contain("non-existing-node"));
 		}
 
 
@@ -144,7 +144,7 @@ namespace Rhino.Raft.Tests
 
 			foreach (var nodePeerList in nodePeerLists)
 			{
-				Assert.Equal(nodesThatShouldRemain.Count(), nodePeerList.AllNodes.Count());
+				Assert.Equal(nodesThatShouldRemain.Count(), nodePeerList.AllNodeNames.Count());
 
 				foreach (var node in nodesThatShouldRemain)
 				{
@@ -179,7 +179,7 @@ namespace Rhino.Raft.Tests
 
 			foreach (var raftEngine in Nodes)
 			{
-				raftEngine.CurrentTopology.AllNodes.Should().Contain("nodeC");
+				raftEngine.CurrentTopology.AllNodeNames.Should().Contain("nodeC");
 			}
 		}
 
@@ -221,7 +221,7 @@ namespace Rhino.Raft.Tests
 						node.CurrentTopology + " on " + node.Name);
 				}
 
-				additionalNode.CurrentTopology.AllNodes.Should().Contain(raftNodes.Select(node => node.Name));
+				additionalNode.CurrentTopology.AllNodeNames.Should().Contain(raftNodes.Select(node => node.Name));
 			}
 		}
 
@@ -290,7 +290,7 @@ namespace Rhino.Raft.Tests
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
 
-			raftNodes.ForEach(node => node.CurrentTopology.AllNodes.Should()
+			raftNodes.ForEach(node => node.CurrentTopology.AllNodeNames.Should()
 				.BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
 		}
 
@@ -379,7 +379,7 @@ namespace Rhino.Raft.Tests
 
 			var expectedNodeNameList = raftNodes.Select(x => x.Name).ToList();
 			Trace.WriteLine("<-- expectedNodeNameList:" + expectedNodeNameList.Aggregate(String.Empty, (all, curr) => all + ", " + curr));
-			raftNodes.ForEach(node => node.CurrentTopology.AllNodes.Should().BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
+			raftNodes.ForEach(node => node.CurrentTopology.AllNodeNames.Should().BeEquivalentTo(expectedNodeNameList, "node " + node.Name + " should have expected AllVotingNodes list"));
 		}
 	}
 }

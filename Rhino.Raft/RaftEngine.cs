@@ -17,6 +17,7 @@ using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
+using Rhino.Raft.Transport;
 using Rhino.Raft.Utils;
 
 namespace Rhino.Raft
@@ -270,18 +271,18 @@ namespace Rhino.Raft
 			return _steppingDownCompletionSource.Task;
 		}
 
-		public Task RemoveFromClusterAsync(string node)
+		public Task RemoveFromClusterAsync(NodeConnectionInfo node)
 		{
-			if (_currentTopology.Contains(node) == false)
+			if (_currentTopology.Contains(node.Name) == false)
 				throw new InvalidOperationException("Node " + node + " was not found in the cluster");
 
-			if (string.Equals(node, Name, StringComparison.OrdinalIgnoreCase))
+			if (string.Equals(node.Name, Name, StringComparison.OrdinalIgnoreCase))
 				throw new InvalidOperationException("You cannot remove the current node from the cluster, step down this node and then remove it from the new leader");
 
 			var requestedTopology = new Topology(
-				_currentTopology.AllVotingNodes.Except(new[] { node }, StringComparer.OrdinalIgnoreCase),
-				_currentTopology.NonVotingNodes.Except(new[] { node }, StringComparer.OrdinalIgnoreCase),
-				_currentTopology.PromotableNodes.Except(new[] { node }, StringComparer.OrdinalIgnoreCase)
+				_currentTopology.AllVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase)),
+				_currentTopology.NonVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase)),
+				_currentTopology.PromotableNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase))
 			);
 			if (_log.IsInfoEnabled)
 			{
@@ -290,10 +291,10 @@ namespace Rhino.Raft
 			return ModifyTopology(requestedTopology);
 		}
 
-		public Task AddToClusterAsync(string node, bool nonVoting = false)
+		public Task AddToClusterAsync(NodeConnectionInfo node, bool nonVoting = false)
 		{
-			if (_currentTopology.Contains(node))
-				throw new InvalidOperationException("Node " + node + " is already in the cluster");
+			if (_currentTopology.Contains(node.Name))
+				throw new InvalidOperationException("Node " + node.Name + " is already in the cluster");
 
 			var requestedTopology = new Topology(_currentTopology.AllVotingNodes,
 				nonVoting ? _currentTopology.NonVotingNodes.Union(new[] { node }) : _currentTopology.NonVotingNodes,

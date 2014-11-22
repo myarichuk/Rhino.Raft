@@ -59,18 +59,19 @@ namespace Rhino.Raft.Transport
 				return _parent.TryReceiveMessage(_from, timeout, cancellationToken, out messageContext);
 			}
 
-			public void Stream(string dest, InstallSnapshotRequest snapshotRequest, Action<Stream> streamWriter)
+
+			public void Stream(NodeConnectionInfo dest, InstallSnapshotRequest snapshotRequest, Action<Stream> streamWriter)
 			{
 				var stream = new MemoryStream();
 				streamWriter(stream);
 				stream.Position = 0;
 
-				_parent.AddToQueue(this, dest, snapshotRequest, stream);
+				_parent.AddToQueue(this, dest.Name, snapshotRequest, stream);
 			}
 
-			public void Send(string dest, CanInstallSnapshotRequest req)
+			public void Send(NodeConnectionInfo dest, CanInstallSnapshotRequest req)
 			{
-				_parent.AddToQueue(this, dest, req);
+				_parent.AddToQueue(this, dest.Name, req);
 			}
 
 			public void SendInternal(string dest, string from, object msg)
@@ -78,24 +79,24 @@ namespace Rhino.Raft.Transport
 				_parent.AddToQueue(this, dest, msg);
 			}
 
-			public void Send(string dest, TimeoutNowRequest req)
+			public void Send(NodeConnectionInfo dest, TimeoutNowRequest req)
 			{
-				_parent.AddToQueue(this, dest, req);
+				_parent.AddToQueue(this, dest.Name, req);
 			}
 
-			public void Send(string dest, DisconnectedFromCluster req)
+			public void Send(NodeConnectionInfo dest, DisconnectedFromCluster req)
 			{
-				_parent.AddToQueue(this, dest, req);
+				_parent.AddToQueue(this, dest.Name, req);
 			}
 
-			public void Send(string dest, AppendEntriesRequest req)
+			public void Send(NodeConnectionInfo dest, AppendEntriesRequest req)
 			{
-				_parent.AddToQueue(this, dest, req);
+				_parent.AddToQueue(this, dest.Name, req);
 			}
 
-			public void Send(string dest, RequestVoteRequest req)
+			public void Send(NodeConnectionInfo dest, RequestVoteRequest req)
 			{
-				_parent.AddToQueue(this, dest, req);
+				_parent.AddToQueue(this, dest.Name, req);
 			}
 
 			public void SendToSelf(AppendEntriesResponse resp)

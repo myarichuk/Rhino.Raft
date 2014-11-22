@@ -250,7 +250,7 @@ namespace Rhino.Raft.Tests
 				{
 					engine.TopologyChanged += command =>
 					{
-						if (command.Requested.AllNodes.All(command.Requested.IsVoter))
+						if (command.Requested.AllNodeNames.All(command.Requested.IsVoter))
 						{
 							allNodesFinishedJoining.Set();
 						}

@@ -25,37 +25,32 @@ namespace Rhino.Raft.Transport
 			_sender = new HttpTransportSender(name,_bus);
 		}
 
-		public void Register(NodeConnectionInfo connectionInfo)
-		{
-			_sender.Register(connectionInfo);
-		}
-
-		public void Send(string dest, DisconnectedFromCluster req)
+		public void Send(NodeConnectionInfo dest, DisconnectedFromCluster req)
 		{
 			_sender.Send(dest, req);
 		}
 
-		public void Send(string dest, AppendEntriesRequest req)
+		public void Send(NodeConnectionInfo dest, AppendEntriesRequest req)
 		{
 			_sender.Send(dest, req);
 		}
 
-		public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
+		public void Stream(NodeConnectionInfo dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
 		{
 			_sender.Stream(dest, req, streamWriter);
 		}
 
-		public void Send(string dest, CanInstallSnapshotRequest req)
+		public void Send(NodeConnectionInfo dest, CanInstallSnapshotRequest req)
 		{
 			_sender.Send(dest, req);
 		}
 
-		public void Send(string dest, RequestVoteRequest req)
+		public void Send(NodeConnectionInfo dest, RequestVoteRequest req)
 		{
 			_sender.Send(dest, req);
 		}
 
-		public void Send(string dest, TimeoutNowRequest req)
+		public void Send(NodeConnectionInfo dest, TimeoutNowRequest req)
 		{
 			_sender.Send(dest, req);
 		}

@@ -25,9 +25,6 @@ namespace Rhino.Raft.Transport
 	{
 		private readonly HttpTransportBus _bus;
 
-		private readonly ConcurrentDictionary<string, NodeConnectionInfo> _nodeConnectionInfos =
-			new ConcurrentDictionary<string, NodeConnectionInfo>();
-
 		private readonly ConcurrentDictionary<string, ConcurrentQueue<HttpClient>> _httpClientsCache = new ConcurrentDictionary<string, ConcurrentQueue<HttpClient>>();
 		private readonly Logger _log;
 		public HttpTransportSender(string name, HttpTransportBus bus)
@@ -36,12 +33,8 @@ namespace Rhino.Raft.Transport
 			_log = LogManager.GetLogger(GetType().Name + "." + name);
 		}
 
-		public void Register(NodeConnectionInfo connectionInfo)
-		{
-			_nodeConnectionInfos.AddOrUpdate(connectionInfo.Name, connectionInfo, (s, info) => connectionInfo);
-		}
 
-		public void Stream(string dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
+		public void Stream(NodeConnectionInfo dest, InstallSnapshotRequest req, Action<Stream> streamWriter)
 		{
 			HttpClient client;
 			using (GetConnection(dest, out client))
@@ -83,7 +76,7 @@ namespace Rhino.Raft.Transport
 			}
 		}
 
-		public void Send(string dest, AppendEntriesRequest req)
+		public void Send(NodeConnectionInfo dest, AppendEntriesRequest req)
 		{
 			HttpClient client;
 			using (GetConnection(dest, out client))
@@ -161,7 +154,7 @@ namespace Rhino.Raft.Transport
 			}
 		}
 
-		public void Send(string dest, CanInstallSnapshotRequest req)
+		public void Send(NodeConnectionInfo dest, CanInstallSnapshotRequest req)
 		{
 			HttpClient client;
 			using (GetConnection(dest, out client))
@@ -178,8 +171,8 @@ namespace Rhino.Raft.Transport
 				});
 			}
 		}
-	
-		public void Send(string dest, RequestVoteRequest req)
+
+		public void Send(NodeConnectionInfo dest, RequestVoteRequest req)
 		{
 			HttpClient client;
 			using (GetConnection(dest, out client))
@@ -202,7 +195,7 @@ namespace Rhino.Raft.Transport
 			_bus.Publish(o, source: null);
 		}
 
-		public void Send(string dest, TimeoutNowRequest req)
+		public void Send(NodeConnectionInfo dest, TimeoutNowRequest req)
 		{
 			HttpClient client;
 			using (GetConnection(dest, out client))
@@ -216,7 +209,7 @@ namespace Rhino.Raft.Transport
 			}
 		}
 
-		public void Send(string dest, DisconnectedFromCluster req)
+		public void Send(NodeConnectionInfo dest, DisconnectedFromCluster req)
 		{
 			HttpClient client;
 			using (GetConnection(dest, out client))
@@ -281,13 +274,9 @@ namespace Rhino.Raft.Transport
 		}
 
 
-		private ReturnToQueue GetConnection(string dest, out HttpClient result)
+		private ReturnToQueue GetConnection(NodeConnectionInfo info, out HttpClient result)
 		{
-			NodeConnectionInfo info;
-			if (_nodeConnectionInfos.TryGetValue(dest, out info) == false)
-				throw new InvalidOperationException("Don't know how to connect to " + dest);
-
-			var connectionQueue = _httpClientsCache.GetOrAdd(dest, _ => new ConcurrentQueue<HttpClient>());
+			var connectionQueue = _httpClientsCache.GetOrAdd(info.Name, _ => new ConcurrentQueue<HttpClient>());
 
 			if (connectionQueue.TryDequeue(out result) == false)
 			{

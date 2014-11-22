@@ -12,6 +12,7 @@ using NLog;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Interfaces;
 using Rhino.Raft.Messages;
+using Rhino.Raft.Transport;
 using Voron;
 using Voron.Impl;
 using Voron.Trees;
@@ -93,7 +94,7 @@ namespace Rhino.Raft.Storage
 		public static void ClusterBootstrap(RaftEngineOptions options)
 		{
 			SetTopologyExplicitly(options, 
-				new Topology(new[] { options.Name }, Enumerable.Empty<string>(), Enumerable.Empty<string>()),
+				new Topology(new[] { options.SelfConnection }, Enumerable.Empty<NodeConnectionInfo>(), Enumerable.Empty<NodeConnectionInfo>()),
 				throwIfTopologyExists: true);
 		}
 

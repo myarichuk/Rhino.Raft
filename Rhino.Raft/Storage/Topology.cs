@@ -1,68 +1,83 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Rhino.Raft.Transport;
 
 namespace Rhino.Raft.Storage
 {
 	public class Topology
 	{
-		public IEnumerable<string> AllVotingNodes
-		{
-			get { return _allVotingNodes; }
-		}
-
-		public IEnumerable<string> NonVotingNodes
-		{
-			get { return _nonVotingNodes; }
-		}
-
-		public IEnumerable<string> PromotableNodes
-		{
-			get { return _promotableNodes; }
-		}
-
+		private readonly Dictionary<string, NodeConnectionInfo> _allNodes;
+		private readonly Dictionary<string, NodeConnectionInfo> _allVotingNodes;
+		private readonly Dictionary<string, NodeConnectionInfo> _nonVotingNodes;
+		private readonly Dictionary<string, NodeConnectionInfo> _promotableNodes;
 		private string _topologyString;
-		private readonly HashSet<string> _allVotingNodes;
-		private readonly HashSet<string> _nonVotingNodes;
-		private readonly HashSet<string> _promotableNodes;
 
-		private readonly HashSet<string> _allNodes;
+		public Topology()
+		{
+			_allVotingNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
+			_nonVotingNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
+			_promotableNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
+			_allNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
+		}
+
+		public Topology(IEnumerable<NodeConnectionInfo> allVotingNodes, IEnumerable<NodeConnectionInfo> nonVotingNodes,
+			IEnumerable<NodeConnectionInfo> promotableNodes)
+			: this()
+		{
+			foreach (NodeConnectionInfo nodeConnectionInfo in allVotingNodes)
+			{
+				_allVotingNodes[nodeConnectionInfo.Name] = nodeConnectionInfo;
+				_allNodes[nodeConnectionInfo.Name] = nodeConnectionInfo;
+			}
+			foreach (NodeConnectionInfo nodeConnectionInfo in nonVotingNodes)
+			{
+				_nonVotingNodes[nodeConnectionInfo.Name] = nodeConnectionInfo;
+				_allNodes[nodeConnectionInfo.Name] = nodeConnectionInfo;
+			}
+			foreach (NodeConnectionInfo nodeConnectionInfo in promotableNodes)
+			{
+				_promotableNodes[nodeConnectionInfo.Name] = nodeConnectionInfo;
+				_allNodes[nodeConnectionInfo.Name] = nodeConnectionInfo;
+			}
+
+
+			CreateTopologyString();
+		}
+
+		public IEnumerable<NodeConnectionInfo> AllVotingNodes
+		{
+			get { return _allVotingNodes.Values; }
+		}
+
+		public IEnumerable<NodeConnectionInfo> NonVotingNodes
+		{
+			get { return _nonVotingNodes.Values; }
+		}
+
+		public IEnumerable<NodeConnectionInfo> PromotableNodes
+		{
+			get { return _promotableNodes.Values; }
+		}
 
 		public int QuorumSize
 		{
-			get { return (_allVotingNodes.Count / 2) + 1; }
+			get { return (_allVotingNodes.Count/2) + 1; }
 		}
 
-		public IEnumerable<string> AllNodes
+		public IEnumerable<string> AllNodeNames
 		{
-			get { return _allNodes; }
+			get { return _allNodes.Keys; }
 		}
+
+		public IEnumerable<NodeConnectionInfo> AllNodes
+		{
+			get { return _allNodes.Values; }
+		} 
 
 		public bool HasVoters
 		{
 			get { return _allVotingNodes.Count > 0; }
-		}
-
-		public Topology()
-		{
-			_allVotingNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			_nonVotingNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			_promotableNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			_allNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		}
-
-		public Topology(IEnumerable<string> allVotingNodes, IEnumerable<string> nonVotingNodes, IEnumerable<string> promotableNodes)
-			: this()
-		{
-			_allVotingNodes.UnionWith(allVotingNodes);
-			_nonVotingNodes.UnionWith(nonVotingNodes);
-			_promotableNodes.UnionWith(promotableNodes);
-
-			_allNodes.UnionWith(_allVotingNodes);
-			_allNodes.UnionWith(_nonVotingNodes);
-			_allNodes.UnionWith(_promotableNodes);
-
-			CreateTopologyString();
 		}
 
 		private void CreateTopologyString()
@@ -75,18 +90,16 @@ namespace Rhino.Raft.Storage
 
 			_topologyString = "";
 			if (_allVotingNodes.Count > 0)
-				_topologyString += "Voting: [" + string.Join(", ", _allVotingNodes) + "] ";
+				_topologyString += "Voting: [" + string.Join(", ", _allVotingNodes.Keys) + "] ";
 			if (_nonVotingNodes.Count > 0)
-				_topologyString += "Non voting: [" + string.Join(", ", _nonVotingNodes) + "] ";
+				_topologyString += "Non voting: [" + string.Join(", ", _nonVotingNodes.Keys) + "] ";
 			if (_promotableNodes.Count > 0)
-				_topologyString += "Promotables: [" + string.Join(", ", _promotableNodes) + "] ";
+				_topologyString += "Promotables: [" + string.Join(", ", _promotableNodes.Keys) + "] ";
 		}
-
 
 		public bool HasQuorum(HashSet<string> votes)
 		{
-			var sum = AllVotingNodes.Count(votes.Contains);
-			return sum >= QuorumSize;
+			return votes.Count(IsVoter) >= QuorumSize;
 		}
 
 		public override string ToString()
@@ -98,17 +111,24 @@ namespace Rhino.Raft.Storage
 
 		public bool Contains(string node)
 		{
-			return _allVotingNodes.Contains(node) || _nonVotingNodes.Contains(node) || _promotableNodes.Contains(node);
+			return _allVotingNodes.ContainsKey(node) || _nonVotingNodes.ContainsKey(node) || _promotableNodes.ContainsKey(node);
 		}
 
 		public bool IsVoter(string node)
 		{
-			return _allVotingNodes.Contains(node);
+			return _allVotingNodes.ContainsKey(node);
 		}
 
 		public bool IsPromotable(string node)
 		{
-			return _promotableNodes.Contains(node);
+			return _promotableNodes.ContainsKey(node);
+		}
+
+		public NodeConnectionInfo GetNodeByName(string node)
+		{
+			NodeConnectionInfo info;
+			_allNodes.TryGetValue(node, out info);
+			return info;
 		}
 	}
 }

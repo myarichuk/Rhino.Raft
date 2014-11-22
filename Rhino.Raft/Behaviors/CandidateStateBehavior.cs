@@ -68,9 +68,10 @@ namespace Rhino.Raft.Behaviors
 			var allVotingNodes = Engine.CurrentTopology.AllVotingNodes;
 
 			// don't send to yourself the message
-			foreach (var votingPeer in allVotingNodes.Where(node =>
-				!node.Equals(Engine.Name, StringComparison.InvariantCultureIgnoreCase)))
+			foreach (var votingPeer in allVotingNodes)
 			{
+				if (votingPeer.Name == Engine.Name)
+					continue;
 				Engine.Transport.Send(votingPeer, rvr);
 			}
 

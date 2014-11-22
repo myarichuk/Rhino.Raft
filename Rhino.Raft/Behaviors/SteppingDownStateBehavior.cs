@@ -59,12 +59,16 @@ namespace Rhino.Raft.Behaviors
 
 			if (bestMatch != null) // this should always be the case, but...
 			{
-				Engine.Transport.Send(bestMatch, new TimeoutNowRequest
+				var nodeConnectionInfo = Engine.CurrentTopology.GetNodeByName(bestMatch);
+				if (nodeConnectionInfo != null)
 				{
-					Term = Engine.PersistentState.CurrentTerm,
-					From = Engine.Name
-				});
-				_log.Info("Transfering cluster leadership to {0}", bestMatch);
+					Engine.Transport.Send(nodeConnectionInfo, new TimeoutNowRequest
+					{
+						Term = Engine.PersistentState.CurrentTerm,
+						From = Engine.Name
+					});
+					_log.Info("Transferring cluster leadership to {0}", bestMatch);
+				}
 			}
 
 			Engine.SetState(RaftEngineState.FollowerAfterStepDown);

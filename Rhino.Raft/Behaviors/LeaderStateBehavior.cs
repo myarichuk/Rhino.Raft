@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Rhino.Raft.Commands;
 using Rhino.Raft.Messages;
 using Rhino.Raft.Storage;
+using Rhino.Raft.Transport;
 
 namespace Rhino.Raft.Behaviors
 {
@@ -35,11 +36,11 @@ namespace Rhino.Raft.Behaviors
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
-			Timeout = engine.Options.MessageTimeout/2;
+			Timeout = engine.Options.MessageTimeout / 2;
 			engine.TopologyChanged += OnTopologyChanged;
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
-			foreach (var peer in Engine.CurrentTopology.AllNodes)
+			foreach (var peer in Engine.CurrentTopology.AllNodeNames)
 			{
 				_nextIndexes[peer] = lastLogEntry.Index + 1;
 				_matchIndexes[peer] = 0;
@@ -58,14 +59,19 @@ namespace Rhino.Raft.Behaviors
 			// have topology change command, so they know they are being removed from the cluster).
 			// This is mostly us being nice neighbors, this isn't required, and the cluster will reject
 			// messages from nodes not considered to be in the cluster.
+			if (tcc.Previous == null)
+				return;
 
-			var removedNodes = tcc.Previous.AllNodes.Except(tcc.Requested.AllNodes).ToList();
+			var removedNodes = tcc.Previous.AllNodeNames.Except(tcc.Requested.AllNodeNames).ToList();
 			foreach (var removedNode in removedNodes)
 			{
+				var nodeByName = tcc.Previous.GetNodeByName(removedNode);
+				if (nodeByName == null)
+					continue;
 				// try sending the latest updates (which include the topology removal entry)
-				SendEntriesToPeer(removedNode);
+				SendEntriesToPeer(nodeByName);
 				// at any rate, try sending the disconnection command explicitly, to gracefully shut down the node if we can
-				Engine.Transport.Send(removedNode, new DisconnectedFromCluster
+				Engine.Transport.Send(nodeByName, new DisconnectedFromCluster
 				{
 					From = Engine.Name,
 					Term = Engine.PersistentState.CurrentTerm
@@ -92,21 +98,21 @@ namespace Rhino.Raft.Behaviors
 		{
 			foreach (var peer in Engine.CurrentTopology.AllNodes)
 			{
-				if (peer.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
+				if (peer.Name.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
 					continue;// we don't need to send to ourselves
 
 				_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
-				
+
 				SendEntriesToPeer(peer);
 			}
 		}
 
-		private void SendEntriesToPeer(string peer)
+		private void SendEntriesToPeer(NodeConnectionInfo peer)
 		{
 			LogEntry prevLogEntry;
 			LogEntry[] entries;
 
-			var nextIndex = _nextIndexes.GetOrAdd(peer, 0); //new peer's index starts at 0
+			var nextIndex = _nextIndexes.GetOrAdd(peer.Name, 0); //new peer's index starts at 0
 
 			if (Engine.StateMachine.SupportSnapshots)
 			{
@@ -114,7 +120,7 @@ namespace Rhino.Raft.Behaviors
 
 				if (snapshotIndex != null && nextIndex < snapshotIndex)
 				{
-					if (_snapshotsPendingInstallation.ContainsKey(peer))
+					if (_snapshotsPendingInstallation.ContainsKey(peer.Name))
 						return;
 
 					using (var snapshotWriter = Engine.StateMachine.GetSnapshotWriter())
@@ -168,7 +174,7 @@ namespace Rhino.Raft.Behaviors
 			Engine.OnEntriesAppended(entries);
 		}
 
-		private void SendSnapshotToPeer(string peer)
+		private void SendSnapshotToPeer(NodeConnectionInfo peer)
 		{
 			try
 			{
@@ -266,7 +272,7 @@ namespace Rhino.Raft.Behaviors
 			Task snapshotInstallationTask;
 			if (resp.Success == false)
 			{
-				_log.Debug("Received CanInstallSnapshotResponse(Success=false) from {0}, Term = {1}, Index = {2}, updating and will try again", 
+				_log.Debug("Received CanInstallSnapshotResponse(Success=false) from {0}, Term = {1}, Index = {2}, updating and will try again",
 					resp.From,
 					resp.Term,
 					resp.Index);
@@ -282,7 +288,7 @@ namespace Rhino.Raft.Behaviors
 					resp.From,
 					resp.Term,
 					resp.Index);
-				
+
 				_snapshotsPendingInstallation.TryRemove(resp.From, out snapshotInstallationTask);
 				return;
 			}
@@ -303,8 +309,14 @@ namespace Rhino.Raft.Behaviors
 			if (_snapshotsPendingInstallation.ContainsKey(resp.From))
 				return; // already sending
 
+			var nodeConnectionInfo = Engine.CurrentTopology.GetNodeByName(resp.From);
+			if (nodeConnectionInfo == null)
+			{
+				_log.Info("Got CanInstallSnapshotResponse for {0}, but it isn't in our topology, ignoring", resp.From);
+				return;
+			}
 
-			var task = new Task(() => SendSnapshotToPeer(resp.From));
+			var task = new Task(() => SendSnapshotToPeer(nodeConnectionInfo));
 			task.ContinueWith(_ => _snapshotsPendingInstallation.TryRemove(resp.From, out _));
 
 			if (_snapshotsPendingInstallation.TryAdd(resp.From, task))
@@ -333,7 +345,7 @@ namespace Rhino.Raft.Behaviors
 			_matchIndexes[resp.From] = resp.LastLogIndex;
 			_lastContact[resp.From] = DateTime.UtcNow;
 
-			if (Engine.CurrentTopology.IsPromotable(resp.From) && 
+			if (Engine.CurrentTopology.IsPromotable(resp.From) &&
 				resp.LastLogIndex == Engine.CommitIndex)
 			{
 				PromoteNodeToVoter(resp);
@@ -360,7 +372,7 @@ namespace Rhino.Raft.Behaviors
 			// that means that we are good to run without any issues. Further handling is done 
 			// in the HandleTimeout, to handle a situation where the leader can't talk to the clients
 			LastHeartbeatTime = DateTime.UtcNow;
-			
+
 			_log.Debug(
 				"AppendEntriesResponse => applying commits, maxIndexOnQuorom = {0}, Engine.CommitIndex = {1}", maxIndexOnCurrentQuorum,
 				Engine.CommitIndex);
@@ -381,10 +393,13 @@ namespace Rhino.Raft.Behaviors
 			// if we got a successful append entries response from a promotable node, and it has caught up
 			// with the committed entries, it means that we can promote it to voting positions, since it 
 			// can now become a leader.
+			var upgradedNode = Engine.CurrentTopology.GetNodeByName(resp.From);
+			if (upgradedNode == null)
+				return;
 			var requestTopology = new Topology(
-				Engine.CurrentTopology.AllVotingNodes.Union(new[] {resp.From}),
+				Engine.CurrentTopology.AllVotingNodes.Union(new[] { upgradedNode }),
 				Engine.CurrentTopology.NonVotingNodes,
-				Engine.CurrentTopology.PromotableNodes.Except(new[] {resp.From}, StringComparer.OrdinalIgnoreCase)
+				Engine.CurrentTopology.PromotableNodes.Where(x => x != upgradedNode)
 				);
 			if (Engine.CurrentlyChangingTopology() == false)
 			{
@@ -393,7 +408,7 @@ namespace Rhino.Raft.Behaviors
 					resp.From);
 				return;
 			}
-			
+
 			_log.Info(
 				"Node {0} is a promotable node, and it has caught up to the current cluster commit index, promoting to voting member",
 				resp.From);
@@ -411,9 +426,9 @@ namespace Rhino.Raft.Behaviors
 				from contact in _lastContact
 				where currentTopology.IsVoter(contact.Key)
 				select (now - contact.Value).TotalMilliseconds
-				into time
-				orderby time
-				select time
+					into time
+					orderby time
+					select time
 				).ToList();
 
 			return (long)results[currentTopology.QuorumSize - 1];
@@ -485,7 +500,7 @@ namespace Rhino.Raft.Behaviors
 			var sp = Stopwatch.StartNew();
 			try
 			{
-				_heartbeatTask.Wait(Timeout*2);
+				_heartbeatTask.Wait(Timeout * 2);
 			}
 			catch (OperationCanceledException)
 			{
@@ -506,8 +521,8 @@ namespace Rhino.Raft.Behaviors
 					if (result.Completion != null)
 					{
 						timeoutException = timeoutException ??
-						                   new TimeoutException(
-							                   "Couldn't commit this command after the timeout has expired, aborting (note that this still might get commited)");
+										   new TimeoutException(
+											   "Couldn't commit this command after the timeout has expired, aborting (note that this still might get commited)");
 						result.Completion.TrySetException(timeoutException);
 					}
 				}

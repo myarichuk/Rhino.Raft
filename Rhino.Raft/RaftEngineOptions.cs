@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Rhino.Raft.Interfaces;
+using Rhino.Raft.Transport;
 using Voron;
 using Voron.Impl;
 
@@ -17,7 +18,10 @@ namespace Rhino.Raft
 			if (transport == null) throw new ArgumentNullException("transport");
 			if (stateMachine == null) throw new ArgumentNullException("stateMachine");
 
-			Name = name;
+			SelfConnection = new NodeConnectionInfo
+			{
+				Name = name
+			};
 			StorageOptions = storageOptions;
 			Transport = transport;
 			StateMachine = stateMachine;
@@ -35,7 +39,7 @@ namespace Rhino.Raft
 
 		public Stopwatch Stopwatch { get; set; }
 
-		public string Name { get; private set; }
+		public string Name { get { return SelfConnection.Name; } }
 
 		public StorageEnvironmentOptions StorageOptions { get; private set; }
 
@@ -44,5 +48,7 @@ namespace Rhino.Raft
 		public IRaftStateMachine StateMachine { get; private set; }
 
 		public int MessageTimeout { get; set; }
+
+		public NodeConnectionInfo SelfConnection { get; set; }
 	}
 }
