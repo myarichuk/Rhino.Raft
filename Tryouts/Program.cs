@@ -2,9 +2,9 @@
 using System.Web.Http;
 using Microsoft.Owin.Hosting;
 using Owin;
-using Rhino.Raft;
-using Rhino.Raft.Tests;
-using Rhino.Raft.Transport;
+using Rachis;
+using Rachis.Tests;
+using Rachis.Transport;
 using Voron;
 
 namespace Tryouts
