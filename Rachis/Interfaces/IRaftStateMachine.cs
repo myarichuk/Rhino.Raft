@@ -15,7 +15,8 @@ namespace Rachis.Interfaces
 		bool SupportSnapshots { get; }
 
 		/// <summary>
-		/// Create a snapshot, can be called concurrently with GetSnapshotWriter
+		/// Create a snapshot, can be called concurrently with GetSnapshotWriter, can also be called concurrently
+		/// with calls to Apply.
 		/// </summary>
 		void CreateSnapshot(long index, long term);
 
