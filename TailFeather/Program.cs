@@ -32,6 +32,7 @@ namespace TailFeather
 			using (var statemachine = new KeyValueStateMachine(kvso))
 			{
 				var storageEnvironmentOptions = StorageEnvironmentOptions.ForPath(Path.Combine(options.DataPath, "Raft"));
+				var httpTransport = new HttpTransport(nodeName);
 				var raftEngineOptions = new RaftEngineOptions(
 					new NodeConnectionInfo
 					{
@@ -39,9 +40,12 @@ namespace TailFeather
 						Uri = new Uri("http://" + Environment.MachineName + ":" + options.Port),
 					},
 					storageEnvironmentOptions,
-					new HttpTransport(nodeName),
+					httpTransport,
 					statemachine
-					);
+					)
+				{
+					MessageTimeout = 60 * 1000
+				};
 
 				if (options.Boostrap)
 				{
@@ -63,7 +67,7 @@ namespace TailFeather
 						httpConfiguration.Formatters.JsonFormatter.SerializerSettings.Converters.Add(new Newtonsoft.Json.Converters.StringEnumConverter());
 						RaftWebApiConfig.Load();
 						httpConfiguration.MapHttpAttributeRoutes();
-						httpConfiguration.Properties[typeof(HttpTransportBus)] = new HttpTransportBus(nodeName);
+						httpConfiguration.Properties[typeof(HttpTransportBus)] = httpTransport.Bus;
 						httpConfiguration.Properties[typeof(RaftEngine)] = raftEngine;
 						builder.UseWebApi(httpConfiguration);
 					}))
