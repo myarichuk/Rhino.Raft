@@ -81,7 +81,7 @@ namespace Rachis.Behaviors
 				}
 				catch (Exception e)
 				{
-					_log.Info("Failed to install snapshot because {0}", e);
+					_log.Warn(string.Format("Failed to install snapshot term {0} index {1}", req.LastIncludedIndex, req.LastIncludedIndex), e);
 					context.ExecuteInEventLoop(() =>
 					{
 						_installingSnapshot = null;
@@ -91,7 +91,7 @@ namespace Rachis.Behaviors
 				// we are doing it this way to ensure that we are single threaded
 				context.ExecuteInEventLoop(() =>
 				{
-					Engine.UpdateCurrentTerm(req.Term, req.From);
+					Engine.UpdateCurrentTerm(req.Term, req.From); // implicitly put us in follower state
 					Engine.CommitIndex = req.LastIncludedIndex;
 					_log.Info("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
 					Engine.OnSnapshotInstallationEnded(req.Term);
