@@ -128,7 +128,7 @@ namespace Rhino.Raft.Tests
 		[InlineData(7)]
 		public void Non_leader_Node_removed_from_cluster_should_update_peers_list(int nodeCount)
 		{
-			var leader = CreateNetworkAndGetLeader(nodeCount);
+			var leader = CreateNetworkAndGetLeader(nodeCount,messageTimeout: 3000);
 
 			var nodeToRemove = Nodes.First(x => x.State != RaftEngineState.Leader);
 

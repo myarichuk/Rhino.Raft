@@ -15,14 +15,14 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var deserializeObject = JsonConvert.DeserializeObject<Topology>(
-				"{'AllVotingNodes':['node1'],'NonVotingNodes':[],'PromotableNodes':[],'QuorumSize':1,'AllNodes':['node1'],'HasVoters':true}",
-				new JsonSerializerSettings
+			for (int i = 0; i < 10; i++)
+			{
+				Console.WriteLine(i);
+				using (var s = new TopologyChangesTests())
 				{
-					ObjectCreationHandling = ObjectCreationHandling.Auto
-				});
-
-			Console.WriteLine(deserializeObject);
+					s.Non_leader_Node_removed_from_cluster_should_update_peers_list(5);
+				}
+			}
 		}
 	}
 
