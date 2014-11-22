@@ -280,9 +280,9 @@ namespace Rhino.Raft
 				throw new InvalidOperationException("You cannot remove the current node from the cluster, step down this node and then remove it from the new leader");
 
 			var requestedTopology = new Topology(
-				_currentTopology.AllVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase)),
-				_currentTopology.NonVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase)),
-				_currentTopology.PromotableNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase))
+				_currentTopology.AllVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase) == false),
+				_currentTopology.NonVotingNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase) == false),
+				_currentTopology.PromotableNodes.Where(x => string.Equals(x.Name, node.Name, StringComparison.OrdinalIgnoreCase) == false)
 			);
 			if (_log.IsInfoEnabled)
 			{
@@ -471,7 +471,7 @@ namespace Rhino.Raft
 
 			if (_log.IsInfoEnabled)
 			{
-				_log.Info("Finished applying new topology. New AllVotingNodes: {0}", _currentTopology);
+				_log.Info("Finished applying new topology: {0}", _currentTopology);
 			}
 
 			OnTopologyChanged(tcc);

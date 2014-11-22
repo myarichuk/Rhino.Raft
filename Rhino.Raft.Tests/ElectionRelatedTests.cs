@@ -270,7 +270,12 @@ namespace Rhino.Raft.Tests
 					})
 					{
 						var currentConfiguration = persistentState.GetCurrentTopology();
-						expectedAllVotingPeers.Should().Contain(currentConfiguration.AllVotingNodes);
+						Assert.Equal(expectedAllVotingPeers.Count, currentConfiguration.AllVotingNodes.Count());
+						foreach (var nodeConnectionInfo in currentConfiguration.AllVotingNodes)
+						{
+							Assert.True(expectedAllVotingPeers.Contains(nodeConnectionInfo.Name));
+						}
+						
 					}
 				}
 			}

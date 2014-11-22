@@ -138,7 +138,7 @@ namespace Rhino.Raft.Tests
 			var waitForToplogyChangeOnCluster = WaitForToplogyChangeOnCluster(nodesThatShouldRemain);
 			leader.RemoveFromClusterAsync(new NodeConnectionInfo { Name = nodeToRemove.Name }).Wait();
 
-			Assert.True(waitForToplogyChangeOnCluster.Wait(3000));
+			Assert.True(waitForToplogyChangeOnCluster.Wait(5000));
 
 
 			var nodePeerLists = Nodes.Where(n => ReferenceEquals(n, nodeToRemove) == false)
