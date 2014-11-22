@@ -15,6 +15,9 @@ namespace TailFeather.Controllers
 		{
 			return Request.CreateResponse(HttpStatusCode.OK, new
 			{
+				RaftEngine.CurrentLeader,
+				RaftEngine.PersistentState.CurrentTerm,
+				RaftEngine.CommitIndex,
 				RaftEngine.CurrentTopology.AllVotingNodes,
 				RaftEngine.CurrentTopology.PromotableNodes,
 				RaftEngine.CurrentTopology.NonVotingNodes

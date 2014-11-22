@@ -94,6 +94,10 @@
       <Project>{f796f69f-d17b-4260-92d6-65cb94c0e05c}</Project>
       <Name>Rachis</Name>
     </ProjectReference>
+    <ProjectReference Include="..\TailFeather.Client\TailFeather.Client.csproj">
+      <Project>{1E267CF9-EAE8-4F87-BE37-BB1E7C9E86D6}</Project>
+      <Name>TailFeather.Client</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(SolutionDir)\.nuget\NuGet.targets" Condition="Exists('$(SolutionDir)\.nuget\NuGet.targets')" />

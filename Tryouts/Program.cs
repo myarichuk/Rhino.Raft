@@ -5,6 +5,7 @@ using Owin;
 using Rachis;
 using Rachis.Tests;
 using Rachis.Transport;
+using TailFeather.Client;
 using Voron;
 
 namespace Tryouts
@@ -13,27 +14,9 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var _node1Transport = new HttpTransport("node1");
-var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
-			var engineOptions = new RaftEngineOptions(node1, StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport , new DictionaryStateMachine())
-			{
-				MessageTimeout = 60 * 1000
-			};
-			var _raftEngine = new RaftEngine(engineOptions);
+			var tailFeatherClient = new TailFeatherClient(new Uri("http://localhost:9077"));
 
-			var _server = WebApp.Start(new StartOptions
-			{
-				Urls = { "http://+:9079/" }
-			}, builder =>
-			{
-				var httpConfiguration = new HttpConfiguration();
-				RaftWebApiConfig.Load();
-				httpConfiguration.MapHttpAttributeRoutes();
-				httpConfiguration.Properties[typeof(HttpTransportBus)] = _node1Transport.Bus;
-				builder.UseWebApi(httpConfiguration);
-			});
-
-			Console.ReadLine();
+			Console.WriteLine(tailFeatherClient.Get("ravendb").Result.ToString());
 		}
 	}
 
