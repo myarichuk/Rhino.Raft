@@ -10,6 +10,18 @@ namespace TailFeather.Controllers
 	public class AdminController : TailFeatherController
 	{
 		[HttpGet]
+		[Route("tailfeather/admin/flock")]
+		public HttpResponseMessage Join()
+		{
+			return Request.CreateResponse(HttpStatusCode.OK, new
+			{
+				RaftEngine.CurrentTopology.AllVotingNodes,
+				RaftEngine.CurrentTopology.PromotableNodes,
+				RaftEngine.CurrentTopology.NonVotingNodes
+			});
+		}
+
+		[HttpGet]
 		[Route("tailfeather/admin/fly-with-us")]
 		public async Task<HttpResponseMessage> Join([FromUri] string url, [FromUri] string name)
 		{
