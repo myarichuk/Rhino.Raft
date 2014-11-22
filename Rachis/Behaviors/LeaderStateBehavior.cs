@@ -84,27 +84,18 @@ namespace Rachis.Behaviors
 		{
 			while (_stopHeartbeatCancellationTokenSource.IsCancellationRequested == false)
 			{
-				if (_log.IsDebugEnabled)
+				foreach (var peer in Engine.CurrentTopology.AllNodes)
 				{
-					_log.Debug("Sending Leader heartbeats to: {0}", Engine.CurrentTopology);
+					if (peer.Name.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
+						continue;// we don't need to send to ourselves
+
+					_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
+
+					SendEntriesToPeer(peer);
 				}
-				SendEntriesToAllPeers();
 
 				OnHeartbeatSent();
-				Thread.Sleep(Math.Min(Engine.Options.MessageTimeout / 6, 250));
-			}
-		}
-
-		internal void SendEntriesToAllPeers()
-		{
-			foreach (var peer in Engine.CurrentTopology.AllNodes)
-			{
-				if (peer.Name.Equals(Engine.Name, StringComparison.OrdinalIgnoreCase))
-					continue;// we don't need to send to ourselves
-
-				_stopHeartbeatCancellationTokenSource.Token.ThrowIfCancellationRequested();
-
-				SendEntriesToPeer(peer);
+				Thread.Sleep(Math.Max(Engine.Options.MessageTimeout / 6, 15));
 			}
 		}
 
