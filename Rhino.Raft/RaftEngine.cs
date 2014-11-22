@@ -362,7 +362,7 @@ namespace Rhino.Raft
 			return lastLogEntry.Index <= lastLogIndex;
 		}
 
-		public bool WaitForLeader(int timeout = 3000)
+		public bool WaitForLeader(int timeout = 10*1000)
 		{
 			return _leaderSelectedEvent.Wait(timeout, CancellationToken);
 		}

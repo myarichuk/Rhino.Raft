@@ -92,6 +92,8 @@ namespace Rhino.Raft.Tests
 		[Theory]
 		[InlineData(2)]
 		[InlineData(3)]
+		[InlineData(5)]
+		[InlineData(7)]
 		public void Network_partition_for_more_time_than_timeout_can_be_healed(int nodeCount)
 		{
 			const int CommandCount = 5;
