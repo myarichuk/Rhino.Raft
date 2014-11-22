@@ -45,8 +45,12 @@ namespace Rachis.Transport
 						string.Format("raft/installSnapshot?term={0}&=lastIncludedIndex={1}&lastIncludedTerm={2}&from={3}&topology={4}&clusterTopologyId={5}",
 							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From, Uri.EscapeDataString(JsonConvert.SerializeObject(req.Topology)), req.ClusterTopologyId);
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
-					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
+					if (httpResponseMessage.IsSuccessStatusCode == false)
+					{
+						_log.Warn("Error installing snapshot to {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
+						return;
+					}
 					var installSnapshotResponse = JsonConvert.DeserializeObject<InstallSnapshotResponse>(reply);
 					SendToSelf(installSnapshotResponse);
 				});
@@ -87,7 +91,11 @@ namespace Rachis.Transport
 						req.Term, req.LeaderCommit, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					httpResponseMessage.EnsureSuccessStatusCode();
+					if (httpResponseMessage.IsSuccessStatusCode == false)
+					{
+						_log.Warn("Error appending entries to {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
+						return;
+					}
 					var appendEntriesResponse = JsonConvert.DeserializeObject<AppendEntriesResponse>(reply);
 					SendToSelf(appendEntriesResponse);
 				});
@@ -127,30 +135,10 @@ namespace Rachis.Transport
 				stream.WriteByte((byte)(v));
 			}
 
-			private int SizeOf7BitEncodedInt64(long value)
-			{
-				var size = 1;
-				var v = (ulong)value;
-				while (v >= 128)
-				{
-					size ++;
-					v >>= 7;
-				}
-				return size;
-			}
-
 			protected override bool TryComputeLength(out long length)
 			{
-				length = 0;
-				foreach (var logEntry in _entries)
-				{
-					length += SizeOf7BitEncodedInt64(logEntry.Index) +
-					          SizeOf7BitEncodedInt64(logEntry.Term) +
-					          1 /*topology*/+
-							  SizeOf7BitEncodedInt64(logEntry.Data.Length) +
-					          logEntry.Data.Length;
-				}
-				return true;
+				length = -1;
+				return false;
 			}
 		}
 
@@ -164,8 +152,12 @@ namespace Rachis.Transport
 					var requestUri = string.Format("raft/canInstallSnapshot?term={0}&=index{1}&from={2}&clusterTopologyId={3}", req.Term, req.Index,
 						req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.GetAsync(requestUri);
-					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
+					if (httpResponseMessage.IsSuccessStatusCode == false)
+					{
+						_log.Warn("Error checking if can install snapshot to {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
+						return;
+					}
 					var canInstallSnapshotResponse = JsonConvert.DeserializeObject<CanInstallSnapshotResponse>(reply);
 					SendToSelf(canInstallSnapshotResponse);
 				});
@@ -182,8 +174,12 @@ namespace Rachis.Transport
 					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}&clusterTopologyId={6}", 
 						req.Term, req.LastLogIndex, req.LastLogTerm, req.TrialOnly, req.ForcedElection, req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.GetAsync(requestUri);
-					httpResponseMessage.EnsureSuccessStatusCode();
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
+					if (httpResponseMessage.IsSuccessStatusCode == false)
+					{
+						_log.Warn("Error requesting vote from {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
+						return;
+					}
 					var requestVoteResponse = JsonConvert.DeserializeObject<RequestVoteResponse>(reply);
 					SendToSelf(requestVoteResponse);
 				});
@@ -203,7 +199,12 @@ namespace Rachis.Transport
 				LogStatus("timeout to " + dest, async () =>
 				{
 					var message = await client.GetAsync(string.Format("raft/timeoutNow?term={0}&from={1}&clusterTopologyId={2}", req.Term, req.From, req.ClusterTopologyId));
-					message.EnsureSuccessStatusCode();
+					var reply = await message.Content.ReadAsStringAsync();
+					if (message.IsSuccessStatusCode == false)
+					{
+						_log.Warn("Error appending entries to {0}. Status: {1}\r\n{2}", dest.Name, message.StatusCode, message, reply);
+						return;
+					}
 					SendToSelf(new NothingToDo());
 				});
 			}
@@ -217,7 +218,12 @@ namespace Rachis.Transport
 				LogStatus("disconnect " + dest, async () =>
 				{
 					var message = await client.GetAsync(string.Format("raft/disconnectFromCluster?term={0}&from={1}&clusterTopologyId={2}", req.Term, req.From, req.ClusterTopologyId));
-					message.EnsureSuccessStatusCode();
+					var reply = await message.Content.ReadAsStringAsync();
+					if (message.IsSuccessStatusCode == false)
+					{
+						_log.Warn("Error sending disconnecton notification to {0}. Status: {1}\r\n{2}", dest.Name, message.StatusCode, message, reply);
+						return;
+					}
 					SendToSelf(new NothingToDo());
 				});
 			}
@@ -236,7 +242,7 @@ namespace Rachis.Transport
 					_runningOps.TryRemove(op, out value);
 					if (task.Exception != null)
 					{
-						_log.Warn("Failed to send  " + details, task.Exception);
+						_log.Warn("Failed to send " + details, task.Exception);
 						return;
 					}
 					_log.Info("Sent {0}", details);
