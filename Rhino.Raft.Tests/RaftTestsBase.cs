@@ -265,7 +265,7 @@ namespace Rhino.Raft.Tests
 			}
 			if (nodeCount == 1)
 				allNodesFinishedJoining.Set();
-			Assert.True(allNodesFinishedJoining.Wait(3000));
+			Assert.True(allNodesFinishedJoining.Wait(5000));
 
 			var raftEngine = _nodes[leaderIndex];
 
