@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Web.Http;
 using Microsoft.Owin.Hosting;
 using Owin;
@@ -16,7 +18,13 @@ namespace Tryouts
 		{
 			var tailFeatherClient = new TailFeatherClient(new Uri("http://localhost:9077"));
 
-			Console.WriteLine(tailFeatherClient.Get("ravendb").Result.ToString());
+			var tasks = new List<Task>();
+			for (int i = 0; i < 50*1000; i++)
+			{
+				tasks.Add(tailFeatherClient.Set("users/" + i, false));
+			}
+
+			Task.WaitAll(tasks.ToArray());
 		}
 	}
 

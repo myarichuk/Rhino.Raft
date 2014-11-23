@@ -473,9 +473,10 @@ namespace Rachis.Behaviors
 				req.Entries[req.Entries.Length - 1].Index;
 			try
 			{
-				if (req.LeaderCommit > Engine.CommitIndex)
+				long nextCommitIndex = Math.Min(req.LeaderCommit, lastIndex);
+				if (nextCommitIndex > Engine.CommitIndex)
 				{
-					CommitEntries(req.Entries, lastIndex, req.LeaderCommit);
+					CommitEntries(req.Entries, nextCommitIndex);
 				}
 
 				return new AppendEntriesResponse
@@ -501,10 +502,10 @@ namespace Rachis.Behaviors
 			}
 		}
 
-		protected void CommitEntries(LogEntry[] entries, long lastIndex, long leaderCommit)
+		protected void CommitEntries(LogEntry[] entries, long lastIndex)
 		{
 			var oldCommitIndex = Engine.CommitIndex + 1;
-			Engine.CommitIndex = Math.Min(leaderCommit, lastIndex);
+			Engine.CommitIndex = lastIndex;
 			Engine.ApplyCommits(oldCommitIndex, Engine.CommitIndex);
 			
 			Engine.OnEntriesAppended(entries);

@@ -477,7 +477,7 @@ namespace Rachis.Behaviors
 
 			if (Engine.CurrentTopology.QuorumSize == 1)
 			{
-				CommitEntries(null, index, index);
+				CommitEntries(null, index);
 				if (command.Completion != null)
 					command.Completion.SetResult(null);
 
