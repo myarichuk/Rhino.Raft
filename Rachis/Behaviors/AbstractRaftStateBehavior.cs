@@ -201,7 +201,8 @@ namespace Rachis.Behaviors
 					Message = "I currently have a leader and I am receiving heartbeats within election timeout.",
 					From = Engine.Name,
 					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
-					TrialOnly = req.TrialOnly
+					TrialOnly = req.TrialOnly,
+					TermIncreaseMightGetMyVote = false
 				};
 			}
 
@@ -219,7 +220,8 @@ namespace Rachis.Behaviors
 					Message = "You are not a memeber in my cluster, and cannot be a leader",
 					From = Engine.Name,
 					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
-					TrialOnly = req.TrialOnly
+					TrialOnly = req.TrialOnly,
+					TermIncreaseMightGetMyVote = false
 				};
 			}
 
@@ -239,6 +241,7 @@ namespace Rachis.Behaviors
 					From = Engine.Name,
 					TrialOnly = req.TrialOnly,
 					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+					TermIncreaseMightGetMyVote = false
 				};
 			}
 
@@ -248,7 +251,7 @@ namespace Rachis.Behaviors
 			}
 
 			if (Engine.PersistentState.VotedFor != null && Engine.PersistentState.VotedFor != req.From &&
-				Engine.PersistentState.VotedForTerm <= req.Term)
+				Engine.PersistentState.VotedForTerm >= req.Term)
 			{
 				var msg = string.Format("Rejecting request vote because already voted for {0} in term {1}",
 					Engine.PersistentState.VotedFor, req.Term);
@@ -262,7 +265,8 @@ namespace Rachis.Behaviors
 					Message = msg,
 					From = Engine.Name,
 					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
-					TrialOnly = req.TrialOnly
+					TrialOnly = req.TrialOnly,
+					TermIncreaseMightGetMyVote = true
 				};
 			}
 
@@ -279,7 +283,8 @@ namespace Rachis.Behaviors
 					Message = msg,
 					From = Engine.Name,
 					ClusterTopologyId = Engine.CurrentTopology.TopologyId,
-					TrialOnly = req.TrialOnly
+					TrialOnly = req.TrialOnly,
+					TermIncreaseMightGetMyVote = false
 				};
 			}
 			
@@ -306,7 +311,8 @@ namespace Rachis.Behaviors
 				Message = "Vote granted",
 				From = Engine.Name,
 				ClusterTopologyId = Engine.CurrentTopology.TopologyId,
-				TrialOnly = req.TrialOnly
+				TrialOnly = req.TrialOnly,
+				TermIncreaseMightGetMyVote = false
 			};
 		}
 
@@ -416,6 +422,11 @@ namespace Rachis.Behaviors
 			{
 				_log.Debug("Appending log (persistant state), entries count: {0} (node state = {1})", req.Entries.Length,
 					Engine.State);
+
+				foreach (var logEntry in req.Entries)
+				{
+					_log.Debug("Entry {0} (term {1})", logEntry.Index, logEntry.Term);
+				}
 
 				// if is possible that we'll get the same event multiple times (for example, if we took longer than a heartbeat
 				// to process a message). In this case, our log already have the entries in question, and it would be a waste to

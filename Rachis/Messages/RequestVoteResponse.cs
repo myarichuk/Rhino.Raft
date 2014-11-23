@@ -7,5 +7,6 @@ namespace Rachis.Messages
         public bool VoteGranted { get; set; }
         public string Message { get; set; }
 		public bool TrialOnly { get; set; }
+		public bool TermIncreaseMightGetMyVote { get; set; }
     }
 }

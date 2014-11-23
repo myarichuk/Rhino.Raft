@@ -46,7 +46,7 @@ namespace Rachis.Transport
 							req.Term, req.LastIncludedIndex, req.LastIncludedTerm, req.From, Uri.EscapeDataString(JsonConvert.SerializeObject(req.Topology)), req.ClusterTopologyId);
 					var httpResponseMessage = await client.PostAsync(requestUri, new SnapshotContent(streamWriter));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					if (httpResponseMessage.IsSuccessStatusCode == false)
+					if (httpResponseMessage.IsSuccessStatusCode == false && httpResponseMessage.StatusCode != HttpStatusCode.NotAcceptable)
 					{
 						_log.Warn("Error installing snapshot to {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
 						return;
@@ -91,7 +91,7 @@ namespace Rachis.Transport
 						req.Term, req.LeaderCommit, req.PrevLogTerm, req.PrevLogIndex, req.EntriesCount, req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.PostAsync(requestUri,new EntriesContent(req.Entries));
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					if (httpResponseMessage.IsSuccessStatusCode == false)
+					if (httpResponseMessage.IsSuccessStatusCode == false && httpResponseMessage.StatusCode != HttpStatusCode.NotAcceptable)
 					{
 						_log.Warn("Error appending entries to {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
 						return;
@@ -153,7 +153,7 @@ namespace Rachis.Transport
 						req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					if (httpResponseMessage.IsSuccessStatusCode == false)
+					if (httpResponseMessage.IsSuccessStatusCode == false && httpResponseMessage.StatusCode != HttpStatusCode.NotAcceptable)
 					{
 						_log.Warn("Error checking if can install snapshot to {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
 						return;
@@ -171,11 +171,11 @@ namespace Rachis.Transport
 			{
 				LogStatus("request vote from " + dest, async () =>
 				{
-					var requestUri = string.Format("raft/requestVote?term={0}&=lastLogIndex{1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}&clusterTopologyId={6}", 
+					var requestUri = string.Format("raft/requestVote?term={0}&lastLogIndex={1}&lastLogTerm={2}&trialOnly={3}&forcedElection={4}&from={5}&clusterTopologyId={6}", 
 						req.Term, req.LastLogIndex, req.LastLogTerm, req.TrialOnly, req.ForcedElection, req.From, req.ClusterTopologyId);
 					var httpResponseMessage = await client.GetAsync(requestUri);
 					var reply = await httpResponseMessage.Content.ReadAsStringAsync();
-					if (httpResponseMessage.IsSuccessStatusCode == false)
+					if (httpResponseMessage.IsSuccessStatusCode == false && httpResponseMessage.StatusCode != HttpStatusCode.NotAcceptable)
 					{
 						_log.Warn("Error requesting vote from {0}. Status: {1}\r\n{2}", dest.Name, httpResponseMessage.StatusCode, reply);
 						return;
@@ -242,11 +242,18 @@ namespace Rachis.Transport
 					_runningOps.TryRemove(op, out value);
 					if (task.Exception != null)
 					{
-						_log.Warn("Failed to send " + details, task.Exception);
+						_log.Warn("Failed to send " + details + " " + InnerMostMessage(task.Exception), task.Exception);
 						return;
 					}
 					_log.Info("Sent {0}", details);
 				});
+		}
+
+		private string InnerMostMessage(Exception exception)
+		{
+			if (exception.InnerException == null)
+				return exception.Message;
+			return InnerMostMessage(exception.InnerException);
 		}
 
 

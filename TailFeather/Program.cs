@@ -29,10 +29,10 @@ namespace TailFeather
 
 			var nodeName = options.NodeName ?? (Environment.MachineName + ":" + options.Port);
 
-			var kvso = StorageEnvironmentOptions.ForPath(Path.Combine(options.DataPath, "KeyValue"));
+			var kvso = StorageEnvironmentOptions.ForPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, options.DataPath, "KeyValue"));
 			using (var statemachine = new KeyValueStateMachine(kvso))
 			{
-				var storageEnvironmentOptions = StorageEnvironmentOptions.ForPath(Path.Combine(options.DataPath, "Raft"));
+				var storageEnvironmentOptions = StorageEnvironmentOptions.ForPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, options.DataPath, "Raft"));
 				var httpTransport = new HttpTransport(nodeName);
 				var raftEngineOptions = new RaftEngineOptions(
 					new NodeConnectionInfo
@@ -73,7 +73,7 @@ namespace TailFeather
 						builder.UseWebApi(httpConfiguration);
 					}))
 					{
-						Console.WriteLine("Ready @ http://"+ Environment.MachineName  +":" + options.Port + "/, press ENTER to stop");
+						Console.WriteLine("Ready @ http://" + Environment.MachineName + ":" + options.Port + "/, press ENTER to stop");
 
 						Console.ReadLine();
 					}

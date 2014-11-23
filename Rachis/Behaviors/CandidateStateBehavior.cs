@@ -17,6 +17,7 @@ namespace Rachis.Behaviors
 		private readonly HashSet<string> _votesForMyLeadership = new HashSet<string>();
 		private readonly Random _random;
 		private bool _wonTrialElection;
+		private bool _termIncreaseMightGetMyVote;
 
 		public CandidateStateBehavior(RaftEngine engine, bool forcedElection)
 			: base(engine)
@@ -44,11 +45,14 @@ namespace Rachis.Behaviors
 			_votesForMyLeadership.Clear();
 
 			long currentTerm = Engine.PersistentState.CurrentTerm + 1;
-			if (_wonTrialElection) // only in the real election, we increment the current term and record a vote to ourselves
+			if (_wonTrialElection || _termIncreaseMightGetMyVote) // only in the real election (or if we have to), we increment the current term 
 			{
 				Engine.PersistentState.UpdateTermTo(Engine, currentTerm);
-				Engine.PersistentState.RecordVoteFor(Engine.Name, currentTerm);
 			}
+			if (_wonTrialElection)// and only if we won an election do we record a firm vote for ourselves
+				Engine.PersistentState.RecordVoteFor(Engine.Name, currentTerm);
+
+			_termIncreaseMightGetMyVote = false;
 
 			Engine.CurrentLeader = null;
 			_log.Info("Calling for {0} election in term {1}",
@@ -113,6 +117,8 @@ namespace Rachis.Behaviors
 
 			if (resp.VoteGranted == false)
 			{
+				if (resp.TermIncreaseMightGetMyVote)
+					_termIncreaseMightGetMyVote = true;
 				_log.Info("Vote rejected from {0} trial: {1}", resp.From, resp.TrialOnly);
 				return;
 			}
