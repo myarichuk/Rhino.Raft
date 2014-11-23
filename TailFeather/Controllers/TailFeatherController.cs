@@ -6,6 +6,7 @@ using System.Web.Http;
 using System.Web.Http.Controllers;
 using Rachis;
 using Rachis.Utils;
+using TailFeather.Storage;
 
 namespace TailFeather.Controllers
 {

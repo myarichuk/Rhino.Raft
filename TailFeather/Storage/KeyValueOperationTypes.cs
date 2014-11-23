@@ -1,4 +1,4 @@
-namespace TailFeather
+namespace TailFeather.Storage
 {
 	public enum KeyValueOperationTypes
 	{

@@ -1,6 +1,6 @@
 using Rachis.Commands;
 
-namespace TailFeather
+namespace TailFeather.Storage
 {
 	public class OperationBatchCommand : Command
 	{

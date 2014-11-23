@@ -8,6 +8,7 @@ using Owin;
 using Rachis;
 using Rachis.Storage;
 using Rachis.Transport;
+using TailFeather.Storage;
 using Voron;
 
 namespace TailFeather
@@ -44,7 +45,7 @@ namespace TailFeather
 					statemachine
 					)
 				{
-					MessageTimeout = 60 * 1000
+					MessageTimeout = 5 * 1000
 				};
 
 				if (options.Boostrap)
