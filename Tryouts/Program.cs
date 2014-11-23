@@ -22,9 +22,14 @@ namespace Tryouts
 			for (int i = 0; i < 50*1000; i++)
 			{
 				tasks.Add(tailFeatherClient.Set("users/" + i, false));
+				if (tasks.Count > 50)
+				{
+					Task.WaitAll(tasks.ToArray());
+
+					tasks.Clear();
+				}
 			}
 
-			Task.WaitAll(tasks.ToArray());
 		}
 	}
 
