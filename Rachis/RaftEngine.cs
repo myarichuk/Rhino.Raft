@@ -163,7 +163,7 @@ namespace Rachis
 				SetState(RaftEngineState.Follower);
 			}
 
-			_commitIndex = PersistentState.LastLogEntry().Index;
+			_commitIndex = StateMachine.LastAppliedIndex;
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
 
