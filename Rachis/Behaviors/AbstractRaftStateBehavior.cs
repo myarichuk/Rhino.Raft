@@ -516,8 +516,8 @@ namespace Rachis.Behaviors
 				Engine.PersistentState.LastLogEntry().Index :
 				req.Entries[req.Entries.Length - 1].Index;
 			try
-			{
-				long nextCommitIndex = Math.Min(req.LeaderCommit, lastIndex);
+			{				
+				var nextCommitIndex = Math.Min(req.LeaderCommit, lastIndex);
 				if (nextCommitIndex > Engine.CommitIndex)
 				{
 					CommitEntries(req.Entries, nextCommitIndex);
