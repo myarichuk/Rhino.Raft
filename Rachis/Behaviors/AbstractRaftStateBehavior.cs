@@ -25,9 +25,19 @@ namespace Rachis.Behaviors
 	        if (msg.ClusterTopologyId == Engine.CurrentTopology.TopologyId)
 	            return true;
 
-            // if we don't have the same topology id, maybe we have _no_ topology?
-	        if (Engine.CurrentTopology.TopologyId == Guid.Empty)
-	            return true; // we'll accept a new topology now
+            // if we don't have the same topology id, maybe we have _no_ topology, if that is the case,
+			// we are accepting the new topology id immediately
+			if (Engine.CurrentTopology.TopologyId == Guid.Empty && 
+				Engine.CurrentTopology.HasVoters == false)
+		    {
+			    var tcc = new TopologyChangeCommand
+			    {
+				    Requested = new Topology(msg.ClusterTopologyId)
+			    };
+			    Engine.StartTopologyChange(tcc);
+				Engine.CommitTopologyChange(tcc);
+			    return true;
+		    }
 
 	        return false;
 	    }

@@ -433,9 +433,12 @@ namespace Rachis
 				try
 				{
 					var currentTerm = PersistentState.CurrentTerm;
+					_log.Info("Starting to create snapshot up to {0} in term {1}", to, currentTerm);
 					StateMachine.CreateSnapshot(to, currentTerm);
 					PersistentState.MarkSnapshotFor(to, currentTerm,
 						Options.MaxLogLengthBeforeCompaction - (Options.MaxLogLengthBeforeCompaction / 8));
+
+					_log.Info("Finished creating snapshot for {0} in term {1}", to, currentTerm);
 
 					OnSnapshotCreationEnded();
 				}

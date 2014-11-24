@@ -242,19 +242,7 @@ namespace Rachis.Storage
 				var lastKey = logs.LastKeyOrDefault();
 				if (lastKey == null)
 				{
-					var metadata = tx.ReadTree(MetadataTreeName);
-					// maybe there is a snapshot?
-					var snapshotTerm = metadata.Read("snapshot-term");
-					var snapshotIndex = metadata.Read("snapshot-index");
-
-					if (snapshotIndex == null || snapshotTerm == null)
-						return new LogEntry();
-
-					return new LogEntry
-					{
-						Term = snapshotTerm.Reader.ReadLittleEndianInt64(),
-						Index = snapshotIndex.Reader.ReadLittleEndianInt64()
-					};
+					return GetLastLogEntryFromSnapshot(tx);
 				}
 
 				var index = lastKey.CreateReader().ReadBigEndianInt64();
@@ -271,6 +259,23 @@ namespace Rachis.Storage
 			}
 		}
 
+		private static LogEntry GetLastLogEntryFromSnapshot(Transaction tx)
+		{
+			var metadata = tx.ReadTree(MetadataTreeName);
+			// maybe there is a snapshot?
+			var snapshotTerm = metadata.Read("snapshot-term");
+			var snapshotIndex = metadata.Read("snapshot-index");
+
+			if (snapshotIndex == null || snapshotTerm == null)
+				return new LogEntry();
+
+			return new LogEntry
+			{
+				Term = snapshotTerm.Reader.ReadLittleEndianInt64(),
+				Index = snapshotIndex.Reader.ReadLittleEndianInt64()
+			};
+		}
+
 		public LogEntry GetLogEntry(long index)
 		{
 			using (var tx = _env.NewTransaction(TransactionFlags.Read))
@@ -280,7 +285,7 @@ namespace Rachis.Storage
 				var key = new Slice(EndianBitConverter.Big.GetBytes(index));
 				var result = terms.Read(key);
 				if (result == null)
-					return null;
+					return GetLastLogEntryFromSnapshot(tx);
 
 				var term = result.Reader.ReadLittleEndianInt64();
 

@@ -148,8 +148,6 @@ namespace Rachis.Behaviors
 				throw;
 			}
 
-			prevLogEntry = prevLogEntry ?? new LogEntry();
-
 			if (_log.IsDebugEnabled)
 			{
 				_log.Debug("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: Term = {2} Index = {3}).", entries.Length, peer, prevLogEntry.Index, prevLogEntry.Term);
@@ -504,7 +502,6 @@ namespace Rachis.Behaviors
 
 				return;
 			}
-
 
 			if (command.Completion != null)
 				_pendingCommands.Enqueue(command);
