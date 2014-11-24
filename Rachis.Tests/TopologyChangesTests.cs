@@ -75,7 +75,7 @@ namespace Rachis.Tests
 
 				leaderNode.AddToClusterAsync(new NodeConnectionInfo { Name = additionalNode.Name }).Wait();
 
-				Thread.Sleep(additionalNode.Options.MessageTimeout * 2);
+				Thread.Sleep(additionalNode.Options.ElectionTimeout * 2);
 				ReconnectNode(additionalNode.Name);
 
 				Assert.True(waitForTopologyChangeInLeader.Wait(3000));

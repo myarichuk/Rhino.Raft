@@ -18,7 +18,7 @@ namespace Rachis.Behaviors
 		    _avoidLeadership = avoidLeadership;
 		    _currentTermWhenWeBecameFollowers = engine.PersistentState.CurrentTerm + 1;// we are going to have a new term immediately.
 		    var random = new Random(Engine.Name.GetHashCode() ^ (int)DateTime.Now.Ticks);
-			Timeout = random.Next(engine.Options.MessageTimeout / 2, engine.Options.MessageTimeout);
+			Timeout = random.Next(engine.Options.ElectionTimeout / 2, engine.Options.ElectionTimeout);
 	    }
 
 	    public override RaftEngineState State

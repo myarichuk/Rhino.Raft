@@ -38,7 +38,7 @@ namespace Rachis.Tests
 
 			commands.ForEach(leader.AppendCommand);
 
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * 2));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.ElectionTimeout * 2));
 			commands.Should().OnlyContain(cmd => cmd.Completion.Task.Status == TaskStatus.RanToCompletion);
 		}
 
@@ -69,7 +69,7 @@ namespace Rachis.Tests
 			//don't append the last command yet
 			commands.Take(CommandCount - 1).ToList().ForEach(leader.AppendCommand);
 			//make sure commands that were appended before network leader disconnection are replicated
-			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.MessageTimeout * 3));
+			Assert.True(commitsAppliedEvent.Wait(nonLeaderNode.Options.ElectionTimeout * 3));
 
 			DisconnectNode(leader.Name);
 
@@ -78,7 +78,7 @@ namespace Rachis.Tests
 
 			leader.AppendCommand(lastCommand);
 
-			var aggregateException = Assert.Throws<AggregateException>(() => commandCompletionTask.Wait(leader.Options.MessageTimeout * 2));
+			var aggregateException = Assert.Throws<AggregateException>(() => commandCompletionTask.Wait(leader.Options.ElectionTimeout * 2));
 			Assert.IsType<TimeoutException>(aggregateException.InnerException);
 		}
 

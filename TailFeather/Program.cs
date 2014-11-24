@@ -45,7 +45,8 @@ namespace TailFeather
 					statemachine
 					)
 				{
-					MessageTimeout = 5 * 1000
+					ElectionTimeout = 5 * 1000,
+					HeartbeatTimeout = 1000
 				};
 
 				if (options.Boostrap)

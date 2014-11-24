@@ -20,7 +20,8 @@ namespace Rachis
 			StorageOptions = storageOptions;
 			Transport = transport;
 			StateMachine = stateMachine;
-			MessageTimeout = 300;
+			ElectionTimeout = 1200;
+			HeartbeatTimeout = 300;
 			Stopwatch = new Stopwatch();
 			MaxLogLengthBeforeCompaction = 32 * 1024;
 			MaxStepDownDrainTime = TimeSpan.FromSeconds(15);
@@ -42,7 +43,8 @@ namespace Rachis
 
 		public IRaftStateMachine StateMachine { get; private set; }
 
-		public int MessageTimeout { get; set; }
+		public int ElectionTimeout { get; set; }
+		public int HeartbeatTimeout { get; set; }
 
 		public NodeConnectionInfo SelfConnection { get; set; }
 	}

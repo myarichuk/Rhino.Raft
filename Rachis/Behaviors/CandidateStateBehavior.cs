@@ -25,7 +25,7 @@ namespace Rachis.Behaviors
 			_forcedElection = forcedElection;
 			_wonTrialElection = forcedElection;
 			_random = new Random((int)(engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
-			Timeout = _random.Next(engine.Options.MessageTimeout / 2, engine.Options.MessageTimeout);
+			Timeout = _random.Next(engine.Options.ElectionTimeout / 2, engine.Options.ElectionTimeout);
 			StartElection();
 		}
 
@@ -34,7 +34,7 @@ namespace Rachis.Behaviors
 			_log.Info("Timeout ({1:#,#;;0} ms) for elections in term {0}", Engine.PersistentState.CurrentTerm,
 				  Timeout);
 
-			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
+			Timeout = _random.Next(Engine.Options.ElectionTimeout / 2, Engine.Options.ElectionTimeout);
 			_wonTrialElection = false;
 			StartElection();
 		}

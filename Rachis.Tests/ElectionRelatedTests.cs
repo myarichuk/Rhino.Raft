@@ -30,7 +30,8 @@ namespace Rachis.Tests
 				new DictionaryStateMachine()
 				)
 			{
-				MessageTimeout = 1000
+				ElectionTimeout = 1000,
+				HeartbeatTimeout = 1000/6
 			};
 
 			PersistentState.ClusterBootstrap(raftEngineOptions);
@@ -122,8 +123,8 @@ namespace Rachis.Tests
 			commands.Skip(3).ToList().ForEach(leader.AppendCommand);
 			var formerLeader = leader;
 
-			Assert.True(steppedDown.Wait(leader.Options.MessageTimeout * 2));
-			Assert.True(WaitHandle.WaitAny(candidancies.Select(x => x.WaitHandle).ToArray(), leader.Options.MessageTimeout*2) != WaitHandle.WaitTimeout);
+			Assert.True(steppedDown.Wait(leader.Options.ElectionTimeout * 2));
+			Assert.True(WaitHandle.WaitAny(candidancies.Select(x => x.WaitHandle).ToArray(), leader.Options.ElectionTimeout*2) != WaitHandle.WaitTimeout);
 			WriteLine("<Reconnecting leader!> (" + leader.Name + ")");
 			ReconnectNode(leader.Name);
 

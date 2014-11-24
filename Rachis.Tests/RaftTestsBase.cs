@@ -131,7 +131,7 @@ namespace Rachis.Tests
 		{
 			var cde = new CountdownEvent(_nodes.Count);
 			var votedAlready = new ConcurrentDictionary<RaftEngine, object>();
-			
+
 			foreach (var node in _nodes)
 			{
 				var n = node;
@@ -149,19 +149,19 @@ namespace Rachis.Tests
 				};
 				n.SnapshotInstalled += () =>
 				{
-					var state = (DictionaryStateMachine) n.StateMachine;
+					var state = (DictionaryStateMachine)n.StateMachine;
 					if (predicate(state) && cde.CurrentCount > 0)
 					{
 						if (votedAlready.ContainsKey(n))
 							return;
 						votedAlready.TryAdd(n, n);
 
-						_log.Debug("WaitForCommitsOnCluster match"); 
+						_log.Debug("WaitForCommitsOnCluster match");
 						cde.Signal();
 					}
 				};
 			}
-			
+
 			return cde;
 		}
 
@@ -221,7 +221,7 @@ namespace Rachis.Tests
 		{
 			var leaderIndex = new Random().Next(0, nodeCount);
 			if (messageTimeout == -1)
-				messageTimeout = Debugger.IsAttached ? 3*1000 : 500;
+				messageTimeout = Debugger.IsAttached ? 3 * 1000 : 500;
 			var nodeNames = new string[nodeCount];
 			for (int i = 0; i < nodeCount; i++)
 			{
@@ -267,7 +267,7 @@ namespace Rachis.Tests
 			var raftEngine = _nodes[leaderIndex];
 
 
-			var transport = (InMemoryTransportHub.InMemoryTransport) _inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
+			var transport = (InMemoryTransportHub.InMemoryTransport)_inMemoryTransportHub.CreateTransportFor(raftEngine.Name);
 			transport.ForceTimeout();
 			Assert.True(_nodes[leaderIndex].WaitForLeader());
 			var leader = _nodes.FirstOrDefault(x => x.State == RaftEngineState.Leader);
@@ -276,15 +276,15 @@ namespace Rachis.Tests
 			return _nodes[leaderIndex];
 		}
 
-		private RaftEngineOptions CreateNodeOptions(string nodeName,int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
+		private RaftEngineOptions CreateNodeOptions(string nodeName, int messageTimeout, StorageEnvironmentOptions storageOptions, params string[] peers)
 		{
-			var nodeOptions = new RaftEngineOptions(new NodeConnectionInfo { Name = nodeName }, 
+			var nodeOptions = new RaftEngineOptions(new NodeConnectionInfo { Name = nodeName },
 				storageOptions,
 				_inMemoryTransportHub.CreateTransportFor(nodeName),
 				new DictionaryStateMachine())
 			{
-				MessageTimeout = messageTimeout,
-				//AllVotingNodes = peers,
+				ElectionTimeout = messageTimeout,
+				HeartbeatTimeout = messageTimeout / 6,
 				Stopwatch = Stopwatch.StartNew()
 			};
 			return nodeOptions;
@@ -301,7 +301,7 @@ namespace Rachis.Tests
 
 		protected RaftEngine NewNodeFor(RaftEngine leader)
 		{
-			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Options.MessageTimeout, StorageEnvironmentOptions.CreateMemoryOnly()));
+			var raftEngine = new RaftEngine(CreateNodeOptions("node" + _nodes.Count, leader.Options.ElectionTimeout, StorageEnvironmentOptions.CreateMemoryOnly()));
 			_nodes.Add(raftEngine);
 			return raftEngine;
 		}

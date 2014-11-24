@@ -35,7 +35,8 @@ namespace Rachis.Tests
 			var node1 = new NodeConnectionInfo { Name = "node1", Uri = new Uri("http://localhost:9079") };
 			var engineOptions = new RaftEngineOptions(node1, StorageEnvironmentOptions.CreateMemoryOnly(), _node1Transport, new DictionaryStateMachine())
 				{
-					MessageTimeout = 60 * 1000
+					ElectionTimeout = 60 * 1000,
+					HeartbeatTimeout = 10 * 1000
 				};
 			_raftEngine = new RaftEngine(engineOptions);
 

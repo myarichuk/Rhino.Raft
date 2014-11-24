@@ -1,14 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using System.Web.Http;
-using Microsoft.Owin.Hosting;
-using Owin;
-using Rachis;
-using Rachis.Tests;
-using Rachis.Transport;
 using TailFeather.Client;
-using Voron;
 
 namespace Tryouts
 {

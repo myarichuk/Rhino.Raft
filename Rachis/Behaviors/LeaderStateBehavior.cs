@@ -36,7 +36,7 @@ namespace Rachis.Behaviors
 		public LeaderStateBehavior(RaftEngine engine)
 			: base(engine)
 		{
-			Timeout = engine.Options.MessageTimeout / 2;
+			Timeout = engine.Options.ElectionTimeout / 2;
 			engine.TopologyChanged += OnTopologyChanged;
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
 
@@ -95,7 +95,7 @@ namespace Rachis.Behaviors
 				}
 
 				OnHeartbeatSent();
-				Thread.Sleep(Math.Max(Engine.Options.MessageTimeout / 6, 15));
+				Thread.Sleep(Engine.Options.HeartbeatTimeout);
 			}
 		}
 
@@ -104,9 +104,9 @@ namespace Rachis.Behaviors
 			LogEntry prevLogEntry;
 			LogEntry[] entries;
 
-			var nextIndex = _nextIndexes.GetOrAdd(peer.Name, 0); //new peer's index starts at 0
+			var nextIndex = _nextIndexes.GetOrAdd(peer.Name, -1); //new peer's index starts at, we use -1 as a sentital value
 
-			if (Engine.StateMachine.SupportSnapshots)
+			if (Engine.StateMachine.SupportSnapshots && nextIndex != -1)
 			{
 				var snapshotIndex = Engine.PersistentState.GetLastSnapshotIndex();
 
@@ -128,6 +128,9 @@ namespace Rachis.Behaviors
 					return;
 				}
 			}
+
+			if (nextIndex == -1)
+				nextIndex = 0;
 
 			try
 			{
@@ -221,7 +224,7 @@ namespace Rachis.Behaviors
 			// We check when was the last time we talked to a majority of the cluster, then make our decision
 			var latency = GetQuorumLatencyInMilliseconds();
 
-			if (latency < Engine.Options.MessageTimeout)
+			if (latency < Engine.Options.ElectionTimeout)
 			{
 				// we are okay, a full quorum was reached within the message timeout, so we can 
 				// safely resume running as the leader
