@@ -26,8 +26,8 @@ namespace TailFeather
 				return;
 			}
 
-
 			var nodeName = options.NodeName ?? (Environment.MachineName + ":" + options.Port);
+			Console.Title = string.Format("Node name: {0}, port: {1}", nodeName, options.Port);
 
 			var kvso = StorageEnvironmentOptions.ForPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, options.DataPath, "KeyValue"));
 			using (var statemachine = new KeyValueStateMachine(kvso))
