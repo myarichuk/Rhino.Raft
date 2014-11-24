@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -63,8 +64,11 @@ namespace TailFeather.Storage
 
 		public void Apply(LogEntry entry, Command cmd)
 		{
-			var batch = (OperationBatchCommand)cmd;
-			Apply(batch.Batch, cmd.AssignedIndex);
+			var batch = cmd as OperationBatchCommand;
+			if(batch != null)
+				Apply(batch.Batch, cmd.AssignedIndex);
+			else
+				Apply(Enumerable.Empty<KeyValueOperation>(),cmd.AssignedIndex);
 		}
 
 		public bool SupportSnapshots { get { return false; } }

@@ -388,10 +388,9 @@ namespace Rachis
 					var oldCommitIndex = CommitIndex;
 					var command = PersistentState.CommandSerializer.Deserialize(entry.Data);
 
-					var sysCommand = command is NopCommand || command is TopologyChangeCommand;
+					StateMachine.Apply(entry, command);
 
-					if (sysCommand == false)
-						StateMachine.Apply(entry, command);
+					Debug.Assert(entry.Index == StateMachine.LastAppliedIndex);
 
 					_log.Debug("Committing entry #{0}", entry.Index);
 
