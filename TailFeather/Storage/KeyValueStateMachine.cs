@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Rachis.Commands;
@@ -14,6 +15,7 @@ namespace TailFeather.Storage
 	public class KeyValueStateMachine : IRaftStateMachine
 	{
 		readonly StorageEnvironment _storageEnvironment;
+		private long _lastAppliedIndex;
 
 		public KeyValueStateMachine(StorageEnvironmentOptions options)
 		{
@@ -53,7 +55,11 @@ namespace TailFeather.Storage
 			}
 		}
 
-		public long LastAppliedIndex { get; private set; }
+		public long LastAppliedIndex
+		{
+			get { return _lastAppliedIndex; }
+			private set { Thread.VolatileWrite(ref _lastAppliedIndex, value);}
+		}
 
 		public void Apply(LogEntry entry, Command cmd)
 		{

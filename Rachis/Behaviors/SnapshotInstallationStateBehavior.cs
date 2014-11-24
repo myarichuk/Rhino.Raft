@@ -15,7 +15,7 @@ namespace Rachis.Behaviors
 		public SnapshotInstallationStateBehavior(RaftEngine engine) : base(engine)
 		{
 			_random = new Random((int)(engine.Name.GetHashCode() + DateTime.UtcNow.Ticks));
-			Timeout = _random.Next(engine.Options.MessageTimeout / 2, engine.Options.MessageTimeout);
+			Timeout = _random.Next(engine.Options.ElectionTimeout / 2, engine.Options.ElectionTimeout);
 		}
 
 		public override RaftEngineState State
@@ -116,7 +116,6 @@ namespace Rachis.Behaviors
 				context.ExecuteInEventLoop(() =>
 				{
 					Engine.UpdateCurrentTerm(req.Term, req.From); // implicitly put us in follower state
-					Engine.CommitIndex = req.LastIncludedIndex;
 					_log.Info("Updating the commit index to the snapshot last included index of {0}", req.LastIncludedIndex);
 					Engine.OnSnapshotInstallationEnded(req.Term);
 
@@ -157,7 +156,7 @@ namespace Rachis.Behaviors
 
 		public override void HandleTimeout()
 		{
-			Timeout = _random.Next(Engine.Options.MessageTimeout / 2, Engine.Options.MessageTimeout);
+			Timeout = _random.Next(Engine.Options.ElectionTimeout / 2, Engine.Options.ElectionTimeout);
 			LastHeartbeatTime = DateTime.UtcNow;// avoid busy loop while waiting for the snapshot
 			_log.Info("Received timeout during installation of a snapshot. Doing nothing, since the node should finish receiving snapshot before it could change into candidate");
 			//do nothing during timeout --> this behavior will go on until the snapshot installation is finished

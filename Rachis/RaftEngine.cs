@@ -63,20 +63,11 @@ namespace Rachis
 			}
 		}
 
-		/// <summary>
-		/// This is a thread safe operation, since this is being used by both the leader's message processing thread
-		/// and the leader's heartbeat thread
-		/// </summary>
+	
 		public long CommitIndex
 		{
-			get
-			{
-				return Thread.VolatileRead(ref _commitIndex);
-			}
-			set
-			{
-				Interlocked.Exchange(ref _commitIndex, value);
-			}
+			get { return StateMachine.LastAppliedIndex; }
+			
 		}
 
 		public RaftEngineState State
@@ -402,7 +393,6 @@ namespace Rachis
 					if (sysCommand == false)
 						StateMachine.Apply(entry, command);
 
-					CommitIndex = entry.Index;
 					_log.Debug("Committing entry #{0}", entry.Index);
 
 					var tcc = command as TopologyChangeCommand;

@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Newtonsoft.Json;
 using Rachis.Commands;
 using Rachis.Interfaces;
@@ -12,7 +13,12 @@ namespace Rachis.Tests
 	public class DictionaryStateMachine : IRaftStateMachine
 	{
 		private readonly JsonSerializer _serializer = new JsonSerializer();
-		public long LastAppliedIndex { get; private set; }
+
+		public long LastAppliedIndex
+		{
+			get { return _lastAppliedIndex; }
+			private set { Thread.VolatileWrite(ref _lastAppliedIndex, value); }
+		}
 
 		private class SnapshotWriter : ISnapshotWriter
 		{
@@ -41,6 +47,7 @@ namespace Rachis.Tests
 
 		public ConcurrentDictionary<string, int> Data = new ConcurrentDictionary<string, int>();
 		private SnapshotWriter _snapshot;
+		private long _lastAppliedIndex;
 
 		public void Apply(LogEntry entry, Command cmd)
 		{

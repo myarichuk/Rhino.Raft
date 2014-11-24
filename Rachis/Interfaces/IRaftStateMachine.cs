@@ -7,6 +7,10 @@ namespace Rachis.Interfaces
 {
 	public interface IRaftStateMachine : IDisposable
 	{
+		/// <summary>
+		/// This is a thread safe operation, since this is being used by both the leader's message processing thread
+		/// and the leader's heartbeat thread
+		/// </summary>
 		long LastAppliedIndex { get; }
 
 		void Apply(LogEntry entry, Command cmd);
