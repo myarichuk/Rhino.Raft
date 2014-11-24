@@ -9,10 +9,10 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var tailFeatherClient = new TailFeatherClient(new Uri("http://localhost:9077"));
+			var tailFeatherClient = new TailFeatherClient(new Uri("http://localhost:9079"));
 
 			var tasks = new List<Task>();
-			for (int i = 0; i < 50*1000; i++)
+			for (int i = 0; i < 5*1000; i++)
 			{
 				tasks.Add(tailFeatherClient.Set("users/" + i, false));
 				if (tasks.Count > 50)

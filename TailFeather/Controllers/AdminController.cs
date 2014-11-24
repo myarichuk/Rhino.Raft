@@ -17,6 +17,7 @@ namespace TailFeather.Controllers
 			{
 				RaftEngine.CurrentLeader,
 				RaftEngine.PersistentState.CurrentTerm,
+				RaftEngine.State,
 				RaftEngine.CommitIndex,
 				RaftEngine.CurrentTopology.AllVotingNodes,
 				RaftEngine.CurrentTopology.PromotableNodes,

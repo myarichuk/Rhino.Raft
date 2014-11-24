@@ -130,6 +130,10 @@ namespace Rachis
 
 		public RaftEngine(RaftEngineOptions raftEngineOptions)
 		{
+//#if DEBUG
+//			Console.WriteLine("Press any key to continue loading Raft -> opportunity to attach debugger");
+//			Console.ReadLine();
+//#endif
 			_raftEngineOptions = raftEngineOptions;
 			Debug.Assert(raftEngineOptions.Stopwatch != null);
 
@@ -159,6 +163,7 @@ namespace Rachis
 				SetState(RaftEngineState.Follower);
 			}
 
+			_commitIndex = PersistentState.LastLogEntry().Index;
 			_eventLoopTask = Task.Run(() => EventLoop());
 		}
 
