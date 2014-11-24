@@ -43,11 +43,35 @@ namespace Rachis.Behaviors
 		{
 			if (_installingSnapshot != null)
 			{
-				return base.Handle(context, req, stream);
+                return new InstallSnapshotResponse
+                {
+                    Success = false,
+                    Message = "Cannot install snapshot because we are already installing a snapshot",
+                    CurrentTerm = Engine.PersistentState.CurrentTerm,
+                    From = Engine.Name,
+                    ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+                    LastLogIndex = Engine.PersistentState.LastLogEntry().Index
+                };
 			}
 
-			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-			if (req.Term < lastLogEntry.Term || req.LastIncludedIndex < lastLogEntry.Index)
+
+            if (FromOurTopology(req) == false)
+            {
+                _log.Info("Got an install snapshot message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+
+                return new InstallSnapshotResponse
+                {
+                    Success = false,
+                    Message = "Cannot install snapshot because the cluster topology id doesn't match, mine is: " + Engine.CurrentTopology.TopologyId,
+                    CurrentTerm = Engine.PersistentState.CurrentTerm,
+                    From = Engine.Name,
+                    ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+                    LastLogIndex = Engine.PersistentState.LastLogEntry().Index
+                };
+            }
+
+            var lastLogEntry = Engine.PersistentState.LastLogEntry();
+            if (req.Term < lastLogEntry.Term || req.LastIncludedIndex < lastLogEntry.Index)
 			{
 				stream.Dispose();
 
@@ -112,9 +136,13 @@ namespace Rachis.Behaviors
 
 		public override AppendEntriesResponse Handle(AppendEntriesRequest req)
 		{
+		    if (_installingSnapshot == null)
+		    {
+		        return base.Handle(req);
+		    }
+
 			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-			return
-				new AppendEntriesResponse
+			return new AppendEntriesResponse
 				{
 					From = Engine.Name,
 					ClusterTopologyId = Engine.CurrentTopology.TopologyId,

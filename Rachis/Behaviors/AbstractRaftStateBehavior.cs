@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NLog;
@@ -17,77 +18,29 @@ namespace Rachis.Behaviors
 		public DateTime LastHeartbeatTime { get; set; }
 		public DateTime LastMessageTime { get; set; }
 
+        private readonly Dictionary<Type, Action<MessageContext>> _actionDispatch;
+
+	    protected bool FromOurTopology(BaseMessage msg)
+	    {
+	        if (msg.ClusterTopologyId == Engine.CurrentTopology.TopologyId)
+	            return true;
+
+            // if we don't have the same topology id, maybe we have _no_ topology?
+	        if (Engine.CurrentTopology.TopologyId == Guid.Empty)
+	            return true; // we'll accept a new topology now
+
+	        return false;
+	    }
+
 		public void HandleMessage(MessageContext context)
 		{
-			bool asyncMessageHandling = false;
 			try
 			{
-				RequestVoteRequest requestVoteRequest;
-				RequestVoteResponse requestVoteResponse;
-				AppendEntriesResponse appendEntriesResponse;
-				AppendEntriesRequest appendEntriesRequest;
-				InstallSnapshotRequest installSnapshotRequest;
-				InstallSnapshotResponse installSnapshotResponse;
-				CanInstallSnapshotRequest canInstallSnapshotRequest;
-				CanInstallSnapshotResponse canInstallSnapshotResponse;
-				TimeoutNowRequest timeoutNowRequest;
-				DisconnectedFromCluster disconnectedFromCluster;
-				Action action;
+			    Action<MessageContext> value;
+			    if(_actionDispatch.TryGetValue(context.Message.GetType(), out value) == false)
+                       throw new InvalidOperationException("Can't find handler for " + context.Message.GetType());
 
-				if (context.Message is NothingToDo)
-					return;
-
-				if (TryCastMessage(context.Message, out requestVoteRequest))
-				{
-					var reply = Handle(requestVoteRequest);
-					context.Reply(reply);
-				}
-				else if (TryCastMessage(context.Message, out appendEntriesResponse))
-				{
-					Handle(appendEntriesResponse);
-				}
-				else if (TryCastMessage(context.Message, out appendEntriesRequest))
-				{
-					var reply = Handle(appendEntriesRequest);
-					context.Reply(reply);
-				}
-				else if (TryCastMessage(context.Message, out requestVoteResponse))
-				{
-					Handle(requestVoteResponse);
-				}
-				else if (TryCastMessage(context.Message, out canInstallSnapshotRequest))
-				{
-					var reply = Handle(canInstallSnapshotRequest);
-					context.Reply(reply);
-				}
-				else if (TryCastMessage(context.Message, out installSnapshotRequest))
-				{
-					var reply = Handle(context, installSnapshotRequest, context.Stream);
-					if (reply != null)
-						context.Reply(reply);
-					else
-						asyncMessageHandling = true;
-				}
-				else if (TryCastMessage(context.Message, out canInstallSnapshotResponse))
-				{
-					Handle(canInstallSnapshotResponse);
-				}
-				else if (TryCastMessage(context.Message, out installSnapshotResponse))
-				{
-					Handle(installSnapshotResponse);
-				}
-				else if (TryCastMessage(context.Message, out timeoutNowRequest))
-				{
-					Handle(timeoutNowRequest);
-				}
-				else if (TryCastMessage(context.Message, out disconnectedFromCluster))
-				{
-					Handle(disconnectedFromCluster);
-				}
-				else if (TryCastMessage(context.Message, out action))
-				{
-					action();
-				}
+                value(context);
 
 				Engine.OnEventsProcessed();
 			}
@@ -97,13 +50,18 @@ namespace Rachis.Behaviors
 			}
 			finally
 			{
-				if (asyncMessageHandling == false)
+				if (context.AsyncResponse == false)
 					context.Done();
 			}
 		}
 
 		public void Handle(DisconnectedFromCluster req)
 		{
+		    if (FromOurTopology(req) == false)
+		    {
+		        _log.Info("Got a disconnection notification message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+		        return;
+		    }
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				_log.Info("Got disconnection notification from an older term, ignoring");
@@ -128,7 +86,12 @@ namespace Rachis.Behaviors
 
 		public void Handle(TimeoutNowRequest req)
 		{
-			if (req.Term < Engine.PersistentState.CurrentTerm)
+            if (FromOurTopology(req) == false)
+            {
+                _log.Info("Got a timeout request message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+                return;
+            }
+            if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				_log.Info("Got timeout now request from an older term, ignoring");
 				return;
@@ -146,6 +109,20 @@ namespace Rachis.Behaviors
 
 		public virtual InstallSnapshotResponse Handle(MessageContext context, InstallSnapshotRequest req, Stream stream)
 		{
+            if (FromOurTopology(req) == false)
+            {
+                _log.Info("Got an install snapshot message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+                return new InstallSnapshotResponse
+                {
+                    Success = false,
+                    Message = "Cannot accept message from outside my topology. My cluster topology id is: " + Engine.CurrentTopology.TopologyId,
+                    CurrentTerm = Engine.PersistentState.CurrentTerm,
+                    From = Engine.Name,
+                    ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+                    LastLogIndex = Engine.PersistentState.LastLogEntry().Index
+                };
+            }
+			
 			stream.Dispose();
 			return new InstallSnapshotResponse
 			{
@@ -163,13 +140,6 @@ namespace Rachis.Behaviors
 			//do nothing, irrelevant here
 		}
 
-		protected static bool TryCastMessage<T>(object abstractMessage, out T typedMessage)
-			where T : class
-		{
-			typedMessage = abstractMessage as T;
-			return typedMessage != null;
-		}
-
 		public abstract void HandleTimeout();
 
 		protected Logger _log;
@@ -179,10 +149,53 @@ namespace Rachis.Behaviors
 			Engine = engine;
 			LastHeartbeatTime = DateTime.UtcNow;
 			_log = LogManager.GetLogger(engine.Name + "." + GetType().Name);
+
+            _actionDispatch = new Dictionary<Type, Action<MessageContext>>
+	        {
+	            {typeof (RequestVoteRequest), ctx => ctx.Reply(Handle((RequestVoteRequest) ctx.Message))},
+	            {typeof (AppendEntriesRequest), ctx => ctx.Reply(Handle((AppendEntriesRequest) ctx.Message))},
+	            {typeof (CanInstallSnapshotRequest), ctx => ctx.Reply(Handle((CanInstallSnapshotRequest) ctx.Message))},
+	            {typeof (InstallSnapshotRequest), ctx =>
+	            {
+	                var reply = Handle(ctx, (InstallSnapshotRequest) ctx.Message, ctx.Stream);
+	                if (reply != null)
+	                    ctx.Reply(reply);
+	                else
+	                    ctx.AsyncResponse = true;
+	            }},
+
+                {typeof(RequestVoteResponse), ctx => Handle((RequestVoteResponse)ctx.Message)},
+                {typeof(AppendEntriesResponse), ctx => Handle((AppendEntriesResponse)ctx.Message)},
+                {typeof(CanInstallSnapshotResponse), ctx => Handle((CanInstallSnapshotResponse)ctx.Message)},
+                {typeof(InstallSnapshotResponse), ctx => Handle((InstallSnapshotResponse)ctx.Message)},
+
+                {typeof(NothingToDo), ctx => { }},
+	            {typeof (TimeoutNowRequest), ctx => Handle((TimeoutNowRequest) ctx.Message)},
+                {typeof (DisconnectedFromCluster), ctx => Handle((DisconnectedFromCluster) ctx.Message)},
+                {typeof (Action), ctx => ((Action)ctx.Message)()},
+
+	        };
+	    
 		}
 
 		public RequestVoteResponse Handle(RequestVoteRequest req)
 		{
+            if (FromOurTopology(req) == false)
+            {
+                _log.Info("Got a request vote message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+                return new RequestVoteResponse
+                {
+                    VoteGranted = false,
+                    CurrentTerm = Engine.PersistentState.CurrentTerm,
+                    VoteTerm = req.Term,
+                    Message = "Cannot vote for a node outside my topology, my topology id is: " + Engine.CurrentTopology.TopologyId,
+                    From = Engine.Name,
+                    ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+                    TrialOnly = req.TrialOnly,
+                    TermIncreaseMightGetMyVote = false
+                };
+            }
+
 			//disregard RequestVoteRequest if this node receives regular messages and the leader is known
 			// Raft paper section 6 (cluster membership changes), this apply only if we are a follower, because
 			// candidate and leaders both generate their own heartbeat messages
@@ -328,10 +341,24 @@ namespace Rachis.Behaviors
 
 		public virtual CanInstallSnapshotResponse Handle(CanInstallSnapshotRequest req)
 		{
-			var lastLogEntry = Engine.PersistentState.LastLogEntry();
-
+            var lastLogEntry = Engine.PersistentState.LastLogEntry();
 			var index = lastLogEntry.Index;
-			if (req.Term <= Engine.PersistentState.CurrentTerm && req.Index <= index)
+			
+            if (FromOurTopology(req) == false)
+            {
+                _log.Info("Got a can install snapshot message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+                return new CanInstallSnapshotResponse
+                {
+                    From = Engine.Name,
+                    ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+                    IsCurrentlyInstalling = false,
+                    Message = "Cannot install a snapshot from a node outside my topoloyg. My topology id is: " + req.ClusterTopologyId,
+                    Success = false,
+                    Index = index,
+                    Term = Engine.PersistentState.CurrentTerm
+                };
+            }
+            if (req.Term <= Engine.PersistentState.CurrentTerm && req.Index <= index)
 			{
 				return new CanInstallSnapshotResponse
 				{
@@ -366,6 +393,23 @@ namespace Rachis.Behaviors
 
 		public virtual AppendEntriesResponse Handle(AppendEntriesRequest req)
 		{
+            if (FromOurTopology(req) == false)
+            {
+                _log.Info("Got an append entries message outside my cluster topology (id: {0}), ignoring", req.ClusterTopologyId);
+                return new AppendEntriesResponse
+                {
+                    Success = false,
+                    CurrentTerm = Engine.PersistentState.CurrentTerm,
+                    LastLogIndex = Engine.PersistentState.LastLogEntry().Index,
+                    LeaderId = Engine.CurrentLeader,
+                    Message = "Cannot accept append entries from a node outside my cluster. My topology id is: " + Engine.CurrentTopology.TopologyId,
+                    From = Engine.Name,
+                    ClusterTopologyId = Engine.CurrentTopology.TopologyId,
+                };
+			
+            }
+			
+
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
 				var msg = string.Format(

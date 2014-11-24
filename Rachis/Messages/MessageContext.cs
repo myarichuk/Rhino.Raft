@@ -7,8 +7,9 @@ namespace Rachis.Messages
     {
         public object Message { get; set; }
 	    public Stream Stream { get; set; }
+        public bool AsyncResponse { get; set; }
 
-		public abstract void Reply(CanInstallSnapshotResponse resp);
+        public abstract void Reply(CanInstallSnapshotResponse resp);
 	    public abstract void Reply(InstallSnapshotResponse resp);
 		public abstract void Reply(AppendEntriesResponse resp);
 		public abstract void Reply(RequestVoteResponse resp);

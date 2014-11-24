@@ -245,6 +245,12 @@ namespace Rachis.Behaviors
 
 		public override void Handle(InstallSnapshotResponse resp)
 		{
+            if (FromOurTopology(resp) == false)
+            {
+                _log.Info("Got an append entries response message outside my cluster topology (id: {0}), ignoring", resp.ClusterTopologyId);
+                return;
+            }
+
 			_matchIndexes[resp.From] = resp.LastLogIndex;
 			_nextIndexes[resp.From] = resp.LastLogIndex + 1;
 			_lastContact[resp.From] = DateTime.UtcNow;
@@ -264,6 +270,12 @@ namespace Rachis.Behaviors
 
 		public override void Handle(CanInstallSnapshotResponse resp)
 		{
+            if (FromOurTopology(resp) == false)
+            {
+                _log.Info("Got an append entries response message outside my cluster topology (id: {0}), ignoring", resp.ClusterTopologyId);
+                return;
+            }
+
 			Task snapshotInstallationTask;
 			if (resp.Success == false)
 			{
@@ -320,6 +332,12 @@ namespace Rachis.Behaviors
 
 		public override void Handle(AppendEntriesResponse resp)
 		{
+            if (FromOurTopology(resp) == false)
+            {
+                _log.Info("Got an append entries response message outside my cluster topology (id: {0}), ignoring", resp.ClusterTopologyId);
+                return;
+            }
+
 			if (Engine.CurrentTopology.Contains(resp.From) == false)
 			{
 				_log.Info("Rejecting append entries response from {0} because it is not in my cluster", resp.From);

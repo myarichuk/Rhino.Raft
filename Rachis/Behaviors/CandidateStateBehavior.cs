@@ -101,6 +101,12 @@ namespace Rachis.Behaviors
 
 		public override void Handle(RequestVoteResponse resp)
 		{
+            if (FromOurTopology(resp) == false)
+            {
+                _log.Info("Got a request vote response message outside my cluster topology (id: {0}), ignoring", resp.ClusterTopologyId);
+                return;
+            }
+			
 			long currentTerm = _wonTrialElection ? Engine.PersistentState.CurrentTerm : Engine.PersistentState.CurrentTerm + 1;
 			if (resp.VoteTerm != currentTerm)
 			{

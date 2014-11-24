@@ -70,8 +70,8 @@ namespace Rachis.Tests
 					Value = i
 				});
 			}
-			snapshot.Wait();
-			commits.Wait();
+			Assert.True(snapshot.Wait(3000));
+			Assert.True(commits.Wait(3000));
 
 			Assert.NotNull(leader.StateMachine.GetSnapshotWriter());
 
@@ -79,9 +79,9 @@ namespace Rachis.Tests
 			WriteLine("<-- adding node");
 			var waitForSnapshotInstallation = WaitForSnapshotInstallation(newNode);
 
-			leader.AddToClusterAsync(new NodeConnectionInfo { Name = newNode.Name }).Wait();
+            Assert.True(leader.AddToClusterAsync(new NodeConnectionInfo { Name = newNode.Name }).Wait(3000));
 
-			waitForSnapshotInstallation.Wait();
+            Assert.True(waitForSnapshotInstallation.Wait(3000));
 
 			Assert.Equal(newNode.CurrentLeader, leader.Name);
 
@@ -94,7 +94,7 @@ namespace Rachis.Tests
 				Value = 1
 			});
 
-			commit.Wait();
+            Assert.True(commit.Wait(3000));
 
 			var dictionary = ((DictionaryStateMachine)newNode.StateMachine).Data;
 			for (int i = 0; i < 5; i++)
