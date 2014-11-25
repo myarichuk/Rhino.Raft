@@ -262,7 +262,7 @@ namespace Rachis.Tests
 			}
 			if (nodeCount == 1)
 				allNodesFinishedJoining.Set();
-			Assert.True(allNodesFinishedJoining.Wait(5000));
+			Assert.True(allNodesFinishedJoining.Wait(5000 * nodeCount));
 
 			var raftEngine = _nodes[leaderIndex];
 

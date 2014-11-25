@@ -121,8 +121,8 @@ namespace Rachis.Tests
 		}
 
 		[Theory]
-		[InlineData(2)]
 		[InlineData(3)]
+		[InlineData(2)]
 		[InlineData(10)]
 		public void Leader_AppendCommand_several_times_should_distribute_commands_between_nodes(int nodeCount)
 		{
@@ -150,7 +150,6 @@ namespace Rachis.Tests
 			};
 
 			commands.Take(CommandCount).ToList().ForEach(leader.AppendCommand);
-
 			commands.Skip(CommandCount).ToList().ForEach(leader.AppendCommand);
 
 			var millisecondsTimeout = 10000 * nodeCount;

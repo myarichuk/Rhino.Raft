@@ -458,7 +458,13 @@ namespace Rachis
 		public void CommitTopologyChange(TopologyChangeCommand tcc)
 		{
 			Interlocked.Exchange(ref _changingTopology, null);
-			var shouldRemainInTopology = tcc.Requested.Contains(Name);
+
+			//if no topology was present and TopologyChangeCommand is issued to just
+			//accept new topology id - then tcc.Previous == null - it means that 
+			//shouldRemainInTopology should be true - because there is no removal from topology actually
+			var shouldRemainInTopology = tcc.Requested.Contains(Name) && 
+										 tcc.Previous != null && 
+										 tcc.Previous.Contains(Name);
 			if (shouldRemainInTopology == false)
 			{
 				_log.Debug("This node is being removed from topology, setting its state to follower, it will be idle until a leader will join it to the cluster again");
