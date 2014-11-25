@@ -34,6 +34,7 @@ namespace Rachis.Behaviors
 			    {
 				    Requested = new Topology(msg.ClusterTopologyId)
 			    };
+
 			    Engine.StartTopologyChange(tcc);
 				Engine.CommitTopologyChange(tcc);
 			    return true;

@@ -208,18 +208,24 @@ namespace Rachis.Tests
 		[InlineData(2)]
 		[InlineData(3)]
 		[InlineData(4)]
+		[InlineData(7)]
 		public void Node_added_to_cluster_should_update_peers_list(int nodeCount)
 		{
+			WriteLine("--> Started test");
 			var leader = CreateNetworkAndGetLeader(nodeCount);
+			WriteLine("--> Selected leader, creating additional node");
 			using (var additionalNode = NewNodeFor(leader))
 			{
 				var clusterChanged = WaitForToplogyChangeOnCluster();
 				var newNodeAdded = WaitForToplogyChange(additionalNode);
 
+				WriteLine("Adding the additional node (name = {0}) to cluster", additionalNode.Name);
 				leader.AddToClusterAsync(new NodeConnectionInfo { Name = additionalNode.Name }).Wait();
 
 				clusterChanged.Wait();
 				newNodeAdded.Wait();
+
+				WriteLine("--> Cluster finished changing, new node added.");
 
 				var raftNodes = Nodes.ToList();
 				foreach (var node in raftNodes)
