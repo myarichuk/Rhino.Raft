@@ -476,7 +476,8 @@ namespace Rachis
 
 			if (_log.IsInfoEnabled)
 			{
-				_log.Info("Finished applying new topology: {0}", _currentTopology);
+				_log.Info("Finished applying new topology: {0}{1}", _currentTopology,
+					tcc.Previous == null ? ", Previous topology was null - perhaps it is setting topology for the first time?" : String.Empty);
 			}
 
 			OnTopologyChanged(tcc);

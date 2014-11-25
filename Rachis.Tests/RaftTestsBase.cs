@@ -71,7 +71,11 @@ namespace Rachis.Tests
 		protected ManualResetEventSlim WaitForToplogyChange(RaftEngine node)
 		{
 			var mre = new ManualResetEventSlim();
-			node.TopologyChanged += state => mre.Set();
+			node.TopologyChanged += state =>
+			{
+				if (node.CurrentTopology.HasVoters)
+					mre.Set();
+			};
 			return mre;
 		}
 
