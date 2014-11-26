@@ -64,13 +64,14 @@ namespace Rachis.Tests
 
 		public bool SupportSnapshots { get { return true; }}
 
-		public void CreateSnapshot(long index, long term)
+		public void CreateSnapshot(long index, long term, ManualResetEventSlim allowFurtherModifications)
 		{
 			_snapshot = new SnapshotWriter(this, new Dictionary<string, int>(Data))
 			{
 				Term = term,
 				Index = index
 			};
+			allowFurtherModifications.Set();
 		}
 
 		public ISnapshotWriter GetSnapshotWriter()

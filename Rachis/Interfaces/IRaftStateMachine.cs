@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
 using Rachis.Commands;
 using Rachis.Messages;
 
@@ -21,7 +22,7 @@ namespace Rachis.Interfaces
 		/// Create a snapshot, can be called concurrently with GetSnapshotWriter, can also be called concurrently
 		/// with calls to Apply.
 		/// </summary>
-		void CreateSnapshot(long index, long term);
+		void CreateSnapshot(long index, long term, ManualResetEventSlim allowFurtherModifications);
 
 		/// <summary>
 		/// Can be called concurrently with CreateSnapshot
@@ -29,6 +30,9 @@ namespace Rachis.Interfaces
 		/// </summary>
 		ISnapshotWriter GetSnapshotWriter();
 
+		/// <summary>
+		/// Nothing else may access the state machine when this is running, this is guranteed by Raft.
+		/// </summary>
 		void ApplySnapshot(long term, long index, Stream stream);
 	}
 }

@@ -421,11 +421,17 @@ namespace Rachis
 			var commitedEntriesCount = PersistentState.GetCommitedEntriesCount(to);
 			if (commitedEntriesCount >= Options.MaxLogLengthBeforeCompaction)
 			{
-				SnapshotAndTruncateLog(to);
+				// we need to pass this to the state machine so it can signal us
+				// when it is fine to continue modifications again, otherwise
+				// we might start the snapshot in a different term / index than we 
+				// are actually saying we did.
+				var allowFurtherModifications = new ManualResetEventSlim();
+				SnapshotAndTruncateLog(to, allowFurtherModifications);
+				allowFurtherModifications.Wait(CancellationToken);
 			}
 		}
 
-		private void SnapshotAndTruncateLog(long to)
+		private void SnapshotAndTruncateLog(long to, ManualResetEventSlim allowFurtherModifications)
 		{
 			var task = new Task(() =>
 			{
@@ -434,7 +440,7 @@ namespace Rachis
 				{
 					var currentTerm = PersistentState.CurrentTerm;
 					_log.Info("Starting to create snapshot up to {0} in term {1}", to, currentTerm);
-					StateMachine.CreateSnapshot(to, currentTerm);
+					StateMachine.CreateSnapshot(to, currentTerm, allowFurtherModifications);
 					PersistentState.MarkSnapshotFor(to, currentTerm,
 						Options.MaxLogLengthBeforeCompaction - (Options.MaxLogLengthBeforeCompaction / 8));
 

@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TailFeather.Client;
 
 namespace Tryouts
@@ -9,20 +12,15 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var tailFeatherClient = new TailFeatherClient(new Uri("http://localhost:9079"));
+			var wtf = @"C:\Users\Ayende\Documents\Fiddler2\Captures\51_.txt";
 
-			var tasks = new List<Task>();
-			for (int i = 0; i < 5*1000; i++)
+			var jArray = JArray.Parse(File.ReadAllText(wtf));
+			int i = 0;
+			foreach (var item in jArray)
 			{
-				tasks.Add(tailFeatherClient.Set("users/" + i, false));
-				if (tasks.Count > 50)
-				{
-					Task.WaitAll(tasks.ToArray());
-
-					tasks.Clear();
-				}
+				i++;
+				File.WriteAllText(i+".json", item.ToString(Formatting.Indented));
 			}
-
 		}
 	}
 
