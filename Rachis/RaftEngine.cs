@@ -442,7 +442,7 @@ namespace Rachis
 					_log.Info("Starting to create snapshot up to {0} in term {1}", to, currentTerm);
 					StateMachine.CreateSnapshot(to, currentTerm, allowFurtherModifications);
 					PersistentState.MarkSnapshotFor(to, currentTerm,
-						Options.MaxLogLengthBeforeCompaction - (Options.MaxLogLengthBeforeCompaction / 8));
+						Options.MaxLogLengthBeforeCompaction - (Options.MaxLogLengthBeforeCompaction/8));
 
 					_log.Info("Finished creating snapshot for {0} in term {1}", to, currentTerm);
 
@@ -453,10 +453,17 @@ namespace Rachis
 					_log.Error("Failed to create snapshot", e);
 					OnSnapshotCreationError(e);
 				}
+				finally
+				{
+					Interlocked.Exchange(ref _snapshottingTask, null);
+				}
 			});
 
 			if (Interlocked.CompareExchange(ref _snapshottingTask, task, null) != null)
+			{
+				allowFurtherModifications.Set();
 				return;
+			}
 			task.Start();
 		}
 

@@ -46,7 +46,8 @@ namespace TailFeather
 					)
 				{
 					ElectionTimeout = 5 * 1000,
-					HeartbeatTimeout = 1000
+					HeartbeatTimeout = 1000,
+					MaxLogLengthBeforeCompaction = 25
 				};
 
 				if (options.Boostrap)

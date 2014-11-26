@@ -127,7 +127,7 @@ namespace TailFeather.Storage
 			int fullBackupIndex = -1;
 			for (int i = files.Length - 1; i >= 0; i--)
 			{
-				if (!files[i].StartsWith("Full"))
+				if (!Path.GetFileNameWithoutExtension(files[i]).StartsWith("Full"))
 					continue;
 				fullBackupIndex = i;
 				break;

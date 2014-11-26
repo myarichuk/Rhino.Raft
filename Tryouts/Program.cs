@@ -12,14 +12,14 @@ namespace Tryouts
 	{
 		static void Main()
 		{
-			var wtf = @"C:\Users\Ayende\Documents\Fiddler2\Captures\51_.txt";
+			var tailFeatherClient = new TailFeatherClient(new Uri("http://localhost:9078"));
 
-			var jArray = JArray.Parse(File.ReadAllText(wtf));
-			int i = 0;
-			foreach (var item in jArray)
+			int i =0;
+			while (true)
 			{
-				i++;
-				File.WriteAllText(i+".json", item.ToString(Formatting.Indented));
+				tailFeatherClient.Set("now-"+i, DateTime.Now);
+				Console.WriteLine(i++);
+				Console.ReadKey();
 			}
 		}
 	}
