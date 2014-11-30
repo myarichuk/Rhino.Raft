@@ -115,7 +115,7 @@ namespace TailFeather.Storage
 
 			DeleteOldSnapshots(files.Take(fullBackupIndex - 1));// delete snapshots older than the current full backup
 
-			var incrementalBackup = new IncrementalBackup();
+			var incrementalBackup = new MinimalIncrementalBackup();
 			incrementalBackup.ToFile(_storageEnvironment,
 				Path.Combine(_storageEnvironment.Options.BasePath, string.Format("Inc-{0:D19}-{1:D19}.Snapshot", index, term)),
 				infoNotify: Console.WriteLine,
@@ -265,7 +265,6 @@ namespace TailFeather.Storage
 
 			var options = StorageEnvironmentOptions.ForPath(basePath);
 			options.IncrementalBackupEnabled = true;
-			//TODO: Copy any other customizations that might have happened on the options
 
 			new IncrementalBackup().Restore(options, files.Skip(1));
 
