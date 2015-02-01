@@ -69,10 +69,18 @@ namespace TailFeather.Storage
 		public void Apply(LogEntry entry, Command cmd)
 		{
 			var batch = cmd as OperationBatchCommand;
-			if (batch != null)
-				Apply(batch.Batch, cmd.AssignedIndex);
-			else
-				Apply(Enumerable.Empty<KeyValueOperation>(), cmd.AssignedIndex);
+		    if (batch != null)
+		    {
+		        Apply(batch.Batch, cmd.AssignedIndex);
+		        return;
+		    }
+		    var get = cmd as GetCommand;
+		    if (get != null)
+		    {
+		        cmd.CommandResult = Read(get.Key);
+		    }
+            // have to apply even get command so we'll keep track of the last applied index
+		    Apply(Enumerable.Empty<KeyValueOperation>(), cmd.AssignedIndex);
 		}
 
 		public bool SupportSnapshots { get { return true; } }

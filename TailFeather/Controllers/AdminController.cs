@@ -11,7 +11,7 @@ namespace TailFeather.Controllers
 	{
 		[HttpGet]
 		[Route("tailfeather/admin/flock")]
-		public HttpResponseMessage Join()
+		public HttpResponseMessage Topology()
 		{
 			return Request.CreateResponse(HttpStatusCode.OK, new
 			{
