@@ -149,7 +149,7 @@ namespace TailFeather.Controllers
             }
             catch (NotLeadingException e)
             {
-                return RedirectToLeader(e.CurrentLeader);
+                return RedirectToLeader(e.CurrentLeader, Request.RequestUri);
             }
             await taskCompletionSource.Task;
 
