@@ -12,6 +12,15 @@ namespace Rachis.Tests
 {
 	public class TopologyChangesTests : RaftTestsBase
 	{
+		private static int testCount = 0;
+
+		public TopologyChangesTests ()
+		{
+			WriteLine ("------------------------------------------------");
+			WriteLine ("--== Starting test " + (testCount++) + " ==--");
+			WriteLine ("------------------------------------------------");
+		}
+
 		[Fact]
 		public void CanRevertTopologyChange()
 		{
@@ -45,6 +54,7 @@ namespace Rachis.Tests
 
 		}
 
+		//fire up console to listen for log : nc -l -u -p 7071
 		[Fact]
 		public void New_node_can_be_added_even_if_it_is_down()
 		{
@@ -53,13 +63,20 @@ namespace Rachis.Tests
 			var topologyChangeFinishedOnAllNodes = new CountdownEvent(nodeCount);
 			var leader = CreateNetworkAndGetLeader(nodeCount);
 
-			Nodes.ToList().ForEach(n => n.TopologyChanged += cmd => topologyChangeFinishedOnAllNodes.Signal());
+			Nodes.ToList().ForEach(n => n.TopologyChanged += cmd => {
+				if(cmd.Requested.AllNodeNames.Contains("non-existing-node"))
+					topologyChangeFinishedOnAllNodes.Signal(); 
+			});
 
 			// ReSharper disable once PossibleNullReferenceException
 			leader.AddToClusterAsync(new NodeConnectionInfo { Name = "non-existing-node" }).Wait();
 
 			Assert.True(topologyChangeFinishedOnAllNodes.Wait(5000),"Topology changes should happen in less than 5 sec for 3 node network");
-			Nodes.ToList().ForEach(n => n.CurrentTopology.AllNodeNames.Should().Contain("non-existing-node"));
+			Nodes.ToList().ForEach(n => 
+			{
+					var allNodeNames = n.CurrentTopology.AllNodeNames.ToList();
+					allNodeNames.Should().Contain("non-existing-node");
+			});
 		}
 
 

@@ -6,6 +6,8 @@ using Rachis.Transport;
 
 namespace Rachis.Storage
 {
+
+
 	[JsonObject(MemberSerialization.OptIn)]
 	public class Topology
 	{
@@ -22,8 +24,6 @@ namespace Rachis.Storage
 
 		private string _topologyString;
 
-
-
 		public Topology()
 		{
 			_allVotingNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
@@ -31,7 +31,6 @@ namespace Rachis.Storage
 			_promotableNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
 			_allNodes = new Dictionary<string, NodeConnectionInfo>(StringComparer.OrdinalIgnoreCase);
 		}
-
 
 		public Topology(Guid topologyId) : this()
 		{

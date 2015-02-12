@@ -9,11 +9,11 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>TailFeather</RootNamespace>
     <AssemblyName>TailFeather</AssemblyName>
-    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
     <RestorePackages>true</RestorePackages>
     <TargetFrameworkProfile />
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -51,6 +51,7 @@
     </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\packages\Newtonsoft.Json.6.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <Package>monodevelop</Package>
     </Reference>
     <Reference Include="Owin">
       <HintPath>..\packages\Owin.1.0\lib\net40\Owin.dll</HintPath>
@@ -100,7 +101,7 @@
       <Name>Voron</Name>
     </ProjectReference>
     <ProjectReference Include="..\Rachis\Rachis.csproj">
-      <Project>{f796f69f-d17b-4260-92d6-65cb94c0e05c}</Project>
+      <Project>{F796F69F-D17B-4260-92D6-65CB94C0E05C}</Project>
       <Name>Rachis</Name>
     </ProjectReference>
   </ItemGroup>

@@ -298,6 +298,7 @@ namespace Rachis
 				nonVoting ? _currentTopology.NonVotingNodes.Union(new[] { node }) : _currentTopology.NonVotingNodes,
 				nonVoting ? _currentTopology.PromotableNodes : _currentTopology.PromotableNodes.Union(new[] { node })
 				);
+
 			if (_log.IsInfoEnabled)
 			{
 				_log.Info("AddToClusterClusterAsync, requestedTopology: {0}", requestedTopology);
@@ -402,6 +403,7 @@ namespace Rachis
 							_log.Info("ApplyCommits for TopologyChangedCommand, tcc.Requested = {0}, Name = {1}",
 								tcc.Requested, Name);
 						}
+
 						CommitTopologyChange(tcc);
 					}
 
@@ -470,6 +472,8 @@ namespace Rachis
 
 		public void CommitTopologyChange(TopologyChangeCommand tcc)
 		{
+			//it is logical that _before_ OnTopologyChanged is fired the topology change task will be complete
+			// - since this task is used to track progress of topoplogy changes in the interface
 			Interlocked.Exchange(ref _changingTopology, null);
 
 			//if no topology was present and TopologyChangeCommand is issued to just
@@ -492,7 +496,7 @@ namespace Rachis
 				_log.Info("Finished applying new topology: {0}{1}", _currentTopology,
 					tcc.Previous == null ? ", Previous topology was null - perhaps it is setting topology for the first time?" : String.Empty);
 			}
-
+				
 			OnTopologyChanged(tcc);
 		}
 
@@ -502,7 +506,6 @@ namespace Rachis
 			_eventLoopTask.Wait(500);
 
 			PersistentState.Dispose();
-
 		}
 
 		internal virtual void OnCandidacyAnnounced()
@@ -516,7 +519,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising ElectionStarted event", e);
+					_log.Error("Error on raising ElectionStarted event" + e);
 				}
 			}
 		}
@@ -532,7 +535,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising StateChanged event", e);
+					_log.Error("Error on raising StateChanged event" + e);
 				}
 			}
 		}
@@ -548,7 +551,7 @@ namespace Rachis
 				}
 				catch (Exception e)
 				{
-					_log.Error("Error on raising StateTimeout event", e);
+					_log.Error("Error on raising StateTimeout event" + e);
 				}
 			}
 		}
@@ -603,6 +606,7 @@ namespace Rachis
 
 		protected virtual void OnTopologyChanged(TopologyChangeCommand cmd)
 		{
+			_log.Info ("OnTopologyChanged() - " + this.Name);
 			var handler = TopologyChanged;
 			if (handler != null)
 			{
@@ -766,7 +770,7 @@ namespace Rachis
 		}
 
 		internal void StartTopologyChange(TopologyChangeCommand tcc)
-		{
+		{			
 			Interlocked.Exchange(ref _currentTopology, tcc.Requested);
 			Interlocked.Exchange(ref _changingTopology, new TaskCompletionSource<object>().Task);
 			OnTopologyChanging(tcc);
@@ -775,6 +779,7 @@ namespace Rachis
 		internal void RevertTopologyTo(Topology previous)
 		{
 			_log.Info("Reverting topology because the topology change command was reverted");
+
 			Interlocked.Exchange(ref _changingTopology, null);
 			Interlocked.Exchange(ref _currentTopology, previous);
 			OnTopologyChanged(new TopologyChangeCommand

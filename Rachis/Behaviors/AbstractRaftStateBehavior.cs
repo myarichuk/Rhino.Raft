@@ -417,9 +417,7 @@ namespace Rachis.Behaviors
                     From = Engine.Name,
                     ClusterTopologyId = Engine.CurrentTopology.TopologyId,
                 };
-			
             }
-			
 
 			if (req.Term < Engine.PersistentState.CurrentTerm)
 			{
@@ -489,7 +487,6 @@ namespace Rachis.Behaviors
 				// values in our log and in the entries, and then skip over the duplicates.
 
 				var skip = 0;
-
 				for (int i = 0; i < req.Entries.Length; i++)
 				{
 					var termForEntry = Engine.PersistentState.TermFor(req.Entries[i].Index) ?? -1;

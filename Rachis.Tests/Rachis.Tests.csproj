@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -9,11 +9,11 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Rachis.Tests</RootNamespace>
     <AssemblyName>Rachis.Tests</AssemblyName>
-    <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
     <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
     <RestorePackages>true</RestorePackages>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -23,7 +23,6 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -121,11 +120,11 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\ravendb\Raven.Voron\Voron\Voron.csproj">
-      <Project>{ff83c7c2-bc7b-4dcc-a782-49ef9bbd9390}</Project>
+      <Project>{FF83C7C2-BC7B-4DCC-A782-49EF9BBD9390}</Project>
       <Name>Voron</Name>
     </ProjectReference>
     <ProjectReference Include="..\Rachis\Rachis.csproj">
-      <Project>{f796f69f-d17b-4260-92d6-65cb94c0e05c}</Project>
+      <Project>{F796F69F-D17B-4260-92D6-65CB94C0E05C}</Project>
       <Name>Rachis</Name>
     </ProjectReference>
   </ItemGroup>

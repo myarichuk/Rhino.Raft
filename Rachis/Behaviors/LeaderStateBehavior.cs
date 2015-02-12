@@ -150,7 +150,7 @@ namespace Rachis.Behaviors
 
 			if (_log.IsDebugEnabled)
 			{
-				_log.Debug("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: Term = {2} Index = {3}).", entries.Length, peer, prevLogEntry.Index, prevLogEntry.Term);
+				_log.Debug("Sending {0:#,#;;0} entries to {1} (PrevLogEntry: Term = {2} Index = {3}).", entries.Length, peer, prevLogEntry.Term, prevLogEntry.Index);
 			}
 
 			var aer = new AppendEntriesRequest
@@ -403,7 +403,7 @@ namespace Rachis.Behaviors
 		}
 
 		private void PromoteNodeToVoter(AppendEntriesResponse resp)
-		{
+		{			
 			// if we got a successful append entries response from a promotable node, and it has caught up
 			// with the committed entries, it means that we can promote it to voting positions, since it 
 			// can now become a leader.
